@@ -267,17 +267,20 @@ void Trainer::init(const std::shared_ptr<TrainerConfigHelper> &config,
 void Trainer::train(size_t numPasses) {
   srand(config_->getConfig().start_pass() + 1);
   dataProvider_->reset();
-
+  LOG(INFO) << "test1";
   if (this->testDataProvider_) {
     this->testDataProvider_->reset();
   }
+  LOG(INFO) << "test2";
 
   trainerInternal_.getGradientMachine()->start(*config_, dataProvider_);
-
+  LOG(INFO) << "test3";
   for (size_t i = 0; i < numPasses; ++i) {
     if (IGradientMachineMode::trainWholeDataInOneBatch(mode_)) {
+      LOG(INFO) << " train whole data in one batch";
       trainOnePassBatch(config_->getConfig().start_pass() + i);
     } else {
+      LOG(INFO) << "train by batch";
       trainOnePass(config_->getConfig().start_pass() + i);
     }
     if (i < numPasses - 1) {
@@ -397,7 +400,9 @@ void Trainer::trainOnePass(int passId) {
 
   trainerInternal_.getParameterUpdater()->startPass();
   evaluator_->start();
+  LOG(INFO) << "started evaluator";
   if (FLAGS_prev_batch_state) {
+    LOG(INFO) << "prev_batch_state";
     trainerInternal_.getGradientMachine()->resetState();
     trainerInternal_.getGradientMachine()->getState(testState_);
   }
@@ -407,13 +412,17 @@ void Trainer::trainOnePass(int passId) {
     int num = 0;
     {
       REGISTER_TIMER("getTrainBatch");
+      LOG(INFO) << "getting next batch....";
       num = dataProvider_->getNextBatch(batchSize, &dataBatch);
     }
+    LOG(INFO) << "got next batch: " << num;
     if (num == 0) break;
-
     if (averageEvaluator_) {
       int64_t mod = batchId % FLAGS_average_test_period;
+      LOG(INFO) << "average_test_period:" << FLAGS_average_test_period 
+        << ", mod:" << mod;
       if (mod >= FLAGS_average_test_period - FLAGS_log_period) {
+        LOG(INFO) << "average evaluator";
         if (mod == FLAGS_average_test_period - FLAGS_log_period) {
           averageEvaluator_->start();
         }
@@ -432,6 +441,7 @@ void Trainer::trainOnePass(int passId) {
     }
     {
       REGISTER_TIMER("TrainBatch");
+      LOG(INFO) << "start on batch";
       trainerInternal_.trainOneBatch(batchId, dataBatch);
     }
 

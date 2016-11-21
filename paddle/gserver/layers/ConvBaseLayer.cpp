@@ -47,7 +47,7 @@ bool ConvBaseLayer::init(const LayerMap& layerMap,
   CHECK(inputLayers_.size() == parameters_.size());
   for (size_t i = 0; i < inputLayers_.size(); i++) {
     size_t height, width;
-    height = filterPixels_[i] * filterChannels_[i];
+    height = filterPixels_[i] * filterChannels_[i];  // pay attention
     width = numFilters_;
 
     // create a new weight

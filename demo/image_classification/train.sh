@@ -19,12 +19,12 @@ log=train.log
 
 paddle train \
 --config=$config \
---dot_period=10 \
---log_period=100 \
+--dot_period=1 \
+--log_period=2 \
 --test_all_data_in_one_period=1 \
---use_gpu=1 \
+--use_gpu=0 \
 --trainer_count=1 \
---num_passes=200 \
+--num_passes=2 \
 --save_dir=$output \
 2>&1 | tee $log
 

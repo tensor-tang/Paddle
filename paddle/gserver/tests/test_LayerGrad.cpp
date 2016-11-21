@@ -266,6 +266,7 @@ void testConvLayer(const string& type, bool trans, bool useGpu) {
 
 TEST(Layer, convLayer) {
   testConvLayer("exconv", /* trans= */ false, /* useGpu= */ false);
+//  testConvLayer("mklconv", /* trans= */ false, /* useGpu= */ false);
 #ifndef PADDLE_ONLY_CPU
   testConvLayer("exconv", /* trans= */ false, /* useGpu= */ true);
   testConvLayer("cudnn_conv", /* trans= */ false, /* useGpu= */ true);

@@ -1529,10 +1529,11 @@ class ConvLayerBase(LayerBase):
             config_assert(use_gpu, "cudnn_conv only support GPU")
 
         if (use_gpu == 1 and self.layer_type != "exconv" and
+            self.layer_type != "mklconv" and
            (parallel_nn == 0 or self.config.device > -1)):
             self.layer_type = "cudnn_conv"
         else:
-            self.layer_type = "exconv"
+            self.layer_type = "mklconv"
         # need to specify layer in config
         self.config.type = self.layer_type
 
@@ -1564,6 +1565,10 @@ class ConvLayerBase(LayerBase):
 @config_layer('exconv')
 class ConvLayer(ConvLayerBase):
     layer_type = 'exconv'
+
+@config_layer('mklconv')
+class ConvLayer(ConvLayerBase):
+    layer_type = 'mklconv'
 
 @config_layer('cudnn_conv')
 class ConvLayer(ConvLayerBase):

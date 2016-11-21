@@ -108,6 +108,8 @@ ClassRegistrar<Layer, LayerConfig> Layer::registrar_;
 LayerPtr Layer::create(const LayerConfig& config) {
   std::string type = config.type();
 
+  LOG(INFO) << "layer type: " << type;
+
   if (type == "multi-class-cross-entropy")
     return LayerPtr(new MultiClassCrossEntropy(config));
   else if (type == "rank-cost")
