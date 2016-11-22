@@ -86,7 +86,7 @@ public:
   }
   
   /// for dnn
-  void initDnn();
+  void initMKLDnn();
 
   bool init(const LayerMap& layerMap, const ParameterMap& parameterMap);
 

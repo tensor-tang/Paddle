@@ -96,7 +96,7 @@ size_t MklConvLayer::getSize() {
   return layerSize;
 }
 
-void MklConvLayer::initDnn() {
+void MklConvLayer::initMKLDnn() {
   int st;
   int i = 0;
   // TODO: should init all layers, here only i==0
@@ -236,7 +236,7 @@ void MklConvLayer::forward(PassType passType) {
   /* since can not get batchsize at layer.init(),
    * so init dnn at forward by now*/
   if (!convFwd_) {
-    initDnn();
+    initMKLDnn();
   }
   // get prv image data
   real *imgData = getPrev(i)->getOutputValue()->getData();
