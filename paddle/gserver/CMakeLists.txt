@@ -23,6 +23,19 @@ endmacro()
 
 filter_test(GSERVER_HEADER)
 filter_test(GSERVER_SOURCES)
+
+# compile MKLLayers, only if have standard MKL library
+if(NOT ${CBLAS_PROVIDER} MATCHES MKL)
+    list(REMOVE_ITEM GSERVER_HEADER
+        layers/MklMemory.h
+        layers/MklWrapper.h
+        layers/MklConvLayer.h)
+    list(REMOVE_ITEM GSERVER_SOURCES
+        layers/MklConvLayer.cpp)
+else()
+    message(STATUS "Compile with MKLlayers")
+endif()
+
 if(NOT WITH_GPU)
     list(REMOVE_ITEM GSERVER_HEADER
         layers/CudnnConvLayer.h
