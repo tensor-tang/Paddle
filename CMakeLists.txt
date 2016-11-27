@@ -23,8 +23,16 @@ find_package(Gflags QUIET)
 find_package(GTest)
 find_package(Sphinx)
 find_package(Doxygen)
+#find_package(Openmp)
+
 include(cblas)
+message(STATUS "xxxxxxxxxxxxxxxxxxxxxxxxxx22DNN LIB:" ${DNN_LIBS})
+find_library(MKLDNN NAMES mkldnn PATHS /usr/local/lib)
+message(STATUS "11111111111111111111111111111111N LIB:" ${MKLDNN})
+set(DNN_LIBS ${MKLDNN})
+message(STATUS "2222222222222222222222DNN LIB:" ${DNN_LIBS})
 find_program(M4_EXECUTABLE m4)
+
 ###################### Configurations ###########################
 option(WITH_DSO "Compile PaddlePaddle with dynamic linked libraries" ON)
 option(WITH_GPU "Compile PaddlePaddle with gpu" ${CUDA_FOUND})
@@ -40,6 +48,8 @@ option(WITH_TESTING "Compile and run unittest for PaddlePaddle" ${GTEST_FOUND})
 option(WITH_DOC "Compile PaddlePaddle with documentation" OFF)
 option(WITH_SWIG_PY "Compile PaddlePaddle with py PaddlePaddle prediction api" ${SWIG_FOUND})
 option(ON_TRAVIS "Running test on travis-ci or not." OFF)
+option(WITH_OMP "Compile PaddlePaddle with openmp." ON)
+
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING 
         "Choose the type of build, options are: Debug Release RelWithDebInfo MinSizeRel"
@@ -108,6 +118,12 @@ else(WITH_AVX)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -msse3")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse3")
 endif(WITH_AVX)
+
+if(WITH_OMP)
+    set(OPENMP_FLAGS "-fopenmp")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OPENMP_FLAGS}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OPENMP_FLAGS}")
+endif()
 
 if(WITH_PYTHON)
     include_directories(${PYTHON_INCLUDE_DIR})

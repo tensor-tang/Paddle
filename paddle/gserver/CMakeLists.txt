@@ -25,7 +25,7 @@ filter_test(GSERVER_HEADER)
 filter_test(GSERVER_SOURCES)
 
 # compile MKLLayers, only if have standard MKL library
-if(NOT ${CBLAS_PROVIDER} MATCHES MKL)
+if(NOT "${CBLAS_PROVIDER}" STREQUAL "MKL")
     list(REMOVE_ITEM GSERVER_HEADER
         layers/MklMemory.h
         layers/MklWrapper.h
