@@ -24,7 +24,8 @@ class DnnConvLayer : public ConvBaseLayer {
 
 protected:
   /// 
-  bool dnnInited;
+  bool dnnFwdInited_;
+  bool dnnBwdInited_;
   /// For dnn engine
   engine engineCpu_;
   /// For dnn convolution.
@@ -46,30 +47,30 @@ protected:
   DnnBufferPtr diffBias_;
   DnnBufferPtr diffTop_;
 
-  
   /// has bias
   bool hasBias_;
 
-  /// The spatial dimensions of height of input feature map.
-  IntV imgSizeH_;
-  /// The spatial dimensions of width of input feature map.
-  IntV imgSizeW_;
-  /// The spatial dimensions of height of output feature map.
-  IntV outputH_;
-  /// The spatial dimensions of width of output feature map.
-  IntV outputW_;
-
-  /// subM_ = numFilters_ / groups_.
-  IntV subM_;
-  /// subN_ = outputH_ * outputW_.
-  IntV subN_;
-  /// subK_ = channels_ * filterPixels_ * groups_.
-  IntV subK_;
-
+  // The spatial dimensions of height of input feature map.
+  IntV ih_;
+  // The spatial dimensions of width of input feature map.
+  IntV iw_;
+  // The spatial dimensions of height of output feature map.
+  IntV oh_;
+  // The spatial dimensions of width of output feature map.
+  IntV ow_;
+  // padding, stride and filter size
+  IntV ph_, pw_;
+  IntV sh_, sw_;
+  IntV fh_, fw_;
+  // input channel and group
+  IntV ic_, gp_;
+  // output channel == filter number
+  int oc_;
 public:
   explicit DnnConvLayer(const LayerConfig& config)
     : ConvBaseLayer(config),
-      dnnInited(false),
+      dnnFwdInited_(false),
+      dnnBwdInited_(false),
       engineCpu_(engine::cpu, 0),
       fwdPD_(NULL),
       dataBot_(new DnnBuffer()),
@@ -82,23 +83,7 @@ public:
       diffTop_(new DnnBuffer())
     {}
 
-  ~DnnConvLayer() {
-    /*
-    // release all dnn
-    if (convFwd_) {
-      dnnDelete(convFwd_);
-    }
-    if (convBwdBias_) {
-      dnnDelete(convBwdBias_);
-    }
-    if (convBwdData_) {
-      dnnDelete(convBwdData_);
-    }
-    if (convBwdFilter_) {
-      dnnDelete(convBwdFilter_);
-    }
-    */
-  }
+  ~DnnConvLayer() {}
   
   /// for dnn
   void initDnn();
@@ -114,6 +99,19 @@ public:
   size_t getSize();
   void forward(PassType passType);
   void backward(const UpdateCallback& callback);
+private:
+  void printInfo() {
+    for(size_t i = 0; i < iw_.size(); ++i) {
+      LOG(INFO)
+        << "ih: " << ih_[i] << ", iw: " << iw_[i]
+        << ", ic: " << ic_[i] << ", gp: " << gp_[i]
+        << ", oh: " << oh_[i] << ", ow: " << ow_[i]
+        << ", fh: " << fh_[i] << ", fw: " << fw_[i]
+        << ", ph: " << ph_[i] << ", pw: " << pw_[i]
+        << ", sh: " << sh_[i] << ", sw: " << sw_[i]
+        << ", oc: " << oc_;
+    }
+  }
 };
 
 }  // namespace paddle
