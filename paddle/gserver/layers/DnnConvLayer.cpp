@@ -258,7 +258,7 @@ void DnnConvLayer::initDnnBwd() {
     CHECK(dataWgt_->getIntlMem()->get_primitive_desc() ==
       bwdDataPD_->weights_primitive_desc());
     
-    /* backward weight and bias*/
+    /* backward weight and bias *************************************/
     if (weights_[i]->getWGrad()) {
       real* wgtdiff = weights_[i]->getWGrad()->getData();
       // init weight diff user
@@ -307,7 +307,7 @@ void DnnConvLayer::initDnnBwd() {
       diffBias_->initCvt(bwdWgtPD_->diff_bias_primitive_desc(),
                       dnnCvtInternal2User);
     }
-    diffWgt_->initCvt(memory::primitive_desc(bwdWgtPD_->diff_weights_primitive_desc()),
+    diffWgt_->initCvt(bwdWgtPD_->diff_weights_primitive_desc(),
                       dnnCvtInternal2User);
     CHECK(dataBot_->getIntlMem()->get_primitive_desc() ==
       bwdWgtPD_->src_primitive_desc());
@@ -389,13 +389,13 @@ void DnnConvLayer::backward(const UpdateCallback &callback) {
         // bias backward can only execute in filter backward with MKL-DNN
         bwdWgt.reset(new convolution_backward_weights(*bwdWgtPD_,
           *(dataBot_->getIntlMem()), *(diffTop_->getIntlMem()), 
-          *(dataWgt_->getIntlMem()), *(dataBias_->getIntlMem())));
+          *(diffWgt_->getIntlMem()), *(diffBias_->getIntlMem())));
         netWgt.push_back(*bwdWgt);
         diffBias_->submitCvt(netWgt);
       } else {
         bwdWgt.reset(new convolution_backward_weights(*bwdWgtPD_,
           *(dataBot_->getIntlMem()), *(diffTop_->getIntlMem()), 
-          *(dataWgt_->getIntlMem()), *(dataBias_->getIntlMem())));
+          *(diffWgt_->getIntlMem())));
         netWgt.push_back(*bwdWgt);
       }
       diffWgt_->submitCvt(netWgt);
