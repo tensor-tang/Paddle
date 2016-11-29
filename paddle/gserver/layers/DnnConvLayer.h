@@ -28,13 +28,10 @@ protected:
   bool dnnBwdInited_;
   /// For dnn engine
   engine engineCpu_;
-  /// For dnn convolution.
-  std::shared_ptr<convolution_forward::primitive_desc> fwdPD_; //Primitive Desc
-
-//  dnnPrimitive_t convFwd_;
-//  dnnPrimitive_t convBwdData_;
-//  dnnPrimitive_t convBwdFilter_;
-//  dnnPrimitive_t convBwdBias_;
+  /// For dnn convolution. Primitive Desc
+  std::shared_ptr<convolution_forward::primitive_desc> fwdPD_;
+  std::shared_ptr<convolution_backward_data::primitive_desc> bwdDataPD_;
+  std::shared_ptr<convolution_backward_weights::primitive_desc> bwdWgtPD_;
   
   /// data buffers
   DnnBufferPtr dataBot_;
@@ -73,20 +70,23 @@ public:
       dnnBwdInited_(false),
       engineCpu_(engine::cpu, 0),
       fwdPD_(NULL),
+      bwdDataPD_(NULL),
+      bwdWgtPD_(NULL),
       dataBot_(new DnnBuffer()),
       dataWgt_(new DnnBuffer()),
       dataBias_(new DnnBuffer()),
       dataTop_(new DnnBuffer()),
-      diffBot_(new DnnBuffer()),
-      diffWgt_(new DnnBuffer()),
-      diffBias_(new DnnBuffer()),
-      diffTop_(new DnnBuffer())
+      diffBot_(NULL),
+      diffWgt_(NULL),
+      diffBias_(NULL),
+      diffTop_(NULL)
     {}
 
   ~DnnConvLayer() {}
   
   /// for dnn
-  void initDnn();
+  void initDnnFwd();
+  void initDnnBwd();
   int dimSize(const memory::dims &t) {
     int sz = 1;
     for (size_t i = 0; i < t.size(); ++i) 

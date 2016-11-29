@@ -57,13 +57,17 @@ public:
     this->pUser_.reset(new memory(memory::primitive_desc(desc, eg), pd));
   }
 
-  memory::desc getIntlMD(memory::data_type tp = memory::data_type::f32) {
+  memory::desc getInitIntlMD(memory::data_type tp = memory::data_type::f32) {
     CHECK(pDims_);
     return memory::desc({*pDims_}, tp, memory::format::any);
   }
 
   std::shared_ptr<memory> getIntlMem() {
      return this->pIntl_;
+  }
+
+  std::shared_ptr<memory> getUserMem() {
+     return this->pUser_;
   }
   
   // init conversion(reorder)

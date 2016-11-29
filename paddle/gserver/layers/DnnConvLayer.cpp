@@ -107,9 +107,9 @@ size_t DnnConvLayer::getSize() {
   return layerSize;
 }
 
-void DnnConvLayer::initDnn() {
-
+void DnnConvLayer::initDnnFwd() {
   // TODO: only care about i==0 by now
+  memory::dims biasDims = {oc_};
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
   
     int bs = getInput(i).getBatchSize();
@@ -127,13 +127,12 @@ void DnnConvLayer::initDnn() {
     getOutput().setFrameHeight(oh_[0]);
     getOutput().setFrameWidth(ow_[0]);
     resetOutput(bs, getSize());
-
     // create dim structure that describes user data.
     memory::dims botDims = {bs, ic_[i], ih_[i], iw_[i]};
     memory::dims wgtDims = (gp_[i] == 1) ? 
         memory::dims{oc_, ic_[i], fh_[i], fw_[i]}
       : memory::dims{gp_[i], oc_/gp_[i], ic_[i]/gp_[i], fh_[i], fw_[i]};
-    memory::dims biasDims = {oc_};
+    
     memory::dims strides = {sh_[i], sw_[i]};
     memory::dims padding = {ph_[i], pw_[i]};
     memory::dims topDims = {bs, oc_, oh_[i], ow_[i]};
@@ -158,18 +157,18 @@ void DnnConvLayer::initDnn() {
     if (hasBias_) {
       fwdDesc.reset(new convolution_forward::desc(prop_kind::forward_training,
                           algorithm::convolution_direct,
-                          dataBot_->getIntlMD(),
-                          dataWgt_->getIntlMD(),
-                          dataBias_->getIntlMD(),
-                          dataTop_->getIntlMD(),
+                          dataBot_->getInitIntlMD(),
+                          dataWgt_->getInitIntlMD(),
+                          dataBias_->getInitIntlMD(),
+                          dataTop_->getInitIntlMD(),
                           strides, padding, padding, // TODO: check here left and right
                           padding_kind::zero));
     } else {
       fwdDesc.reset(new convolution_forward::desc(prop_kind::forward_training,
                           algorithm::convolution_direct,
-                          dataBot_->getIntlMD(),
-                          dataWgt_->getIntlMD(),
-                          dataTop_->getIntlMD(),
+                          dataBot_->getInitIntlMD(),
+                          dataWgt_->getInitIntlMD(),
+                          dataTop_->getInitIntlMD(),
                           strides, padding, padding, // TODO: check here left and right
                           padding_kind::zero));
     }
@@ -186,74 +185,146 @@ void DnnConvLayer::initDnn() {
     }
     dataTop_->initCvt(memory::primitive_desc(
                         fwdPD_->dst_primitive_desc()), dnnCvtInternal2User);
-/*
-  /// backward
-  real *topdiff = getOutputGrad()->getData(); // here is the top diff
-  if (hasBias_&& biases_->getWGrad()) {
-    real* biasdiff = biases_->getWGrad()->getData();
-  }
 
-  // init user memory
-  diffBot_->initUser(botData, botDims, memory::format::nchw, engineCpu_);
-  diffWgt_->initUser(wgtData, wgtDims, 
-  (gp == 1) ? memory::format::oihw : memory::format::goihw, engineCpu_);
-  diffBias_->initUser(biasData, biasDims, memory::format::x, engineCpu_);
-  diffTop_->initUser(topdiff, topDims, memory::format::nchw, engineCpu_);
-  st = dnnConvolutionCreateBackwardData(
-    &convBwdData_, NULL, dnnAlgorithmConvolutionDirect,
-    dimension,  iSize,  oSize,  fSize,  convStride,
-    inputOffset, dnnBorderZeros);
-
-  CHECK_EQ(st, E_SUCCESS)
-          << "Failed dnnCreateConvolution Backward with status "
-          << st;
-  st = dnnConvolutionCreateBackwardFilter(
-    &convBwdFilter_, NULL, dnnAlgorithmConvolutionDirect,
-    dimension,  iSize,  oSize,  fSize,  convStride,
-    inputOffset, dnnBorderZeros);
-
-  CHECK_EQ(st, E_SUCCESS)
-          << "Failed dnnCreateConvolution<Dtype>(dnnfilter) with status "
-          << st;
-  
-  /// if has bias
-  st = dnnConvolutionCreateBackwardBias(
-    &convBwdBias_, NULL, dnnAlgorithmConvolutionDirect,
-    dimension,  oSize);
-
-  CHECK_EQ(st, E_SUCCESS)
-          << "Failed dnnCreateConvolution<Dtype>(dnnbias) with status "
-          << st;
-  CHECK_ST(diffTop_->createUser(dimension, oSize, oStrides), st);
-  CHECK_ST(diffTop_->createIntl(convBwdData_, dnnResourceDiffDst), st); //careful: top==dst
-  CHECK_ST(diffTop_->initConversion(dnnCvtUser2Internal), st);
-
-  CHECK_ST(diffFilter_->createUser(dimension, fSize, fStrides), st);
-  CHECK_ST(diffFilter_->createIntl(convBwdFilter_, dnnResourceDiffFilter), st);
-  CHECK_ST(diffFilter_->initConversion(dnnCvtInternal2User), st);
-
-  CHECK_ST(diffBias_->createUser(1, bSize, bStrides), st);
-  CHECK_ST(diffBias_->createIntl(convBwdBias_, dnnResourceDiffBias), st);
-  CHECK_ST(diffBias_->initConversion(dnnCvtInternal2User), st);
-
-  CHECK_ST(diffBottom_->createUser(dimension, iSize, iStrides), st);
-  CHECK_ST(diffBottom_->createIntl(convBwdData_, dnnResourceDiffSrc), st);
-  CHECK_ST(diffBottom_->initConversion(dnnCvtInternal2User), st);
-  */
-  
   }
   printInfo();
+}
+
+void DnnConvLayer::initDnnBwd() {
+  // TODO: only care about i==0 by now
+  int bs = getInput(0).getBatchSize();
+  memory::dims topDims = {bs, oc_, oh_[0], ow_[0]};
+  real *topdiff = getOutputGrad()->getData();
+  // init top diff user
+  diffTop_.reset(new DnnBuffer());
+  diffTop_->initUser(topdiff, topDims, memory::format::nchw, engineCpu_);
+  
+  /* backward bias*/
+  memory::dims biasDims = {oc_};
+  if (hasBias_&& biases_->getWGrad()) {
+    real* biasdiff = biases_->getWGrad()->getData();
+    // init bias diff user
+    diffBias_.reset(new DnnBuffer());
+    diffBias_->initUser(biasdiff, biasDims, memory::format::x, engineCpu_);
+    // bias backward can not be execute seperately, 
+    // can only execute with filter bakcward
+  }
+  
+  for (size_t i = 0; i != inputLayers_.size(); ++i) {
+    LayerPtr prevLayer = getPrev(i);
+    if (NULL == prevLayer->getOutputGrad()) {
+      continue; // TODO: donot support missing bottom diff by now
+    }
+    CHECK(bs == getInput(i).getBatchSize());
+
+    // create dim structure that describes user data.
+    memory::dims botDims = {bs, ic_[i], ih_[i], iw_[i]};
+    memory::dims wgtDims = (gp_[i] == 1) ? 
+        memory::dims{oc_, ic_[i], fh_[i], fw_[i]}
+      : memory::dims{gp_[i], oc_/gp_[i], ic_[i]/gp_[i], fh_[i], fw_[i]};
+    memory::dims strides = {sh_[i], sw_[i]};
+    memory::dims padding = {ph_[i], pw_[i]};
+    
+    /* backward data */
+    // init bottom diff user
+    // Important: need confirm the user data memory is allocated!!!  
+    LOG(INFO) << "init backward data";
+    real* botdiff = prevLayer->getOutputGrad()->getData();
+    diffBot_.reset(new DnnBuffer());
+    diffBot_->initUser(botdiff, botDims, memory::format::nchw, engineCpu_);
+    // init backward data primitive desc
+    std::shared_ptr<convolution_forward::desc> bwdDataFwdDesc;
+    std::shared_ptr<convolution_backward_data::desc> bwdDataDesc;
+    bwdDataFwdDesc.reset(new convolution_forward::desc(
+      prop_kind::forward_training, algorithm::convolution_direct, 
+      diffBot_->getInitIntlMD(), 
+      dataWgt_->getIntlMem()->get_primitive_desc().desc(), 
+      diffTop_->getInitIntlMD(), 
+      strides, padding, padding, padding_kind::zero));
+    bwdDataDesc.reset(new convolution_backward_data::desc(
+      algorithm::convolution_direct,
+      diffBot_->getInitIntlMD(),
+      dataWgt_->getIntlMem()->get_primitive_desc().desc(),
+      diffTop_->getInitIntlMD(),
+      strides, padding, padding, padding_kind::zero));
+    std::shared_ptr<convolution_forward::primitive_desc> bwdDataFwdPD;
+    bwdDataFwdPD.reset(new convolution_forward::primitive_desc(
+      *bwdDataFwdDesc, engineCpu_));
+    bwdDataPD_.reset(new convolution_backward_data::primitive_desc(*bwdDataDesc,
+                        engineCpu_, *bwdDataFwdPD));
+    // init reorder
+    diffTop_->initCvt(bwdDataPD_->diff_dst_primitive_desc(), dnnCvtUser2Internal);
+    diffBot_->initCvt(bwdDataPD_->diff_src_primitive_desc(), dnnCvtInternal2User);
+    CHECK(dataWgt_->getIntlMem()->get_primitive_desc() ==
+      bwdDataPD_->weights_primitive_desc());
+    
+    /* backward weight and bias*/
+    if (weights_[i]->getWGrad()) {
+      real* wgtdiff = weights_[i]->getWGrad()->getData();
+      // init weight diff user
+      diffWgt_.reset(new DnnBuffer());
+      diffWgt_->initUser(wgtdiff, wgtDims, (gp_[i] == 1) ?
+                 memory::format::oihw : memory::format::goihw, engineCpu_);
+    } else {
+      continue;
+    }
+    LOG(INFO) << "init backward weights and bias";
+    std::shared_ptr<convolution_forward::desc> bwdWgtFwdDesc;
+    std::shared_ptr<convolution_backward_weights::desc> bwdWgtDesc;
+    if (hasBias_ && diffBias_ != NULL) {
+      bwdWgtFwdDesc.reset(new convolution_forward::desc(
+        prop_kind::forward_training, algorithm::convolution_direct, 
+        dataBot_->getIntlMem()->get_primitive_desc().desc(),
+        diffWgt_->getInitIntlMD(), diffBias_->getInitIntlMD(), 
+        diffTop_->getIntlMem()->get_primitive_desc().desc(),
+        strides, padding, padding, padding_kind::zero));
+      bwdWgtDesc.reset(new convolution_backward_weights::desc(
+        algorithm::convolution_direct, 
+        dataBot_->getIntlMem()->get_primitive_desc().desc(),
+        diffWgt_->getInitIntlMD(), diffBias_->getInitIntlMD(), 
+        diffTop_->getIntlMem()->get_primitive_desc().desc(),
+        strides, padding, padding, padding_kind::zero));
+    } else {
+      bwdWgtFwdDesc.reset(new convolution_forward::desc(
+        prop_kind::forward_training, algorithm::convolution_direct, 
+        dataBot_->getIntlMem()->get_primitive_desc().desc(),
+        diffWgt_->getInitIntlMD(),
+        diffTop_->getIntlMem()->get_primitive_desc().desc(),
+        strides, padding, padding, padding_kind::zero));
+      bwdWgtDesc.reset(new convolution_backward_weights::desc(
+        algorithm::convolution_direct,
+        dataBot_->getIntlMem()->get_primitive_desc().desc(),
+        diffWgt_->getInitIntlMD(),
+        diffTop_->getIntlMem()->get_primitive_desc().desc(),
+        strides, padding, padding, padding_kind::zero));
+    }
+    std::shared_ptr<convolution_forward::primitive_desc> bwdWgtFwdPD;
+    bwdWgtFwdPD.reset(new convolution_forward::primitive_desc(
+      *bwdWgtFwdDesc, engineCpu_));
+    bwdWgtPD_.reset(new convolution_backward_weights::primitive_desc(
+      *bwdWgtDesc, engineCpu_, *bwdWgtFwdPD));
+    if (hasBias_ && diffBias_ != NULL) {
+      diffBias_->initCvt(bwdWgtPD_->diff_bias_primitive_desc(),
+                      dnnCvtInternal2User);
+    }
+    diffWgt_->initCvt(memory::primitive_desc(bwdWgtPD_->diff_weights_primitive_desc()),
+                      dnnCvtInternal2User);
+    CHECK(dataBot_->getIntlMem()->get_primitive_desc() ==
+      bwdWgtPD_->src_primitive_desc());
+    CHECK(diffTop_->getIntlMem()->get_primitive_desc() ==
+      bwdWgtPD_->diff_dst_primitive_desc());
+  }
+
 }
 
 void DnnConvLayer::forward(PassType passType) {
   Layer::forward(passType);
 
-  /// For dnn init
   /* since can not get batchsize at layer.init(),
    * so init dnn at forward by now*/
-
+  /// For dnn init
   if (!dnnFwdInited_) {
-    initDnn();
+    initDnnFwd();
     dnnFwdInited_ = true;
   }
 
@@ -288,37 +359,9 @@ void DnnConvLayer::forward(PassType passType) {
 
 void DnnConvLayer::backward(const UpdateCallback &callback) {
   backwardActivation();
-/*
-int st;
-  MatrixPtr topGrad = getOutputGrad(); // here is the top diff
-  real *topdiff = topGrad->getData();
-
-  // 
-  if (diffTop_->needConversion()) {
-  //  LOG(INFO) << "convert user top to internal";
-    CHECK_ST(diffTop_->executeConversion(topdiff), st);
-    resConv_[dnnResourceDiffDst] = diffTop_->getData();
-  } else {
-    resConv_[dnnResourceDiffDst] = (void *)topdiff;
-  }
-  
-  if (biases_ && biases_->getWGrad()) {   
-    // TODO: check data for bias backward
-    real* biasdiff = biases_->getWGrad()->getData();
-    if (diffBias_->needConversion()) {
-      resConv_[dnnResourceDiffBias] = diffBias_->getData();
-      CHECK_ST(dnnExecute(convBwdBias_, resConv_), st);
-      CHECK_ST(diffBias_->executeConversion(biasdiff), st);
-    } else {
-      resConv_[dnnResourceDiffBias] = (void *)biasdiff;
-      CHECK_ST(dnnExecute(convBwdBias_, resConv_), st);
-    }
-    LOG(INFO) << "!!!!!!!!!backward bias execute completed!!!!!!!!";
-
-  //  bpropBiases(topGrad);
-
-    // Increasing the number of gradient 
-    biases_->getParameterPtr()->incUpdate(callback);
+  if (!dnnBwdInited_) {
+    initDnnBwd();
+    dnnBwdInited_ = true;
   }
 
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
@@ -327,54 +370,46 @@ int st;
     if (NULL == prevLayer->getOutputGrad()) {
       return;
     }
-    real *filterData = weights_[i]->getW()->getData(); // TODO: check index
-    if (dataFilter_->needConversion()) {
-      resConv_[dnnResourceFilter] = dataFilter_->getData();
-    } else {
-      resConv_[dnnResourceFilter] = (void *)filterData;
-    }
-    real* bottomdiff = prevLayer->getOutputGrad()->getData();
-    // TODO: check top and bottom for data backward
-    if (diffBottom_->needConversion()) {
-      resConv_[dnnResourceDiffSrc] = diffBottom_->getData();
-      CHECK_ST(dnnExecute(convBwdData_, resConv_), st);
-      CHECK_ST(diffBottom_->executeConversion(bottomdiff), st);
-    } else {
-      resConv_[dnnResourceDiffDst] = (void *)bottomdiff;
-      CHECK_ST(dnnExecute(convBwdData_, resConv_), st);
-    }
+    auto bwdData = convolution_backward_data(
+      *bwdDataPD_, *(diffTop_->getIntlMem()),
+      *(dataWgt_->getIntlMem()), *(diffBot_->getIntlMem()));
+    std::vector<primitive> netData;
 
+    diffTop_->submitCvt(netData);
+    netData.push_back(bwdData);
+    diffBot_->submitCvt(netData);
+    stream(stream::kind::eager).submit(netData).wait();
     LOG(INFO) << "!!!!!!!!!backward data execute completed!!!!!!!!";
 
-    //bpropActs(topGrad, i);
-    
     if (weights_[i]->getWGrad()) {
-      real *imgData = getPrev(i)->getOutputValue()->getData();
-      if (dataBottom_->needConversion()) {
-        resConv_[dnnResourceSrc] = dataBottom_->getData();
-      } else {
-        resConv_[dnnResourceSrc] = (void *)imgData;
-      }
-      // TODO: check data for filter backward
-      real* filterdiff = weights_[i]->getWGrad()->getData();
-      if (diffFilter_->needConversion()) {
-        resConv_[dnnResourceDiffFilter] = diffFilter_->getData();
-        CHECK_ST(dnnExecute(convBwdFilter_, resConv_), st);
-        CHECK_ST(diffFilter_->executeConversion(filterdiff), st);
-      } else {
-        resConv_[dnnResourceDiffFilter] = (void *)filterdiff;
-        CHECK_ST(dnnExecute(convBwdFilter_, resConv_), st);
-      }
-      LOG(INFO) << "!!!!!!!!!backward filter execute completed!!!!!!!!";
-
+      std::vector<primitive> netWgt;
       
-      // Then, calculate the W-gradient for the current layer 
-      //bpropWeights(topGrad, i);
+      std::shared_ptr<convolution_backward_weights> bwdWgt;
+      if (biases_ && biases_->getWGrad()) {
+        // bias backward can only execute in filter backward with MKL-DNN
+        bwdWgt.reset(new convolution_backward_weights(*bwdWgtPD_,
+          *(dataBot_->getIntlMem()), *(diffTop_->getIntlMem()), 
+          *(dataWgt_->getIntlMem()), *(dataBias_->getIntlMem())));
+        netWgt.push_back(*bwdWgt);
+        diffBias_->submitCvt(netWgt);
+      } else {
+        bwdWgt.reset(new convolution_backward_weights(*bwdWgtPD_,
+          *(dataBot_->getIntlMem()), *(diffTop_->getIntlMem()), 
+          *(dataWgt_->getIntlMem()), *(dataBias_->getIntlMem())));
+        netWgt.push_back(*bwdWgt);
+      }
+      diffWgt_->submitCvt(netWgt);
+      stream(stream::kind::eager).submit(netWgt).wait();
+      LOG(INFO) << "!!!!!!!!!backward filter execute completed!!!!!!!!";
       // Increasing the number of gradient 
       weights_[i]->getParameterPtr()->incUpdate(callback);
     }
+    
   }
-  */
+  if (biases_ && biases_->getWGrad()) {
+    // Increasing the number of gradient 
+    biases_->getParameterPtr()->incUpdate(callback);
+  }
 }
 
 }  // namespace paddle
