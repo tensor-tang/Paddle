@@ -32,8 +32,20 @@ if(NOT "${CBLAS_PROVIDER}" STREQUAL "MKL")
         layers/MklConvLayer.h)
     list(REMOVE_ITEM GSERVER_SOURCES
         layers/MklConvLayer.cpp)
+    message(STATUS "Skip compiling with Mkllayers")
 else()
     message(STATUS "Compile with MKLlayers")
+endif()
+
+# compile DnnLayers, only if have MKLDNN library
+if(NOT WITH_MKLDNN)
+    file(GLOB_RECURSE DNN_HEADER RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "Dnn*.h")
+    file(GLOB_RECURSE DNN_SOURCES RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "Dnn*.cpp")
+    list(REMOVE_ITEM GSERVER_HEADER ${DNN_HEADER})
+    list(REMOVE_ITEM GSERVER_SOURCES ${DNN_SOURCES})
+    message(STATUS "Skip compiling with Dnnlayers")
+else()
+    message(STATUS "Compile with Dnnlayers")
 endif()
 
 if(NOT WITH_GPU)

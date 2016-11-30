@@ -22,26 +22,6 @@ find_library(MKL_CORE_LIB NAMES mkl_core PATHS ${MKL_ROOT}/lib ${MKL_ROOT}/lib/i
 find_library(MKL_SEQUENTIAL_LIB NAMES mkl_sequential PATHS ${MKL_ROOT}/lib ${MKL_ROOT}/lib/intel64)
 find_library(MKL_INTEL_LP64 NAMES mkl_intel_lp64 PATHS ${MKL_ROOT}/lib ${MKL_ROOT}/lib/intel64)
 
-# set(DNN_ROOT $ENV{MKL_ROOT})
-set(DNN_ROOT $ENV{DNN_ROOT} CACHE PATH "Folder contains DNN.....................")
-message(STATUS ".............DNN_ROOT:" ${DNN_ROOT})
-#find_path(DNN_INCLUDE_DIR mkl.h PATHS ${MKL_ROOT}/include)
-find_library(IOMP5 NAMES iomp5 PATHS ${DNN_ROOT}/lib)
-find_library(MKLML_GNU NAMES mklml_gnu PATHS ${DNN_ROOT}/lib)
-find_library(MKLML_INTEL NAMES mklml_intel PATHS ${DNN_ROOT}/lib)
-find_library(MKLDNN NAMES mkldnn PATHS /usr/local/lib)
-
-if(IOMP5 AND MKLML_GNU AND MKLML_INTEL AND MKLDNN)
-    set(DNN_LIBS ${MKLDNN}
-            ${MKLML_INTEL}
-            ${MKLML_GNU}
-            ${IOMP5})
-    message(STATUS "111111111111111find:" ${MKLDNN}
-            ${MKLML_INTEL}
-            ${MKLML_GNU}
-            ${IOMP5})
-endif()
-
 if(MKL_INCLUDE_DIR AND MKL_CORE_LIB AND MKL_SEQUENTIAL_LIB AND MKL_INTEL_LP64)
   set(CBLAS_PROVIDER MKL)
   set(CBLAS_INC_DIR ${MKL_INCLUDE_DIR})
