@@ -346,7 +346,7 @@ void DnnConvLayer::forward(PassType passType) {
   }
   
   // output donot reorder untill last mkl-dnn layer
-  dataBot_->submitCvt(fwd);
+  dataTop_->submitCvt(fwd);
 
   // start forward
   stream(stream::kind::eager).submit(fwd).wait();
