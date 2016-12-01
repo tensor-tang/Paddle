@@ -70,8 +70,8 @@ public:
      return this->pUser_;
   }
   
-  // init conversion(reorder)
-  void initCvt(memory::primitive_desc intlPD, int cvtType) {
+  // init conversion(reorder) return true if need cvt.
+  bool initCvt(memory::primitive_desc intlPD, int cvtType) {
     CHECK(cvtType == dnnCvtUser2Internal || cvtType == dnnCvtInternal2User) <<
       "please specify one type of conversion";
     CHECK(pUser_) << "need create user layout before init conversion";
@@ -88,21 +88,33 @@ public:
       } else {
         this->pCvt_.reset(new reorder(*pIntl_, *pUser_));
       }
+      return true;
     } else {
       type_ = dnnCvtNoNeed;
-      LOG(INFO) << "no need reorder";
+      return false;
     }
   }
   
+  bool needCvt() {
+    CHECK(type_) << "init conversion firstly";
+    if (type_ == dnnCvtNoNeed) {
+      return false;
+    } else {
+      return pCvt_==NULL ? false : true;
+    }
+  }
   /**
    * submit reorder conversion.
    */
-  void submitCvt(std::vector<primitive> &net) {
+  void submitCvt(std::vector<primitive> &net, void* userData = NULL) {
     CHECK(type_) << "init conversion firstly";
     if (type_ == dnnCvtNoNeed) {
       return;
     } else {
       CHECK(pCvt_) << "init conversion firstly";
+      if (userData && (userData != pUser_->get_data_handle())) {
+        pUser_->set_data_handle(userData);
+      }
       net.push_back(*pCvt_);
     }
   }

@@ -1566,6 +1566,10 @@ class ConvLayerBase(LayerBase):
 class ConvLayer(ConvLayerBase):
     layer_type = 'exconv'
 
+@config_layer('dnnconv')
+class ConvLayer(ConvLayerBase):
+    layer_type = 'dnnconv'
+
 @config_layer('mklconv')
 class ConvLayer(ConvLayerBase):
     layer_type = 'mklconv'

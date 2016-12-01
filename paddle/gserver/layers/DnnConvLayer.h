@@ -20,12 +20,10 @@ namespace paddle {
  *
  * The config file api is img_conv_layer.
  */
-class DnnConvLayer : public ConvBaseLayer {
+class DnnConvLayer : public Layer {
 
 protected:
-  /// 
-  bool dnnFwdInited_;
-  bool dnnBwdInited_;
+  typedef std::vector<int> IntV;
   /// For dnn engine
   engine engineCpu_;
   /// For dnn convolution. Primitive Desc
@@ -44,9 +42,7 @@ protected:
   DnnBufferPtr diffBias_;
   DnnBufferPtr diffTop_;
 
-  /// has bias
-  bool hasBias_;
-
+  bool needBwdReset_;
   // The spatial dimensions of height of input feature map.
   IntV ih_;
   // The spatial dimensions of width of input feature map.
@@ -63,30 +59,40 @@ protected:
   IntV ic_, gp_;
   // output channel == filter number
   int oc_;
+  // batchsize
+  int bs_;
+
+  /// shape of weight: (oc, ic*fh*fw/gp)
+  WeightList weights_;
+  /// If shared_biases is false shape of bias: (oc, 1)
+  /// If shared_biases is ture shape of bias:
+  /// (oc * outputX * outputY, 1)
+  std::unique_ptr<Weight> biases_;
+
+
 public:
   explicit DnnConvLayer(const LayerConfig& config)
-    : ConvBaseLayer(config),
-      dnnFwdInited_(false),
-      dnnBwdInited_(false),
+    : Layer(config),
       engineCpu_(engine::cpu, 0),
       fwdPD_(NULL),
       bwdDataPD_(NULL),
       bwdWgtPD_(NULL),
-      dataBot_(new DnnBuffer()),
-      dataWgt_(new DnnBuffer()),
-      dataBias_(new DnnBuffer()),
-      dataTop_(new DnnBuffer()),
+      dataBot_(NULL),
+      dataWgt_(NULL),
+      dataBias_(NULL),
+      dataTop_(NULL),
       diffBot_(NULL),
       diffWgt_(NULL),
       diffBias_(NULL),
-      diffTop_(NULL)
+      diffTop_(NULL),
+      needBwdReset_(true)
     {}
 
   ~DnnConvLayer() {}
   
   /// for dnn
-  void initDnnFwd();
-  void initDnnBwd();
+  void initOrResetDnnFwd();
+  void initOrResetDnnBwd();
   int dimSize(const memory::dims &t) {
     int sz = 1;
     for (size_t i = 0; i < t.size(); ++i) 
@@ -97,8 +103,21 @@ public:
   bool init(const LayerMap& layerMap, const ParameterMap& parameterMap);
 
   size_t getSize();
+  int outputSize(int imageSize, int filterSize, int padding, int stride) {
+    int outputSize;
+    bool caffeMode = true;
+    if (!caffeMode) {
+      outputSize =
+          (imageSize - filterSize + 2 * padding + stride - 1) / stride + 1;
+    } else {
+      outputSize = (imageSize - filterSize + 2 * padding) / stride + 1;
+    }
+    CHECK_GE(outputSize, 1);
+    return outputSize;
+  }
   void forward(PassType passType);
   void backward(const UpdateCallback& callback);
+  
 private:
   void printInfo() {
     for(size_t i = 0; i < iw_.size(); ++i) {
