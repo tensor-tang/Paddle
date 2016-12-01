@@ -103,18 +103,22 @@ public:
       return pCvt_==NULL ? false : true;
     }
   }
+  void setUserData(void* userData) {
+    if (userData && (userData != pUser_->get_data_handle())) {
+      pUser_->set_data_handle(userData);
+    }
+  }
   /**
    * submit reorder conversion.
    */
   void submitCvt(std::vector<primitive> &net, void* userData = NULL) {
     CHECK(type_) << "init conversion firstly";
+    // set user data handle, whether need reorder or not
+    setUserData(userData);
     if (type_ == dnnCvtNoNeed) {
       return;
     } else {
       CHECK(pCvt_) << "init conversion firstly";
-      if (userData && (userData != pUser_->get_data_handle())) {
-        pUser_->set_data_handle(userData);
-      }
       net.push_back(*pCvt_);
     }
   }
