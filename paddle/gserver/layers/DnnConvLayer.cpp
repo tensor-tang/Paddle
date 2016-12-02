@@ -42,7 +42,6 @@ bool DnnConvLayer::init(const LayerMap &layerMap,
      // TODO: considerate more than One input
     LOG(FATAL) << "Only support one input layer with MKL-DNN by now!";
   }
-  
   oc_ = config_.num_filters();
   bs_ = 0;
   ih_.clear();
@@ -102,7 +101,7 @@ bool DnnConvLayer::init(const LayerMap &layerMap,
   return true;
 }
 
-size_t DnnConvLayer::getSize() {
+size_t DnnConvLayer::getOneBatchSize() {
   CHECK_NE(inputLayers_.size(), 0UL);
   size_t layerSize = 0;
   for (size_t i = 0; i < inputLayers_.size(); i++) {
@@ -117,11 +116,12 @@ size_t DnnConvLayer::getSize() {
 
 void DnnConvLayer::initOrResetDnnFwd() {
   if (bs_ == getInput(0).getBatchSize()) {
-    resetOutput(bs_, getSize());
+    // can remove resetoutput when confirm how multi inputs work and whether to clear diff
+    resetOutput(bs_, getOneBatchSize()); 
     return;
   }
   bs_ = getInput(0).getBatchSize();
-  resetOutput(bs_, getSize());
+  resetOutput(bs_, getOneBatchSize());
   
   LOG(INFO) << "init or reset conv forward of layer: " << config_.name();
   LOG(INFO) << " reshape batch size: " << bs_;
@@ -143,7 +143,6 @@ void DnnConvLayer::initOrResetDnnFwd() {
     ow_[i] = outputSize(iw_[i], fw_[i], pw_[i], sw_[i]);
     getOutput().setFrameHeight(oh_[0]);
     getOutput().setFrameWidth(ow_[0]);
-
     // create dim structure that describes user data.
     memory::dims botDims = {bs_, ic_[i], ih_[i], iw_[i]};
     memory::dims wgtDims = (gp_[i] == 1) ? 
@@ -356,10 +355,7 @@ void DnnConvLayer::initOrResetDnnBwd() {
 void DnnConvLayer::forward(PassType passType) {
   Layer::forward(passType);
 
-  /* since can not get batchsize at layer.init(),
-   * so init dnn at forward by now*/
- 
-  /// For dnn init
+  /// For dnn fwd init or reset
   initOrResetDnnFwd();
 
   int i=0;
@@ -381,9 +377,9 @@ void DnnConvLayer::forward(PassType passType) {
   dataTop_->submitCvt(convFwd, getOutputValue()->getData());
 
   // start forward
+  REGISTER_TIMER_INFO("dnnFwd", getName().c_str());
   stream(stream::kind::eager).submit(convFwd).wait();
 //  LOG(INFO) << "!!!!!!!!Forward completed!!!!!!!";
-
 
   /* activation */
   forwardActivation();
@@ -438,6 +434,7 @@ void DnnConvLayer::backward(const UpdateCallback &callback) {
     // Increasing the number of gradient 
     biases_->getParameterPtr()->incUpdate(callback);
   }
+
 }
 
 

@@ -69,7 +69,6 @@ protected:
   /// (oc * outputX * outputY, 1)
   std::unique_ptr<Weight> biases_;
 
-
 public:
   explicit DnnConvLayer(const LayerConfig& config)
     : Layer(config),
@@ -89,7 +88,7 @@ public:
     {}
 
   ~DnnConvLayer() {}
-  
+
   /// for dnn
   void initOrResetDnnFwd();
   void initOrResetDnnBwd();
@@ -102,7 +101,7 @@ public:
 
   bool init(const LayerMap& layerMap, const ParameterMap& parameterMap);
 
-  size_t getSize();
+  size_t getOneBatchSize();
   int outputSize(int imageSize, int filterSize, int padding, int stride) {
     int outputSize;
     bool caffeMode = true;
