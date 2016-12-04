@@ -69,6 +69,29 @@ public:
   std::shared_ptr<memory> getUserMem() {
      return this->pUser_;
   }
+
+  // user primitive desc
+  memory::primitive_desc getUserPD() {
+    CHECK(pUser_) << "haven't init user layout";
+    return pUser_->get_primitive_desc();
+  }
+
+  // internal primitive desc
+  memory::primitive_desc getIntlPD() {
+  CHECK(pIntl_) << "haven't init internal layout, call initCvt firstly";
+    return pIntl_->get_primitive_desc();
+  }
+
+  // get memory desc
+  memory::desc getUserMD() {
+    CHECK(pUser_) << "haven't init user layout";
+    return pUser_->get_primitive_desc().desc();
+  }
+
+  memory::desc getIntlMD() {
+    CHECK(pIntl_) << "haven't init internal layout, call initCvt firstly";
+    return pIntl_->get_primitive_desc().desc();
+  }
   
   // init conversion(reorder) return true if need cvt.
   bool initCvt(memory::primitive_desc intlPD, int cvtType) {
@@ -78,7 +101,7 @@ public:
     // CHECK(pIntl_) << "need create internal layout before init conversion";
     pIntl_ = pUser_;
     type_ = cvtType;
-    if (intlPD != pUser_->get_primitive_desc()) {
+    if (intlPD != getUserPD()) {
       // allocate internal src memory from user
       this->pIntl_.reset(new mkldnn::memory(intlPD));
 
