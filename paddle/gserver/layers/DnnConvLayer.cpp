@@ -354,18 +354,19 @@ void DnnConvLayer::initOrResetDnnBwd() {
 
 }
 
-void DnnConvLayer::forward(PassType passType) {
-  Layer::forward(passType);
-
-  /// For dnn fwd init or reset
-  initOrResetDnnFwd();
-
-  int i=0;
+void DnnConvLayer::submitFwd(
+  int inputIdx, const MatrixPtr& botVal, const MatrixPtr& topVal) {
+  real* botdata = botVal->getData();
+  real* topdata = topVal->getData();
+  real* wgtdata = weights_[inputIdx]->getW()->getData();
   std::vector<primitive> convFwd;
-  dataBot_->submitCvt(convFwd, getPrev(i)->getOutputValue()->getData());
-  dataWgt_->submitCvt(convFwd);
+  dataBot_->submitCvt(convFwd, botdata);
+  dataWgt_->submitCvt(convFwd, wgtdata);
   if(biases_ && biases_->getW()) {
-    dataBias_->submitCvt(convFwd);
+    // only for shared bias
+    // TODO: enable unshared bias
+    real* biasdata = biases_->getW()->getData();
+    dataBias_->submitCvt(convFwd, biasdata);
     convFwd.push_back(convolution_forward(*fwdPD_,
                 *(dataBot_->getIntlMem()), *(dataWgt_->getIntlMem()),
                 *(dataBias_->getIntlMem()), *(dataTop_->getIntlMem())));
@@ -375,14 +376,70 @@ void DnnConvLayer::forward(PassType passType) {
                 *(dataTop_->getIntlMem())));
   }
   
-  // output donot reorder untill last mkl-dnn layer
-  dataTop_->submitCvt(convFwd, getOutputValue()->getData());
+  dataTop_->submitCvt(convFwd, topdata);
 
   // start forward
   REGISTER_TIMER_INFO("dnnFwd", getName().c_str());
   stream(stream::kind::eager).submit(convFwd).wait();
-//  LOG(INFO) << "!!!!!!!!Forward completed!!!!!!!";
+}
 
+void DnnConvLayer::submitBwdData(
+  int inputIdx, const MatrixPtr& topGrad, const MatrixPtr& botGrad) {
+  if (botGrad == NULL) {
+    return;
+  }
+  real* topdiff = topGrad->getData();
+  real* wgtdata = weights_[inputIdx]->getW()->getData();
+  real* botdiff = botGrad->getData();
+  std::vector<primitive> convBwdData;
+  dataWgt_->submitCvt(convBwdData, wgtdata);
+  diffTop_->submitCvt(convBwdData, topdiff);
+  auto bwdData = convolution_backward_data(
+    *bwdDataPD_, *(diffTop_->getIntlMem()),
+    *(dataWgt_->getIntlMem()), *(diffBot_->getIntlMem()));
+  convBwdData.push_back(bwdData);
+  diffBot_->submitCvt(convBwdData, botdiff);
+  stream(stream::kind::eager).submit(convBwdData).wait();
+//   LOG(INFO) << "!!!!!!!!!backward data execute completed!!!!!!!!";
+}
+
+void DnnConvLayer::submitBwdWgts(
+  int inputIdx, const MatrixPtr& botVal, const MatrixPtr& topGrad) {
+  real* botdata = botVal->getData();
+  real* topdiff = topGrad->getData();
+  real* wgtdiff = weights_[inputIdx]->getWGrad()->getData();
+  std::vector<primitive> convBwdWgt;
+  std::shared_ptr<convolution_backward_weights> bwdWgt;
+  dataBot_->submitCvt(convBwdWgt, botdata);
+  diffTop_->submitCvt(convBwdWgt, topdiff);
+  if (biases_ && biases_->getWGrad()) {
+    // bias backward can only execute in filter backward with MKL-DNN
+    real* biasdiff = biases_->getWGrad()->getData();
+    bwdWgt.reset(new convolution_backward_weights(*bwdWgtPD_,
+      *(dataBot_->getIntlMem()), *(diffTop_->getIntlMem()), 
+      *(diffWgt_->getIntlMem()), *(diffBias_->getIntlMem())));
+    convBwdWgt.push_back(*bwdWgt);
+    diffBias_->submitCvt(convBwdWgt, biasdiff);
+  } else {
+    bwdWgt.reset(new convolution_backward_weights(*bwdWgtPD_,
+      *(dataBot_->getIntlMem()), *(diffTop_->getIntlMem()), 
+      *(diffWgt_->getIntlMem())));
+    convBwdWgt.push_back(*bwdWgt);
+  }
+  diffWgt_->submitCvt(convBwdWgt, wgtdiff);
+  stream(stream::kind::eager).submit(convBwdWgt).wait();
+//    LOG(INFO) << "!!!!!!!!!backward filter execute completed!!!!!!!!";
+}
+
+void DnnConvLayer::forward(PassType passType) {
+  Layer::forward(passType);
+
+  /// For dnn fwd init or reset
+  initOrResetDnnFwd();
+  for (size_t i = 0; i != inputLayers_.size(); ++i) {
+    submitFwd(i, getPrev(i)->getOutputValue(), getOutputValue());
+  }
+//  LOG(INFO) << "!!!!!!!!Forward completed!!!!!!!";
   /* activation */
   forwardActivation();
 }
@@ -393,47 +450,13 @@ void DnnConvLayer::backward(const UpdateCallback &callback) {
   initOrResetDnnBwd();
 
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
-    // First, calculate the input layers error 
-    LayerPtr prevLayer = getPrev(i);
-    // backward weights and bias before data, since may have not diffbot
+    // backward weights before data, since may have not botdiff in some layer
     if (weights_[i]->getWGrad()) {
-      std::vector<primitive> convBwdWgt;
-      std::shared_ptr<convolution_backward_weights> bwdWgt;
-    //  dataBot_->submitCvt(convBwdWgt, getPrev(i)->getOutputValue()->getData());
-      if (biases_ && biases_->getWGrad()) {
-        // bias backward can only execute in filter backward with MKL-DNN
-        bwdWgt.reset(new convolution_backward_weights(*bwdWgtPD_,
-          *(dataBot_->getIntlMem()), *(diffTop_->getIntlMem()), 
-          *(diffWgt_->getIntlMem()), *(diffBias_->getIntlMem())));
-        convBwdWgt.push_back(*bwdWgt);
-        diffBias_->submitCvt(convBwdWgt);
-      } else {
-        bwdWgt.reset(new convolution_backward_weights(*bwdWgtPD_,
-          *(dataBot_->getIntlMem()), *(diffTop_->getIntlMem()), 
-          *(diffWgt_->getIntlMem())));
-        convBwdWgt.push_back(*bwdWgt);
-      }
-      diffWgt_->submitCvt(convBwdWgt);
-      stream(stream::kind::eager).submit(convBwdWgt).wait();
-  //    LOG(INFO) << "!!!!!!!!!backward filter execute completed!!!!!!!!";
+      submitBwdWgts(i, getPrev(i)->getOutputValue(), getOutputGrad());
       // Increasing the number of gradient 
       weights_[i]->getParameterPtr()->incUpdate(callback);
     }
-    
-    if (NULL == prevLayer->getOutputGrad()) {
-      return;
-    }
-    auto bwdData = convolution_backward_data(
-      *bwdDataPD_, *(diffTop_->getIntlMem()),
-      *(dataWgt_->getIntlMem()), *(diffBot_->getIntlMem()));
-    std::vector<primitive> convBwdData;
-  //  dataWgt_->submitCvt(convBwdData);
-    diffTop_->submitCvt(convBwdData, getOutputGrad()->getData());
-    convBwdData.push_back(bwdData);
-    diffBot_->submitCvt(convBwdData, prevLayer->getOutputGrad()->getData());
-    stream(stream::kind::eager).submit(convBwdData).wait();
- //   LOG(INFO) << "!!!!!!!!!backward data execute completed!!!!!!!!";
-   
+    submitBwdData(i, getOutputGrad(), getPrev(i)->getOutputGrad());
   }
   if (biases_ && biases_->getWGrad()) {
     // Increasing the number of gradient 

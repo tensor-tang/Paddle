@@ -114,6 +114,24 @@ public:
     CHECK_GE(outputSize, 1);
     return outputSize;
   }
+  
+  /* forward data
+   * input: botdata, wgtdata, biasdata
+   * output topdata
+   */
+  void submitFwd(int inputIdx, const MatrixPtr& botVal, const MatrixPtr& topVal);
+  
+  /* backward data
+   * input: topdiff, wgtdata
+   * output botdiff
+   */
+  void submitBwdData(int inputIdx, const MatrixPtr& topGrad, const MatrixPtr& botGrad);
+
+  /* backward wgt and bias
+   * input: topdiff, botdata
+   * output wgtdiff, biasdiff
+   */
+  void submitBwdWgts(int inputIdx, const MatrixPtr& botVal, const MatrixPtr& topGrad);
   void forward(PassType passType);
   void backward(const UpdateCallback& callback);
   
