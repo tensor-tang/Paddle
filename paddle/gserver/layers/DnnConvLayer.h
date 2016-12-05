@@ -114,6 +114,16 @@ public:
     CHECK_GE(outputSize, 1);
     return outputSize;
   }
+  void clearAllCvtFlags() {
+    if (dataBot_) dataBot_->clearCvtFlag();
+    if (dataTop_) dataTop_->clearCvtFlag();
+    if (dataBias_) dataBias_->clearCvtFlag();
+    if (dataWgt_) dataWgt_->clearCvtFlag();
+    if (diffBot_) diffBot_->clearCvtFlag();
+    if (diffTop_) diffTop_->clearCvtFlag();
+    if (diffBias_) diffBias_->clearCvtFlag();
+    if (diffWgt_) diffWgt_->clearCvtFlag();
+  }
   
   /* forward data
    * input: botdata, wgtdata, biasdata

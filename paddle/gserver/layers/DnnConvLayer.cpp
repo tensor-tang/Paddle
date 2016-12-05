@@ -436,6 +436,8 @@ void DnnConvLayer::forward(PassType passType) {
 
   /// For dnn fwd init or reset
   initOrResetDnnFwd();
+
+  clearAllCvtFlags();
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     submitFwd(i, getPrev(i)->getOutputValue(), getOutputValue());
   }

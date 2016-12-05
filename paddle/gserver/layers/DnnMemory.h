@@ -38,7 +38,8 @@ protected:
   /// conversion handle and type
   std::shared_ptr<primitive> pCvt_;
 
-  int   type_;
+  int  type_;
+  bool hasCvted_; // to avoid re-cvt
   
 public:
   explicit DnnBuffer() :
@@ -46,7 +47,8 @@ public:
     pUser_(NULL),
     pIntl_(NULL),
     pCvt_(NULL),
-    type_(dnnCvtNone){}
+    type_(dnnCvtNone),
+    hasCvted_(false) {}
 
   ~DnnBuffer() {}
   
@@ -93,6 +95,10 @@ public:
     return pIntl_->get_primitive_desc().desc();
   }
   
+  void clearCvtFlag() {
+    hasCvted_ = false;
+  }
+  
   // init conversion(reorder) return true if need cvt.
   bool initCvt(memory::primitive_desc intlPD, int cvtType) {
     CHECK(cvtType == dnnCvtUser2Internal || cvtType == dnnCvtInternal2User) <<
@@ -101,6 +107,7 @@ public:
     // CHECK(pIntl_) << "need create internal layout before init conversion";
     pIntl_ = pUser_;
     type_ = cvtType;
+    clearCvtFlag();
     if (intlPD != getUserPD()) {
       // allocate internal src memory from user
       this->pIntl_.reset(new mkldnn::memory(intlPD));
@@ -126,26 +133,29 @@ public:
       return pCvt_==NULL ? false : true;
     }
   }
-  void setUserData(void* userData) {
-    if (userData && (userData != pUser_->get_data_handle())) {
-      pUser_->set_data_handle(userData);
-    }
-  }
+
   /**
    * submit reorder conversion.
    */
   void submitCvt(std::vector<primitive> &net, void* userData = NULL) {
     CHECK(type_) << "init conversion firstly";
-    // set user data handle, whether need reorder or not
-    setUserData(userData);
-    if (type_ == dnnCvtNoNeed) {
-      return;
-    } else {
-      CHECK(pCvt_) << "init conversion firstly";
-      net.push_back(*pCvt_);
+    // set user data handle, whether if need reorder or not
+    if (userData) {
+      if (userData != pUser_->get_data_handle()) {
+        pUser_->set_data_handle(userData);
+        //data changed, so donot care hasCvted_
+      } else { // user data do not change
+        if (hasCvted_)  return;
+      }
+    } else { // user data do not change
+      if (hasCvted_)  return;
     }
+    if (type_ == dnnCvtNoNeed)
+      return;
+    CHECK(pCvt_) << "init conversion firstly";
+    net.push_back(*pCvt_);
+    hasCvted_ = true;
   }
-
 };
 
 typedef std::shared_ptr<DnnBuffer> DnnBufferPtr;
