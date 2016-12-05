@@ -125,6 +125,10 @@ public:
     if (diffWgt_) diffWgt_->clearCvtFlag();
   }
   
+  /* init the memory format of input and output data or diff
+   */
+  void initMemoryFormat();
+  
   /* forward data
    * input: botdata, wgtdata, biasdata
    * output topdata

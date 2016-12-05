@@ -27,6 +27,7 @@ limitations under the License. */
 #include "paddle/gserver/activations/ActivationFunction.h"
 #include <paddle/parameter/ParallelParameter.h>
 #include <paddle/parameter/Weight.h>
+#include "mkldnn.hpp"
 
 /// Macro for registering a layer type.
 /// Example: REGISTER_LAYER(crf_error, CRFDecodingErrorLayer);
@@ -100,6 +101,13 @@ protected:
 
   /// Mark input grad in(true) or out(false) of backward function.
   std::vector<bool> markInBackward_;
+
+  /// MKLDNN memory format
+  // defalut: memory::format::nchw;
+  mkldnn::memory::format fmtBotData_;
+  mkldnn::memory::format fmtTopData_;
+  mkldnn::memory::format fmtBotDiff_;
+  mkldnn::memory::format fmtTopDiff_;
 
 public:
   /**
@@ -203,6 +211,31 @@ public:
 
   /// Register a Layer
   static ClassRegistrar<Layer, LayerConfig> registrar_;
+  
+  void setFmtBotData(mkldnn::memory::format fmt) {
+    fmtBotData_ = fmt;
+  }
+  void setFmtBotDiff(mkldnn::memory::format fmt) {
+    fmtBotDiff_ = fmt;
+  }
+  void setFmtTopData(mkldnn::memory::format fmt) {
+    fmtTopData_ = fmt;
+  }
+  void setFmtTopDiff(mkldnn::memory::format fmt) {
+    fmtTopDiff_ = fmt;
+  }
+  mkldnn::memory::format getFmtTopData() {
+    return fmtTopData_;
+  }
+  mkldnn::memory::format getFmtTopDiff() {
+    return fmtTopDiff_;
+  }
+  mkldnn::memory::format getFmtBotData() {
+    return fmtBotData_;
+  }
+  mkldnn::memory::format getFmtBotDiff() {
+    return fmtBotDiff_;
+  }
 
   /** 
    * Get the flag whether layer need to compute gradient.

@@ -41,7 +41,12 @@ Layer::Layer(const LayerConfig& config, bool useGpu)
     : config_(config),
       useGpu_(useGpu),
       deviceId_(-1),
-      needSequenceInfo_(true) {}
+      needSequenceInfo_(true),
+      fmtBotData_(mkldnn::memory::format::nchw),
+      fmtTopData_(mkldnn::memory::format::nchw),
+      fmtBotDiff_(mkldnn::memory::format::nchw),
+      fmtTopDiff_(mkldnn::memory::format::nchw)
+      {}
 
 bool Layer::init(const LayerMap& layerMap, const ParameterMap& parameterMap) {
   if (useGpu_ && FLAGS_parallel_nn) {

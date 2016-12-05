@@ -27,11 +27,10 @@ namespace paddle {
 class DnnBuffer {
 
 protected:
-  /// user and internal layout
-//  memory::desc userMD;
-//  memory::desc intlMD_;
-  std::shared_ptr<memory::dims> pDims_;
+  /// dims of user memory
+  memory::dims dims_;
   
+  /// user and internal layout
   std::shared_ptr<memory> pUser_;
   std::shared_ptr<memory> pIntl_;
   
@@ -42,8 +41,8 @@ protected:
   bool hasCvted_; // to avoid re-cvt
   
 public:
-  explicit DnnBuffer() :
-    pDims_(NULL),
+  explicit DnnBuffer(memory::dims dm) :
+    dims_(dm),
     pUser_(NULL),
     pIntl_(NULL),
     pCvt_(NULL),
@@ -51,26 +50,35 @@ public:
     hasCvted_(false) {}
 
   ~DnnBuffer() {}
+
+  const memory::dims& getDims() {
+    return dims_;
+  }
+  memory::format getUserFmt() {
+    return memory::format(getUserMD().data.format);
+  }
   
-  void initUser(void *pd, memory::dims &dm, memory::format fmt, engine eg,
+  void initUser(void *pd, memory::format fmt, engine eg,
                    memory::data_type tp = memory::data_type::f32) {
-    this->pDims_.reset(new memory::dims(dm));
-    memory::desc desc = memory::desc({dm}, tp, fmt);
-    this->pUser_.reset(new memory(memory::primitive_desc(desc, eg), pd));
+    memory::desc desc = memory::desc({dims_}, tp, fmt);
+    pUser_.reset(new memory(memory::primitive_desc(desc, eg), pd));
   }
 
-  memory::desc getInitIntlMD(memory::data_type tp = memory::data_type::f32) {
-    CHECK(pDims_);
-    return memory::desc({*pDims_}, tp, memory::format::any);
+  void initUser(void *pdata, memory::primitive_desc pd) {
+    pUser_.reset(new memory(pd, pdata));
+  }
+
+  memory::desc getMDAny(memory::data_type tp = memory::data_type::f32) {
+    return memory::desc({dims_}, tp, memory::format::any);
   }
 
   std::shared_ptr<memory> getIntlMem() {
      return this->pIntl_;
   }
 
-  std::shared_ptr<memory> getUserMem() {
-     return this->pUser_;
-  }
+//  std::shared_ptr<memory> getUserMem() {
+//     return this->pUser_;
+//  }
 
   // user primitive desc
   memory::primitive_desc getUserPD() {
@@ -80,7 +88,7 @@ public:
 
   // internal primitive desc
   memory::primitive_desc getIntlPD() {
-  CHECK(pIntl_) << "haven't init internal layout, call initCvt firstly";
+    CHECK(pIntl_) << "haven't init internal layout, call initCvt firstly";
     return pIntl_->get_primitive_desc();
   }
 
@@ -103,8 +111,9 @@ public:
   bool initCvt(memory::primitive_desc intlPD, int cvtType) {
     CHECK(cvtType == dnnCvtUser2Internal || cvtType == dnnCvtInternal2User) <<
       "please specify one type of conversion";
-    CHECK(pUser_) << "need create user layout before init conversion";
-    // CHECK(pIntl_) << "need create internal layout before init conversion";
+
+    CHECK(pUser_) << "need create user layout before init conversion, call initUser";
+    CHECK(pIntl_ == NULL) << "internal memory should be empty before initCvt";
     pIntl_ = pUser_;
     type_ = cvtType;
     clearCvtFlag();
