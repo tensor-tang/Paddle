@@ -2,15 +2,11 @@
 
 #pragma once
 
-#include "ConvBaseLayer.h"
+#include "DnnLayer.h"
 #include "paddle/math/Matrix.h"
 #include <vector>
-
-#include <numeric>
 #include "mkldnn.hpp"
-
 #include "DnnMemory.h"
-#include "DnnLayer.h"
 
 using namespace mkldnn;
 
@@ -22,9 +18,7 @@ namespace paddle {
  * The config file api is img_conv_layer.
  */
 class DnnConvLayer : public DnnLayer {
-
 protected:
-  typedef std::vector<int> IntV;
   /// For dnn convolution. Primitive Desc
   std::shared_ptr<convolution_forward::primitive_desc> fwdPD_;
   std::shared_ptr<convolution_backward_data::primitive_desc> bwdDataPD_;
@@ -40,11 +34,11 @@ protected:
   bool needBwdReset_;
 
   // padding, stride and filter size
-  IntV ph_, pw_;
-  IntV sh_, sw_;
-  IntV fh_, fw_;
+  std::vector<int> ph_, pw_;
+  std::vector<int> sh_, sw_;
+  std::vector<int> fh_, fw_;
   // group
-  IntV gp_;
+  std::vector<int> gp_;
   
   /// shape of weight: (oc, ic*fh*fw/gp)
   WeightList weights_;
@@ -78,15 +72,16 @@ public:
   
   void initOrResetDnnBwd();
 
+  /*
   int dimSize(const memory::dims &t) {
     int sz = 1;
     for (size_t i = 0; i < t.size(); ++i) 
       sz *= t[i];
     return sz;
-  }
-  
+  } */
 
   size_t getOneBatchSize();
+
   int outputSize(int imageSize, int filterSize, int padding, int stride) {
     int outputSize;
     bool caffeMode = true;

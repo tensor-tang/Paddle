@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include "ConvBaseLayer.h"
+#include "Layer.h"
 #include "paddle/math/Matrix.h"
 #include <vector>
 #include "mkldnn.hpp"

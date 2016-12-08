@@ -161,6 +161,23 @@ void DnnConvLayer::initOrResetDnnFwd() {
     if (hasBias) {
       dataBias_.reset(new DnnBuffer(biasDims));
     }
+    // init user memory of bottom, weights and bias
+    real *botData = getPrev(i)->getOutputValue()->getData();
+    real *wgtData = weights_[i]->getW()->getData();
+    real *topData = getOutputValue()->getData();
+    const std::shared_ptr<mkldnn::memory::desc> prvMD = getPrev(i)->getTopDataMD();
+    if (prvMD) {
+      dataBot_->initUser(botData, *prvMD, engineCpu_);
+    } else {
+      dataBot_->initUser(botData, botDims, memory::format::nchw, engineCpu_);
+    }
+    dataWgt_->initUser(wgtData, wgtDims, (gp_[i] == 1) ?
+                 memory::format::oihw : memory::format::goihw, engineCpu_);
+    if (hasBias) {
+      real *biasData = biases_->getW()->getData();
+      dataBias_->initUser(biasData, dataBias_->getDefaultDims(),
+        memory::format::x, engineCpu_);
+    }
     // create conv desc from internal desc 
     std::shared_ptr<convolution_forward::desc> fwdDesc;
     if (hasBias) {
@@ -182,18 +199,7 @@ void DnnConvLayer::initOrResetDnnFwd() {
                           padding_kind::zero));
     }
     fwdPD_.reset(new convolution_forward::primitive_desc(*fwdDesc, engineCpu_));
-    
-    // init user memory and cvt
-    real *botData = getPrev(i)->getOutputValue()->getData();
-    real *wgtData = weights_[i]->getW()->getData();
-    const std::shared_ptr<mkldnn::memory::desc> prvMD = getPrev(i)->getTopDataMD();
-    if (prvMD) {
-      dataBot_->initUser(botData, *prvMD, engineCpu_);
-    } else {
-      dataBot_->initUser(botData, botDims, memory::format::nchw, engineCpu_);
-    }
-    dataWgt_->initUser(wgtData, wgtDims, (gp_[i] == 1) ?
-                 memory::format::oihw : memory::format::goihw, engineCpu_);
+    // init cvt
     if (dataBot_->initCvt(fwdPD_->src_primitive_desc(), dnnCvtUser2Internal)) {
       LOG(INFO) << "need reorder --- bottom data: "
         << DNN_FORMAT[dataBot_->getUserFmt()]
@@ -217,7 +223,7 @@ void DnnConvLayer::initOrResetDnnFwd() {
           << DNN_FORMAT[dataBias_->getUserFmt()];
       }
     }
-    real *topData = getOutputValue()->getData();
+    // init top user memory and cvt
     if (setDnnTopDataFmt_) {
       dataTop_->initUser(topData, fwdPD_->dst_primitive_desc());
       setTopDataMD(dataTop_->getUserMD());
@@ -484,12 +490,14 @@ void DnnConvLayer::forward(PassType passType) {
   /// For dnn fwd init or reset
   initOrResetDnnFwd();
 
+  /// all sumbit cvt should be clear
   clearAllCvtFlags();
+  
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     submitFwd(i, getPrev(i)->getOutputValue(), getOutputValue());
   }
 //  LOG(INFO) << "!!!!!!!!Forward completed!!!!!!!";
-  /* activation */
+  // activation
   forwardActivation();
 }
 
@@ -511,8 +519,6 @@ void DnnConvLayer::backward(const UpdateCallback &callback) {
     // Increasing the number of gradient 
     biases_->getParameterPtr()->incUpdate(callback);
   }
-
 }
-
 
 }  // namespace paddle
