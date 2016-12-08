@@ -34,6 +34,7 @@ public:
 
   const MatrixPtr& getW() { return weight_; }
   const MatrixPtr& getWGrad() { return weightGrad_; }
+  MatrixPtr& getWGrad_mutable() { return weightGrad_; }
   const ParameterPtr& getParameterPtr();
 
   void incUpdate(const UpdateCallback& callback) {

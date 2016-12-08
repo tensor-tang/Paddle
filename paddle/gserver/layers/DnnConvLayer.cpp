@@ -501,11 +501,134 @@ void DnnConvLayer::forward(PassType passType) {
   forwardActivation();
 }
 
+void DnnConvLayer::exBwdBias(MatrixPtr topDiff) {
+  MatrixPtr biases =
+    Matrix::create(biases_->getWGrad()->getData(), 1,
+    biases_->getWGrad()->getElementCnt(), false, useGpu_);
+  size_t mapW = getOneBatchSize() / oc_; //oh*ow
+  size_t mapH = topDiff->getElementCnt() / mapW; //oc*bs
+  MatrixPtr vTmp = Matrix::create(topDiff->getData(), mapH, mapW, false, false);
+  MatrixPtr transOutValue_;
+  Matrix::resizeOrCreate(transOutValue_, mapW, mapH, false, false);
+  vTmp->transpose(transOutValue_, false);  // false means no memory allocation
+  vTmp->reshape(transOutValue_->getElementCnt() / oc_, oc_);
+  biases->collectBias(*vTmp, 1.0f);
+  biases->clear();
+}
+
+void DnnConvLayer::exBwdData(MatrixPtr topDiff, int i) {
+  LayerPtr prevLayer = getPrev(i);
+  if (NULL == prevLayer->getOutputGrad()) {
+    return;
+  }
+  int subM = oc_ / gp_[i];
+  int subN = oh_[i] * ow_[i];
+  int subK = ic_[i] * fw_[i] * fh_[i] / gp_[i];
+  MatrixPtr tgtGrad = prevLayer->getOutputGrad();
+  /* reset the expand-grad memory */
+  MatrixPtr expandInput_, transOutValue_;
+  Matrix::resizeOrCreate(expandInput_, subK*gp_[i], subN, false, false);
+  Matrix::resizeOrCreate(transOutValue_, bs_ * oc_, subN, false, false);
+  real *localGradData = topDiff->getData();
+  real *tgtGradData = tgtGrad->getData();
+  MatrixPtr exWgt = Matrix::create(ic_[i]*fh_[i]*fw_[i]/gp_[i], oc_, false, false);
+  weights_[i]->getW()->transpose(exWgt, false);
+  for (size_t n = 0; n < size_t(bs_); n++) {
+    real *wgtData = exWgt->getData();
+    real *expandInData = expandInput_->getData();
+    for (int g = 0; g < gp_[i]; g++) {
+      // create temporary matrix
+      MatrixPtr C = Matrix::create(expandInData, subK, subN, false, useGpu_);
+      MatrixPtr B = Matrix::create(localGradData, subM, subN, false, useGpu_);
+      MatrixPtr A = Matrix::create(wgtData, subK, subM, false, useGpu_);
+      C->mul(A, B);  // mul
+      // clear the temporary matrix
+      A->clear();
+      B->clear();
+      C->clear();
+      expandInData += subK * subN;
+      localGradData += subM * subN;
+      wgtData += subK * subM;
+    }
+    // shrink one frame outGrad
+    MatrixPtr oneGradTmp = Matrix::create(
+      expandInput_->getData(), subK * gp_[i], subN, false, useGpu_);
+    MatrixPtr vTmp = Matrix::create(
+      tgtGradData, 1, ih_[i] * iw_[i] * ic_[i], false, false);
+    vTmp->convShrink(*oneGradTmp, ih_[i], iw_[i], ic_[i], fh_[i], fw_[i],
+      sh_[i], sw_[i], ph_[i], pw_[i], oh_[i], ow_[i], 1.0f, 1.0f);
+    vTmp->clear();
+    oneGradTmp->clear();
+    // move the data-pointer
+    tgtGradData += ih_[i] * iw_[i] * ic_[i];
+    }
+  }
+
+void DnnConvLayer::exBwdWgts(MatrixPtr topDiff, int i) {
+  MatrixPtr exWgt = Matrix::create(ic_[i]*fh_[i]*fw_[i]/gp_[i], oc_, false, false);
+  weights_[i]->getWGrad()->transpose(exWgt, false);
+  MatrixPtr weightGrad = exWgt;
+  MatrixPtr inputV = getPrev(i)->getOutputValue();
+  int subM = oc_ / gp_[i];
+  int subN = oh_[i] * ow_[i];
+  int subK = ic_[i] * fw_[i] * fh_[i] / gp_[i];
+  MatrixPtr expandInput_, transOutValue_;
+  Matrix::resizeOrCreate(expandInput_, subK*gp_[i], subN, false, false);
+  Matrix::resizeOrCreate(transOutValue_, bs_ * oc_, subN, false, false);
+  real *gradData = topDiff->getData();
+  for (size_t n = 0; n < size_t(bs_); n++) {  // frame by frame
+    // expand
+    Matrix::resizeOrCreate(expandInput_, subK*gp_[i], subN, false, false);
+    real *imgData = inputV->getData() + n * inputV->getWidth();
+    MatrixPtr imageTmp = Matrix::create(
+      imgData, 1, ih_[i]*iw_[i]*ic_[i], false, false);
+    expandInput_->convExpand(*imageTmp, ih_[i], iw_[i], ic_[i], fh_[i], fw_[i],
+      sh_[i], sw_[i], ph_[i], pw_[i], oh_[i], ow_[i]);
+    imageTmp->clear();
+    real *wGradData = weightGrad->getData();
+    real *expandInData = expandInput_->getData();
+    // expand-mul one-group by one
+    for (int g = 0; g < gp_[i]; g++) {
+      MatrixPtr A = Matrix::create(expandInData, subK, subN, false, useGpu_);
+      MatrixPtr B = Matrix::create(gradData, subM, subN, true, useGpu_);
+      MatrixPtr C = Matrix::create(wGradData, subK, subM, false, useGpu_);
+      C->mul(A, B, 1, 1);
+      A->clear();
+      B->clear();
+      C->clear();
+      gradData += subM * subN;
+      wGradData += subK * subM;
+      expandInData += subK * subN;
+      }
+    }
+  // transpose to my wgts
+  exWgt->transpose(weights_[i]->getWGrad_mutable(), false);
+}
+
+void DnnConvLayer::exBackward(const UpdateCallback &callback) {
+  MatrixPtr topGrad = getOutputGrad();
+  if (biases_ && biases_->getWGrad()) {
+    exBwdBias(topGrad);
+    biases_->getParameterPtr()->incUpdate(callback);
+  }
+  for (size_t i = 0; i != inputLayers_.size(); ++i) {
+    exBwdData(topGrad, i);
+    if (weights_[i]->getWGrad()) {
+      exBwdWgts(topGrad, i);
+      weights_[i]->getParameterPtr()->incUpdate(callback);
+    }
+  }
+}
+
 void DnnConvLayer::backward(const UpdateCallback &callback) {
   backwardActivation();
   
   initOrResetDnnBwd();
 
+  exBackward(callback);
+
+  // dnn backward
+  /*
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     // backward weights before data, since may have not botdiff in some layer
     if (weights_[i]->getWGrad()) {
@@ -519,6 +642,7 @@ void DnnConvLayer::backward(const UpdateCallback &callback) {
     // Increasing the number of gradient 
     biases_->getParameterPtr()->incUpdate(callback);
   }
+  */
 }
 
 }  // namespace paddle

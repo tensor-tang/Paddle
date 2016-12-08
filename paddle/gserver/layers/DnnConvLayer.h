@@ -127,6 +127,11 @@ public:
   void backward(const UpdateCallback& callback);
   
 private:
+  void exBackward(const UpdateCallback &callback);
+  void exBwdBias(MatrixPtr topDiff);
+  void exBwdData(MatrixPtr topDiff, int i);
+  void exBwdWgts(MatrixPtr topDiff, int i) ;
+  
   void printInfo() {
     for(size_t i = 0; i < iw_.size(); ++i) {
       LOG(INFO)
