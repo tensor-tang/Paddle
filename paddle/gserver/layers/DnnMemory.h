@@ -51,17 +51,17 @@ public:
 
   ~DnnBuffer() {}
 
-  const memory::dims& getDims() {
+  const memory::dims& getDefaultDims() {
     return dims_;
   }
-  memory::format getUserFmt() {
-    return memory::format(getUserMD().data.format);
+  
+  void initUser(void *pd, memory::dims dm, memory::format fmt, engine eg,
+                   memory::data_type tp = memory::data_type::f32) {
+    initUser(pd, memory::desc({dm}, tp, fmt), eg);
   }
   
-  void initUser(void *pd, memory::format fmt, engine eg,
-                   memory::data_type tp = memory::data_type::f32) {
-    memory::desc desc = memory::desc({dims_}, tp, fmt);
-    pUser_.reset(new memory(memory::primitive_desc(desc, eg), pd));
+  void initUser(void *pd, memory::desc md, engine eg) {
+    pUser_.reset(new memory(memory::primitive_desc(md, eg), pd));
   }
 
   void initUser(void *pdata, memory::primitive_desc pd) {
@@ -96,6 +96,18 @@ public:
   memory::desc getUserMD() {
     CHECK(pUser_) << "haven't init user layout";
     return pUser_->get_primitive_desc().desc();
+  }
+
+  // get user memory format
+  int getUserFmt() {
+    CHECK(pUser_) << "haven't init user layout";
+    return getUserMD().data.format;
+  }
+
+  // get user memory format
+  int getIntlFmt() {
+    CHECK(pIntl_) << "haven't init user layout";
+    return getIntlMD().data.format;
   }
 
   memory::desc getIntlMD() {

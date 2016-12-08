@@ -102,14 +102,18 @@ protected:
   /// Mark input grad in(true) or out(false) of backward function.
   std::vector<bool> markInBackward_;
 
-  /// MKLDNN memory format
-  // defalut: memory::format::nchw;
-  mkldnn::memory::format fmtBotData_;
-  mkldnn::memory::format fmtTopData_;
-  mkldnn::memory::format fmtBotDiff_;
-  mkldnn::memory::format fmtTopDiff_;
+  /**
+   * MKLDNN memory desc
+   * if donot have MD, then their format are default nchw
+   * topDataMD_: it should be set by this layer, used by next layer
+   * topDiffMD_: it should be set by next layer, used by this layer
+   **/
+  std::shared_ptr<mkldnn::memory::desc> topDataMD_;
+  std::shared_ptr<mkldnn::memory::desc> topDiffMD_;
+  std::string nextType_;
 
 public:
+
   /**
     * Wait until all input value ready.
     * Called before Layer::forward() function.
@@ -212,29 +216,32 @@ public:
   /// Register a Layer
   static ClassRegistrar<Layer, LayerConfig> registrar_;
   
-  void setFmtBotData(mkldnn::memory::format fmt) {
-    fmtBotData_ = fmt;
+  bool isNextLayerTypeEmpty() {
+    return nextType_.empty();
   }
-  void setFmtBotDiff(mkldnn::memory::format fmt) {
-    fmtBotDiff_ = fmt;
+
+  void setNextLayerType(std::string type) {
+    nextType_ = type;
   }
-  void setFmtTopData(mkldnn::memory::format fmt) {
-    fmtTopData_ = fmt;
+
+  const std::string& getNextLayerType() {
+    return nextType_;
   }
-  void setFmtTopDiff(mkldnn::memory::format fmt) {
-    fmtTopDiff_ = fmt;
+
+  void setTopDataMD(const mkldnn::memory::desc md) {
+    topDataMD_.reset(new mkldnn::memory::desc(md));
   }
-  mkldnn::memory::format getFmtTopData() {
-    return fmtTopData_;
+
+  void setTopDiffMD(const mkldnn::memory::desc md) {
+    topDiffMD_.reset(new mkldnn::memory::desc(md));
   }
-  mkldnn::memory::format getFmtTopDiff() {
-    return fmtTopDiff_;
+
+  const std::shared_ptr<mkldnn::memory::desc> getTopDataMD() {
+    return topDataMD_;
   }
-  mkldnn::memory::format getFmtBotData() {
-    return fmtBotData_;
-  }
-  mkldnn::memory::format getFmtBotDiff() {
-    return fmtBotDiff_;
+
+  const std::shared_ptr<mkldnn::memory::desc> getTopDiffMD() {
+    return topDiffMD_;
   }
 
   /** 

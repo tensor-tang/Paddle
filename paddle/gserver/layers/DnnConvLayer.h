@@ -10,6 +10,7 @@
 #include "mkldnn.hpp"
 
 #include "DnnMemory.h"
+#include "DnnLayer.h"
 
 using namespace mkldnn;
 
@@ -20,48 +21,31 @@ namespace paddle {
  *
  * The config file api is img_conv_layer.
  */
-class DnnConvLayer : public Layer {
+class DnnConvLayer : public DnnLayer {
 
 protected:
   typedef std::vector<int> IntV;
-  /// For dnn engine
-  engine engineCpu_;
   /// For dnn convolution. Primitive Desc
   std::shared_ptr<convolution_forward::primitive_desc> fwdPD_;
   std::shared_ptr<convolution_backward_data::primitive_desc> bwdDataPD_;
   std::shared_ptr<convolution_backward_weights::primitive_desc> bwdWgtPD_;
   
   /// data buffers
-  DnnBufferPtr dataBot_;
   DnnBufferPtr dataWgt_;
   DnnBufferPtr dataBias_;
-  DnnBufferPtr dataTop_;
   /// diff buffer
-  DnnBufferPtr diffBot_;
   DnnBufferPtr diffWgt_;
   DnnBufferPtr diffBias_;
-  DnnBufferPtr diffTop_;
 
   bool needBwdReset_;
-  // The spatial dimensions of height of input feature map.
-  IntV ih_;
-  // The spatial dimensions of width of input feature map.
-  IntV iw_;
-  // The spatial dimensions of height of output feature map.
-  IntV oh_;
-  // The spatial dimensions of width of output feature map.
-  IntV ow_;
+
   // padding, stride and filter size
   IntV ph_, pw_;
   IntV sh_, sw_;
   IntV fh_, fw_;
-  // input channel and group
-  IntV ic_, gp_;
-  // output channel == filter number
-  int oc_;
-  // batchsize
-  int bs_;
-
+  // group
+  IntV gp_;
+  
   /// shape of weight: (oc, ic*fh*fw/gp)
   WeightList weights_;
   /// If shared_biases is false shape of bias: (oc, 1)
@@ -71,35 +55,36 @@ protected:
 
 public:
   explicit DnnConvLayer(const LayerConfig& config)
-    : Layer(config),
-      engineCpu_(engine::cpu, 0),
+    : DnnLayer(config),
       fwdPD_(NULL),
       bwdDataPD_(NULL),
       bwdWgtPD_(NULL),
-      dataBot_(NULL),
       dataWgt_(NULL),
       dataBias_(NULL),
-      dataTop_(NULL),
-      diffBot_(NULL),
       diffWgt_(NULL),
       diffBias_(NULL),
-      diffTop_(NULL),
       needBwdReset_(true)
     {}
 
   ~DnnConvLayer() {}
 
-  /// for dnn
+  bool init(const LayerMap& layerMap, const ParameterMap& parameterMap);
+
+  bool initShapeAndDnn(const LayerMap& layerMap, const ParameterMap& parameterMap);
+
+  void reshapeOutput();
+
   void initOrResetDnnFwd();
+  
   void initOrResetDnnBwd();
+
   int dimSize(const memory::dims &t) {
     int sz = 1;
     for (size_t i = 0; i < t.size(); ++i) 
       sz *= t[i];
     return sz;
   }
-
-  bool init(const LayerMap& layerMap, const ParameterMap& parameterMap);
+  
 
   size_t getOneBatchSize();
   int outputSize(int imageSize, int filterSize, int padding, int stride) {
@@ -114,6 +99,7 @@ public:
     CHECK_GE(outputSize, 1);
     return outputSize;
   }
+  
   void clearAllCvtFlags() {
     if (dataBot_) dataBot_->clearCvtFlag();
     if (dataTop_) dataTop_->clearCvtFlag();
@@ -124,11 +110,7 @@ public:
     if (diffBias_) diffBias_->clearCvtFlag();
     if (diffWgt_) diffWgt_->clearCvtFlag();
   }
-  
-  /* init the memory format of input and output data or diff
-   */
-  void initMemoryFormat();
-  
+
   /* forward data
    * input: botdata, wgtdata, biasdata
    * output topdata
