@@ -13,8 +13,8 @@ using namespace mkldnn;
 namespace paddle {
 
 static const std::string DNN_FORMAT[] = {
-  "undef", "any", "blocked", "x", "nc", "nchw", "nhwc", "nChw8c", ///oIhw8i",
-  "oi", "oihw", "OIhw8i8o", "OIhw8o8i", "Ohwi8o", "goihw", "gOIhw8i8o",
+  "undef", "any", "blocked", "x", "nc", "nchw", "nhwc", "chwn", "nChw8c", //oIhw8i",
+  "oi", "oihw", "ihwo", "OIhw8i8o", "OIhw8o8i", "Ohwi8o", "goihw", "gOIhw8i8o",
   "gOIhw8o8i"};
 
 /**
