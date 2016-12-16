@@ -31,8 +31,6 @@ protected:
   MkldnnBufferPtr diffWgt_;
   MkldnnBufferPtr diffBias_;
 
-  bool needBwdReset_;
-
   // padding, stride and filter size
   std::vector<int> ph_, pw_;
   std::vector<int> sh_, sw_;
@@ -56,21 +54,12 @@ public:
       dataWgt_(NULL),
       dataBias_(NULL),
       diffWgt_(NULL),
-      diffBias_(NULL),
-      needBwdReset_(true)
+      diffBias_(NULL)
     {}
 
   ~MkldnnConvLayer() {}
 
-  bool init(const LayerMap& layerMap, const ParameterMap& parameterMap);
-
-  bool initShapeAndDnn(const LayerMap& layerMap, const ParameterMap& parameterMap);
-
-  void reshapeOutput();
-
-  void initOrResetDnnFwd();
-  
-  void initOrResetDnnBwd();
+  bool initDnn(const LayerMap& layerMap, const ParameterMap& parameterMap);
 
   /*
   int dimSize(const memory::dims &t) {
@@ -110,8 +99,8 @@ public:
    * input: botdata, wgtdata, biasdata
    * output topdata
    */
-  void submitFwd(int inputIdx, const MatrixPtr& botVal, const MatrixPtr& topVal);
-  
+  void submitFwdOnce(int inputIdx, const MatrixPtr& botVal, const MatrixPtr& topVal);
+
   /* backward data
    * input: topdiff, wgtdata
    * output botdiff
@@ -123,9 +112,18 @@ public:
    * output wgtdiff, biasdiff
    */
   void submitBwdWgts(int inputIdx, const MatrixPtr& botVal, const MatrixPtr& topGrad);
-  void forward(PassType passType);
-  void backward(const UpdateCallback& callback);
+
+  // return false if donot need reshape 
+  bool reshapeOutput();
+
+  void resetDnnFwd();
   
+  void resetDnnBwd();
+
+
+  void submitDnnFwd(PassType passType);
+  void submitDnnBwd(const UpdateCallback& callback);
+
 private:
   void exBackward(const UpdateCallback &callback);
   void exBwdBias(MatrixPtr topDiff);

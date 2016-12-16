@@ -27,17 +27,7 @@ namespace paddle {
 
 REGISTER_LAYER(mkldnnconv, MkldnnConvLayer);
 
-bool MkldnnConvLayer::init(const LayerMap &layerMap,
-                           const ParameterMap &parameterMap) {
-  // Initialize the basic parent class
-  MkldnnLayer::init(layerMap, parameterMap);
-
-  // init for mkldnn, image shapes and some weights
-  return initShapeAndDnn(layerMap, parameterMap);
-
-}
-
-bool MkldnnConvLayer::initShapeAndDnn(const LayerMap &layerMap,
+bool MkldnnConvLayer::initDnn(const LayerMap &layerMap,
                            const ParameterMap &parameterMap) {
   // mkldnn only support float type by now
   bool sharedBiases = config_.shared_biases();
@@ -106,9 +96,13 @@ size_t MkldnnConvLayer::getOneBatchSize() {
   return layerSize;
 }
 
-
-// reset batchsize and image size of input and output 
-void MkldnnConvLayer::reshapeOutput() {
+// whether reset batchsize and image size of input and output 
+bool MkldnnConvLayer::reshapeOutput() {
+  if (bs_ == getInput(0).getBatchSize()) {
+    // can remove resetoutput when confirm how multi inputs work and whether to clear diff
+    resetOutput(bs_, getOneBatchSize()); 
+    return false;
+  }
   // reset image size
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     int height = inputLayers_[i]->getOutput().getFrameHeight();
@@ -127,18 +121,11 @@ void MkldnnConvLayer::reshapeOutput() {
   bs_ = getInput(0).getBatchSize();
   resetOutput(bs_, getOneBatchSize());
   LOG(INFO) << "reshape batch size: " << bs_;
+  return true;
 }
 
-void MkldnnConvLayer::initOrResetDnnFwd() {
-  if (bs_ == getInput(0).getBatchSize()) {
-    // can remove resetoutput when confirm how multi inputs work and whether to clear diff
-    resetOutput(bs_, getOneBatchSize()); 
-    return;
-  }
-  LOG(INFO) << "init or reset conv forward of layer: " << config_.name();
-  // need reshape output!
-  reshapeOutput();
-
+void MkldnnConvLayer::resetDnnFwd() {
+  LOG(INFO) << "reset mkldnn conv forward of layer: " << config_.name();
   // TODO: only care about i==0 by now
   memory::dims biasDims = {oc_};
   bool hasBias = (biases_ && biases_->getW()) ? true : false;
@@ -244,14 +231,9 @@ void MkldnnConvLayer::initOrResetDnnFwd() {
     
   }
   printInfo();
-  needBwdReset_ = true;
 }
 
-void MkldnnConvLayer::initOrResetDnnBwd() {
-  if (!needBwdReset_) {
-    return;
-  }
-  needBwdReset_ = false;
+void MkldnnConvLayer::resetDnnBwd() {
   LOG(INFO) << "init or reset conv backward of layer: " << config_.name();
   bool hasBias = (biases_ && biases_->getWGrad()) ? true : false;
   // TODO: only care about i==0 by now
@@ -407,7 +389,7 @@ void MkldnnConvLayer::initOrResetDnnBwd() {
 
 }
 
-void MkldnnConvLayer::submitFwd(
+void MkldnnConvLayer::submitFwdOnce(
   int inputIdx, const MatrixPtr& botVal, const MatrixPtr& topVal) {
   real* botdata = botVal->getData();
   real* topdata = topVal->getData();
@@ -484,21 +466,14 @@ void MkldnnConvLayer::submitBwdWgts(
 //    LOG(INFO) << "!!!!!!!!!backward filter execute completed!!!!!!!!";
 }
 
-void MkldnnConvLayer::forward(PassType passType) {
-  Layer::forward(passType);
-
-  /// For dnn fwd init or reset
-  initOrResetDnnFwd();
+void MkldnnConvLayer::submitDnnFwd(PassType passType) {
 
   /// all sumbit cvt should be clear
   clearAllCvtFlags();
   
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
-    submitFwd(i, getPrev(i)->getOutputValue(), getOutputValue());
+    submitFwdOnce(i, getPrev(i)->getOutputValue(), getOutputValue());
   }
-//  LOG(INFO) << "!!!!!!!!Forward completed!!!!!!!";
-  // activation
-  forwardActivation();
 }
 
 void MkldnnConvLayer::exBwdBias(MatrixPtr topDiff) {
@@ -620,10 +595,7 @@ void MkldnnConvLayer::exBackward(const UpdateCallback &callback) {
   }
 }
 
-void MkldnnConvLayer::backward(const UpdateCallback &callback) {
-  backwardActivation();
-  
-  initOrResetDnnBwd();
+void MkldnnConvLayer::submitDnnBwd(const UpdateCallback &callback) {
 
   exBackward(callback);
 

@@ -44,9 +44,12 @@ public:
   // batchsize
   int bs_;
 
+  bool needResetBwd_;
+
   // flags whether to set memory format of top data or bot diff
   bool setDnnTopDataFmt_;
   std::vector<bool> setDnnBotDiffFmt_;
+  
 
 public:
   explicit MkldnnLayer(const LayerConfig& config)
@@ -56,6 +59,7 @@ public:
       dataTop_(NULL),
       diffBot_(NULL),
       diffTop_(NULL),
+      needResetBwd_(true),
       setDnnTopDataFmt_(false)
     {}
 
@@ -66,35 +70,40 @@ public:
     if (!Layer::init(layerMap, parameterMap)) return false;
 
     initDnnflags();
-    return true;
-  }
 
-  /**
-   * each dnn layer should have function 
-   * to init the image size of input and output
-   * (bs, ic, ih, iw, oc, oh, ow)
-   * and other init for specific layers
-   * before exit init()
-   */
-  virtual bool initShapeAndDnn(const LayerMap& layerMap, const ParameterMap& parameterMap) = 0;
+    return initDnn(layerMap, parameterMap);
+  }
   
-  /** 
-   * each dnn layer should have function
-   * to reshape the size and data of output
-   */
-  virtual void reshapeOutput() = 0;
+  void forward(PassType passType) {
+    Layer::forward(passType);
+
+    // reshape if batchsize changes
+    if (reshapeOutput()) {
+      // dnn fwd init or reset
+      resetDnnFwd();
+      needResetBwd_ = true;
+    }
+    
+    // submit dnn forward
+    submitDnnFwd(passType);
+
+    // forward activation
+    forwardActivation();
+  }
   
-  /** 
-   * each dnn layer should have function
-   * to init or reset dnn forward
-   */
-  virtual void initOrResetDnnFwd() = 0;
-  
-  /** 
-   * each dnn layer should have function
-   * to init or reset dnn backward
-   */
-  virtual void initOrResetDnnBwd() = 0;
+  void backward(const UpdateCallback& callback) {
+    // forward activation
+    backwardActivation();
+
+    if (needResetBwd_) {
+      // dnn fwd init or reset
+      resetDnnBwd();
+      needResetBwd_ = false;
+    }
+
+    // submit dnn backward
+    submitDnnBwd(callback);
+  }
   
   /**
    * init the flags whether to set memory desc
@@ -131,6 +140,40 @@ public:
       return false;
     }
   }
+
+  /**
+   * each dnn layer should have function 
+   * to init the image size of input and output
+   * (bs, ic, ih, iw, oc, oh, ow)
+   * and other init for specific layers
+   * before exit init()
+   */
+  virtual bool initDnn(const LayerMap& layerMap,
+                           const ParameterMap& parameterMap) = 0;
+  
+  /** 
+   * each dnn layer should have function
+   * to reshape the size and data of output if batchsize changes
+   * return false if donot need reshape 
+   */
+  virtual bool reshapeOutput() = 0;
+
+  /** 
+   * each dnn layer should have function
+   * to init or reset dnn forward
+   */
+  virtual void resetDnnFwd() = 0;
+  
+  /** 
+   * each dnn layer should have function
+   * to init or reset dnn backward
+   */
+  virtual void resetDnnBwd() = 0;
+
+  virtual void submitDnnFwd(PassType passType) = 0;
+  virtual void submitDnnBwd(const UpdateCallback& callback) = 0;
+
+  
 
 };
 
