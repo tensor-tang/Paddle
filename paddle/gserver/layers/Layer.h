@@ -113,7 +113,6 @@ protected:
   std::string nextType_;
 
 public:
-
   /**
     * Wait until all input value ready.
     * Called before Layer::forward() function.

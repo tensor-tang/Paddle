@@ -24,19 +24,6 @@ endmacro()
 filter_test(GSERVER_HEADER)
 filter_test(GSERVER_SOURCES)
 
-# compile MKLLayers, only if have standard MKL library
-if(NOT "${CBLAS_PROVIDER}" STREQUAL "MKL")
-    list(REMOVE_ITEM GSERVER_HEADER
-        layers/MklMemory.h
-        layers/MklWrapper.h
-        layers/MklConvLayer.h)
-    list(REMOVE_ITEM GSERVER_SOURCES
-        layers/MklConvLayer.cpp)
-    message(STATUS "Skip compiling with Mkllayers")
-else()
-    message(STATUS "Compile with MKLlayers")
-endif()
-
 # compile DnnLayers, only if have MKLDNN library
 if(NOT WITH_MKLDNN)
     file(GLOB_RECURSE DNN_HEADER RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "Dnn*.h")
@@ -75,7 +62,7 @@ if(NOT WITH_PYTHON)
 endif()
 
 if(WITH_GPU)
-    add_paddle_culib(paddle_gserver ${GSERVER_SOURCES})
+    cuda_add_library(paddle_gserver ${GSERVER_SOURCES})
 else()
     add_library(paddle_gserver STATIC
         ${GSERVER_SOURCES})
