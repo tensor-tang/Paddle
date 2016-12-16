@@ -71,6 +71,17 @@ public:
 
     initDnnflags();
 
+    bs_ = 0;
+    oc_ = 0;
+    for (auto &inputConfig : config_.inputs()) {
+      const ConvConfig &conf = inputConfig.conv_conf();
+      ih_.push_back(conf.img_size());
+      iw_.push_back(conf.img_size());
+      oh_.push_back(conf.output_x());
+      ow_.push_back(conf.output_x());
+      ic_.push_back(conf.channels());
+    }
+
     return initDnn(layerMap, parameterMap);
   }
   
