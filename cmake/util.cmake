@@ -110,7 +110,7 @@ function(link_paddle_exe TARGET_NAME)
         ${PROTOBUF_LIBRARY}
         ${CMAKE_THREAD_LIBS_INIT}
         ${CBLAS_LIBS}
-        ${DNN_LIBS}
+        ${MKLDNN_LIBS}
         ${ZLIB_LIBRARIES}
         ${INTERAL_LIBS}
         ${CMAKE_DL_LIBS})

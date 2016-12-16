@@ -12,7 +12,7 @@ using namespace mkldnn;
 namespace paddle {
 
 /**
- * @brief A DNN memory buffer class
+ * @brief A MKLDNN memory buffer class
  *
  * 
  */
@@ -24,7 +24,7 @@ namespace paddle {
     dnnCvtNumber           = 4
 } dnnCvtType_t;
 
-class DnnBuffer {
+class MkldnnBuffer {
 
 protected:
   /// dims of user memory
@@ -41,7 +41,7 @@ protected:
   bool hasCvted_; // to avoid re-cvt
   
 public:
-  explicit DnnBuffer(memory::dims dm) :
+  explicit MkldnnBuffer(memory::dims dm) :
     dims_(dm),
     pUser_(NULL),
     pIntl_(NULL),
@@ -49,7 +49,7 @@ public:
     type_(dnnCvtNone),
     hasCvted_(false) {}
 
-  ~DnnBuffer() {}
+  ~MkldnnBuffer() {}
 
   const memory::dims& getDefaultDims() {
     return dims_;
@@ -179,6 +179,6 @@ public:
   }
 };
 
-typedef std::shared_ptr<DnnBuffer> DnnBufferPtr;
+typedef std::shared_ptr<MkldnnBuffer> MkldnnBufferPtr;
 
 }  // namespace paddle

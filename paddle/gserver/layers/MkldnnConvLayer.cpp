@@ -15,7 +15,7 @@ limitations under the License. */
 
 #include "paddle/utils/Logging.h"
 #include "paddle/utils/Stat.h"
-#include "DnnConvLayer.h"
+#include "MkldnnConvLayer.h"
 
 //using namespace mkldnn;
 
@@ -25,19 +25,19 @@ limitations under the License. */
 namespace paddle {
 
 
-REGISTER_LAYER(dnnconv, DnnConvLayer);
+REGISTER_LAYER(mkldnnconv, MkldnnConvLayer);
 
-bool DnnConvLayer::init(const LayerMap &layerMap,
+bool MkldnnConvLayer::init(const LayerMap &layerMap,
                            const ParameterMap &parameterMap) {
   // Initialize the basic parent class
-  DnnLayer::init(layerMap, parameterMap);
+  MkldnnLayer::init(layerMap, parameterMap);
 
   // init for mkldnn, image shapes and some weights
   return initShapeAndDnn(layerMap, parameterMap);
 
 }
 
-bool DnnConvLayer::initShapeAndDnn(const LayerMap &layerMap,
+bool MkldnnConvLayer::initShapeAndDnn(const LayerMap &layerMap,
                            const ParameterMap &parameterMap) {
   // mkldnn only support float type by now
   bool sharedBiases = config_.shared_biases();
@@ -93,7 +93,7 @@ bool DnnConvLayer::initShapeAndDnn(const LayerMap &layerMap,
   return true;
 }
 
-size_t DnnConvLayer::getOneBatchSize() {
+size_t MkldnnConvLayer::getOneBatchSize() {
   CHECK_NE(inputLayers_.size(), 0UL);
   size_t layerSize = 0;
   for (size_t i = 0; i < inputLayers_.size(); i++) {
@@ -108,7 +108,7 @@ size_t DnnConvLayer::getOneBatchSize() {
 
 
 // reset batchsize and image size of input and output 
-void DnnConvLayer::reshapeOutput() {
+void MkldnnConvLayer::reshapeOutput() {
   // reset image size
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     int height = inputLayers_[i]->getOutput().getFrameHeight();
@@ -129,7 +129,7 @@ void DnnConvLayer::reshapeOutput() {
   LOG(INFO) << "reshape batch size: " << bs_;
 }
 
-void DnnConvLayer::initOrResetDnnFwd() {
+void MkldnnConvLayer::initOrResetDnnFwd() {
   if (bs_ == getInput(0).getBatchSize()) {
     // can remove resetoutput when confirm how multi inputs work and whether to clear diff
     resetOutput(bs_, getOneBatchSize()); 
@@ -155,11 +155,11 @@ void DnnConvLayer::initOrResetDnnFwd() {
     memory::dims padding = {ph_[i], pw_[i]};
     memory::dims topDims = {bs_, oc_, oh_[i], ow_[i]};
     
-    dataBot_.reset(new DnnBuffer(botDims));
-    dataWgt_.reset(new DnnBuffer(wgtDims));
-    dataTop_.reset(new DnnBuffer(topDims));
+    dataBot_.reset(new MkldnnBuffer(botDims));
+    dataWgt_.reset(new MkldnnBuffer(wgtDims));
+    dataTop_.reset(new MkldnnBuffer(topDims));
     if (hasBias) {
-      dataBias_.reset(new DnnBuffer(biasDims));
+      dataBias_.reset(new MkldnnBuffer(biasDims));
     }
     // init user memory of bottom, weights and bias
     real *botData = getPrev(i)->getOutputValue()->getData();
@@ -247,7 +247,7 @@ void DnnConvLayer::initOrResetDnnFwd() {
   needBwdReset_ = true;
 }
 
-void DnnConvLayer::initOrResetDnnBwd() {
+void MkldnnConvLayer::initOrResetDnnBwd() {
   if (!needBwdReset_) {
     return;
   }
@@ -257,7 +257,7 @@ void DnnConvLayer::initOrResetDnnBwd() {
   // TODO: only care about i==0 by now
   real *topdiff = getOutputGrad()->getData();
   // init top diff user
-  diffTop_.reset(new DnnBuffer(dataTop_->getDefaultDims()));
+  diffTop_.reset(new MkldnnBuffer(dataTop_->getDefaultDims()));
   
   const std::shared_ptr<mkldnn::memory::desc> inputDiffMD = getTopDiffMD();
   if (inputDiffMD) {
@@ -271,7 +271,7 @@ void DnnConvLayer::initOrResetDnnBwd() {
     // bias backward can not be execute seperately, 
     //only can execute with filter bakcward
     real* biasdiff = biases_->getWGrad()->getData();
-    diffBias_.reset(new DnnBuffer(dataBias_->getDefaultDims()));
+    diffBias_.reset(new MkldnnBuffer(dataBias_->getDefaultDims()));
     diffBias_->initUser(biasdiff, diffBias_->getDefaultDims(), memory::format::x, engineCpu_);
   }
   
@@ -287,7 +287,7 @@ void DnnConvLayer::initOrResetDnnBwd() {
     if (weights_[i]->getWGrad()) {
       real* wgtdiff = weights_[i]->getWGrad()->getData();
       // init weight diff user
-      diffWgt_.reset(new DnnBuffer(dataWgt_->getDefaultDims()));
+      diffWgt_.reset(new MkldnnBuffer(dataWgt_->getDefaultDims()));
       diffWgt_->initUser(wgtdiff, diffWgt_->getDefaultDims(), 
         memory::format(dataWgt_->getUserFmt()), engineCpu_);
     } else {
@@ -360,7 +360,7 @@ void DnnConvLayer::initOrResetDnnBwd() {
     if (NULL == prevLayer->getOutputGrad()) {
       continue; // data layer has not diff
     }
-    diffBot_.reset(new DnnBuffer(dataBot_->getDefaultDims()));
+    diffBot_.reset(new MkldnnBuffer(dataBot_->getDefaultDims()));
     // init backward data primitive desc
     std::shared_ptr<convolution_forward::desc> bwdDataFwdDesc;
     std::shared_ptr<convolution_backward_data::desc> bwdDataDesc;
@@ -407,7 +407,7 @@ void DnnConvLayer::initOrResetDnnBwd() {
 
 }
 
-void DnnConvLayer::submitFwd(
+void MkldnnConvLayer::submitFwd(
   int inputIdx, const MatrixPtr& botVal, const MatrixPtr& topVal) {
   real* botdata = botVal->getData();
   real* topdata = topVal->getData();
@@ -436,7 +436,7 @@ void DnnConvLayer::submitFwd(
   stream(stream::kind::eager).submit(convFwd).wait();
 }
 
-void DnnConvLayer::submitBwdData(
+void MkldnnConvLayer::submitBwdData(
   int inputIdx, const MatrixPtr& topGrad, const MatrixPtr& botGrad) {
   if (botGrad == NULL) {
     return;
@@ -456,7 +456,7 @@ void DnnConvLayer::submitBwdData(
 //   LOG(INFO) << "!!!!!!!!!backward data execute completed!!!!!!!!";
 }
 
-void DnnConvLayer::submitBwdWgts(
+void MkldnnConvLayer::submitBwdWgts(
   int inputIdx, const MatrixPtr& botVal, const MatrixPtr& topGrad) {
   real* botdata = botVal->getData();
   real* topdiff = topGrad->getData();
@@ -484,7 +484,7 @@ void DnnConvLayer::submitBwdWgts(
 //    LOG(INFO) << "!!!!!!!!!backward filter execute completed!!!!!!!!";
 }
 
-void DnnConvLayer::forward(PassType passType) {
+void MkldnnConvLayer::forward(PassType passType) {
   Layer::forward(passType);
 
   /// For dnn fwd init or reset
@@ -501,7 +501,7 @@ void DnnConvLayer::forward(PassType passType) {
   forwardActivation();
 }
 
-void DnnConvLayer::exBwdBias(MatrixPtr topDiff) {
+void MkldnnConvLayer::exBwdBias(MatrixPtr topDiff) {
   MatrixPtr biases =
     Matrix::create(biases_->getWGrad()->getData(), 1,
     biases_->getWGrad()->getElementCnt(), false, useGpu_);
@@ -516,7 +516,7 @@ void DnnConvLayer::exBwdBias(MatrixPtr topDiff) {
   biases->clear();
 }
 
-void DnnConvLayer::exBwdData(MatrixPtr topDiff, int i) {
+void MkldnnConvLayer::exBwdData(MatrixPtr topDiff, int i) {
   LayerPtr prevLayer = getPrev(i);
   if (NULL == prevLayer->getOutputGrad()) {
     return;
@@ -564,7 +564,7 @@ void DnnConvLayer::exBwdData(MatrixPtr topDiff, int i) {
     }
   }
 
-void DnnConvLayer::exBwdWgts(MatrixPtr topDiff, int i) {
+void MkldnnConvLayer::exBwdWgts(MatrixPtr topDiff, int i) {
   MatrixPtr exWgt = Matrix::create(ic_[i]*fh_[i]*fw_[i]/gp_[i], oc_, false, false);
   weights_[i]->getWGrad()->transpose(exWgt, false);
   MatrixPtr weightGrad = exWgt;
@@ -605,7 +605,7 @@ void DnnConvLayer::exBwdWgts(MatrixPtr topDiff, int i) {
   exWgt->transpose(weights_[i]->getWGrad_mutable(), false);
 }
 
-void DnnConvLayer::exBackward(const UpdateCallback &callback) {
+void MkldnnConvLayer::exBackward(const UpdateCallback &callback) {
   MatrixPtr topGrad = getOutputGrad();
   if (biases_ && biases_->getWGrad()) {
     exBwdBias(topGrad);
@@ -620,7 +620,7 @@ void DnnConvLayer::exBackward(const UpdateCallback &callback) {
   }
 }
 
-void DnnConvLayer::backward(const UpdateCallback &callback) {
+void MkldnnConvLayer::backward(const UpdateCallback &callback) {
   backwardActivation();
   
   initOrResetDnnBwd();

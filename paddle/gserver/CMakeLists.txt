@@ -26,13 +26,13 @@ filter_test(GSERVER_SOURCES)
 
 # compile DnnLayers, only if have MKLDNN library
 if(NOT WITH_MKLDNN)
-    file(GLOB_RECURSE DNN_HEADER RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "Dnn*.h")
-    file(GLOB_RECURSE DNN_SOURCES RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "Dnn*.cpp")
+    file(GLOB_RECURSE DNN_HEADER RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "Mkldnn*.h")
+    file(GLOB_RECURSE DNN_SOURCES RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "Mkldnn*.cpp")
     list(REMOVE_ITEM GSERVER_HEADER ${DNN_HEADER})
     list(REMOVE_ITEM GSERVER_SOURCES ${DNN_SOURCES})
-    message(STATUS "Skip compiling with Dnnlayers")
+    message(STATUS "Skip compiling with Mkldnnlayers")
 else()
-    message(STATUS "Compile with Dnnlayers")
+    message(STATUS "Compile with Mkldnnlayers")
 endif()
 
 if(NOT WITH_GPU)

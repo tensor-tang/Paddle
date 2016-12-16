@@ -2,11 +2,11 @@
 
 #pragma once
 
-#include "DnnLayer.h"
+#include "MkldnnLayer.h"
 #include "paddle/math/Matrix.h"
 #include <vector>
 #include "mkldnn.hpp"
-#include "DnnMemory.h"
+#include "MkldnnMemory.h"
 
 using namespace mkldnn;
 
@@ -17,7 +17,7 @@ namespace paddle {
  *
  * The config file api is img_conv_layer.
  */
-class DnnConvLayer : public DnnLayer {
+class MkldnnConvLayer : public MkldnnLayer {
 protected:
   /// For dnn convolution. Primitive Desc
   std::shared_ptr<convolution_forward::primitive_desc> fwdPD_;
@@ -25,11 +25,11 @@ protected:
   std::shared_ptr<convolution_backward_weights::primitive_desc> bwdWgtPD_;
   
   /// data buffers
-  DnnBufferPtr dataWgt_;
-  DnnBufferPtr dataBias_;
+  MkldnnBufferPtr dataWgt_;
+  MkldnnBufferPtr dataBias_;
   /// diff buffer
-  DnnBufferPtr diffWgt_;
-  DnnBufferPtr diffBias_;
+  MkldnnBufferPtr diffWgt_;
+  MkldnnBufferPtr diffBias_;
 
   bool needBwdReset_;
 
@@ -48,8 +48,8 @@ protected:
   std::unique_ptr<Weight> biases_;
 
 public:
-  explicit DnnConvLayer(const LayerConfig& config)
-    : DnnLayer(config),
+  explicit MkldnnConvLayer(const LayerConfig& config)
+    : MkldnnLayer(config),
       fwdPD_(NULL),
       bwdDataPD_(NULL),
       bwdWgtPD_(NULL),
@@ -60,7 +60,7 @@ public:
       needBwdReset_(true)
     {}
 
-  ~DnnConvLayer() {}
+  ~MkldnnConvLayer() {}
 
   bool init(const LayerMap& layerMap, const ParameterMap& parameterMap);
 

@@ -6,7 +6,7 @@
 #include "paddle/math/Matrix.h"
 #include <vector>
 #include "mkldnn.hpp"
-#include "DnnMemory.h"
+#include "MkldnnMemory.h"
 
 using namespace mkldnn;
 
@@ -21,17 +21,17 @@ static const std::string DNN_FORMAT[] = {
  * @brief Base class of Dnnlayer.
  *
  */
-class DnnLayer : public Layer {
+class MkldnnLayer : public Layer {
 public:
   /// For dnn engine
   engine engineCpu_;
   
   /// data buffers
-  DnnBufferPtr dataBot_;
-  DnnBufferPtr dataTop_;
+  MkldnnBufferPtr dataBot_;
+  MkldnnBufferPtr dataTop_;
   /// diff buffer
-  DnnBufferPtr diffBot_;
-  DnnBufferPtr diffTop_;
+  MkldnnBufferPtr diffBot_;
+  MkldnnBufferPtr diffTop_;
 
   // The spatial dimensions of height and width of input feature map.
   std::vector<int> ih_, iw_;
@@ -49,7 +49,7 @@ public:
   std::vector<bool> setDnnBotDiffFmt_;
 
 public:
-  explicit DnnLayer(const LayerConfig& config)
+  explicit MkldnnLayer(const LayerConfig& config)
     : Layer(config),
       engineCpu_(engine::cpu, 0),
       dataBot_(NULL),
@@ -59,13 +59,13 @@ public:
       setDnnTopDataFmt_(false)
     {}
 
-  ~DnnLayer() {}
+  ~MkldnnLayer() {}
 
   bool init(const LayerMap& layerMap, const ParameterMap& parameterMap) {
     /* Initialize the basic parent class */
     if (!Layer::init(layerMap, parameterMap)) return false;
 
-    initDnnflags();  // this will call your specific implements
+    initDnnflags();
     return true;
   }
 
@@ -109,10 +109,10 @@ public:
   }
 
   bool isNextLayerDnn() {
-    const std::string dnn("dnn");
+    const std::string dnn("mkldnn");
     if (!isNextLayerTypeEmpty()  // not empty
       && getNextLayerType().compare(0, dnn.length(), dnn) == 0 ) {
-      // type started with "dnn"
+      // type started with "mkldnn"
       return true;
     }
     else {
@@ -121,10 +121,10 @@ public:
   }
 
   bool isPrevLayerDnn(size_t idx) {
-    const std::string dnn("dnn");
+    const std::string dnn("mkldnn");
     if (getPrev(idx) != NULL
       && getPrev(idx)->getType().compare(0, dnn.length(), dnn) == 0 ) {
-      // type started with "dnn"
+      // type started with "mkldnn"
       return true;
     }
     else {

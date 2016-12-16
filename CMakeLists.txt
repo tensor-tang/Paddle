@@ -156,7 +156,7 @@ endif()
 
 if(WITH_MKLDNN)
     include_directories("${MKLDNN_INCLUDE_DIR}")
-    set(DNN_LIBS ${MKLDNN_LIBRARY})
+    set(MKLDNN_LIBS ${MKLDNN_LIBRARY})
 endif()
 
 if(WITH_PYTHON)
