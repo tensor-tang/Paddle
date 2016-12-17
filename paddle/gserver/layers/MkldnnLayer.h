@@ -73,14 +73,6 @@ public:
 
     bs_ = 0;
     oc_ = 0;
-    for (auto &inputConfig : config_.inputs()) {
-      const ConvConfig &conf = inputConfig.conv_conf();
-      ih_.push_back(conf.img_size());
-      iw_.push_back(conf.img_size());
-      oh_.push_back(conf.output_x());
-      ow_.push_back(conf.output_x());
-      ic_.push_back(conf.channels());
-    }
 
     return initDnn(layerMap, parameterMap);
   }
@@ -97,15 +89,9 @@ public:
     
     // submit dnn forward
     submitDnnFwd(passType);
-
-    // forward activation
-    forwardActivation();
   }
   
   void backward(const UpdateCallback& callback) {
-    // forward activation
-    backwardActivation();
-
     if (needResetBwd_) {
       // dnn fwd init or reset
       resetDnnBwd();
@@ -150,6 +136,20 @@ public:
     else {
       return false;
     }
+  }
+  
+  // for conv and pool only support caffe mode by now
+  int outputSize(int imageSize, int filterSize, int padding, int stride) {
+    int outputSize;
+    bool caffeMode = true;
+    if (!caffeMode) {
+      outputSize =
+          (imageSize - filterSize + 2 * padding + stride - 1) / stride + 1;
+    } else {
+      outputSize = (imageSize - filterSize + 2 * padding) / stride + 1;
+    }
+    CHECK_GE(outputSize, 1);
+    return outputSize;
   }
 
   /**

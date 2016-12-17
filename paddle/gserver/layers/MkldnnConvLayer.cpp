@@ -474,6 +474,9 @@ void MkldnnConvLayer::submitDnnFwd(PassType passType) {
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     submitFwdOnce(i, getPrev(i)->getOutputValue(), getOutputValue());
   }
+
+  // forward activation
+  forwardActivation();
 }
 
 void MkldnnConvLayer::exBwdBias(MatrixPtr topDiff) {
@@ -596,6 +599,8 @@ void MkldnnConvLayer::exBackward(const UpdateCallback &callback) {
 }
 
 void MkldnnConvLayer::submitDnnBwd(const UpdateCallback &callback) {
+  // backward activation
+  backwardActivation();
 
   exBackward(callback);
 
