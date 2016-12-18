@@ -381,7 +381,7 @@ void MkldnnPoolLayer::exBwd(const UpdateCallback &callback) {
   }
 
   inputGrad->maxPoolBackward(*inputV, ih_[0], iw_[0], *outGrad, *outV,
-                             fw_, fh_, sh_, sw_, oh_[0], iw_[0],
+                             fw_, fh_, sh_, sw_, oh_[0], ow_[0],
                              1, 1, ph_, pw_);
 }
 
