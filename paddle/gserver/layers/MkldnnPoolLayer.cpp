@@ -31,10 +31,16 @@ bool MkldnnPoolLayer::initDnn(const LayerMap &layerMap,
 //  if (!conf.caffe_mode()) {
 //    LOG(FATAL) << "Only support caffe mode with MKL-DNN by now!";
 //  }
-  poolType_ = conf.pool_type();
-  if (poolType_ != "max-projection") {
+  const std::string& poolType_ = conf.pool_type();
+  if (poolType_ == "max-projection") {
+    poolAlgo_= algorithm::pooling_max;
+  } else if (poolType_ == "avg-projection") {
+    poolAlgo_ = algorithm::pooling_avg;
     LOG(FATAL) << "Only support max pooling by now!";
+  } else {
+    LOG(FATAL) << "unknow pooling type!";
   }
+  
   ic_.push_back(conf.channels());
   iw_.push_back(conf.img_size());
   ow_.push_back(conf.output_x());
@@ -91,113 +97,74 @@ bool MkldnnPoolLayer::reshapeOutput() {
 }
 
 void MkldnnPoolLayer::resetDnnFwd() {
-  /*
-  LOG(INFO) << "reset mkldnn conv forward of layer: " << config_.name();
-  // TODO: only care about i==0 by now
-  memory::dims biasDims = {oc_};
-  bool hasBias = (biases_ && biases_->getW()) ? true : false;
-  for (size_t i = 0; i != inputLayers_.size(); ++i) {
-    CHECK(bs_ == getInput(i).getBatchSize())
-      << "Assert batchsize of input layers are equal";
-    
-    // create dim structure that describes user data.
-    memory::dims botDims = {bs_, ic_[i], ih_[i], iw_[i]};
-    memory::dims wgtDims = (gp_[i] == 1) ? 
-        memory::dims{oc_, ic_[i], fh_[i], fw_[i]}
-      : memory::dims{gp_[i], oc_/gp_[i], ic_[i]/gp_[i], fh_[i], fw_[i]};
-    memory::dims strides = {sh_[i], sw_[i]};
-    memory::dims padding = {ph_[i], pw_[i]};
-    memory::dims topDims = {bs_, oc_, oh_[i], ow_[i]};
-    
-    dataBot_.reset(new MkldnnBuffer(botDims));
-    dataWgt_.reset(new MkldnnBuffer(wgtDims));
-    dataTop_.reset(new MkldnnBuffer(topDims));
-    if (hasBias) {
-      dataBias_.reset(new MkldnnBuffer(biasDims));
-    }
-    // init user memory of bottom, weights and bias
-    real *botData = getPrev(i)->getOutputValue()->getData();
-    real *wgtData = weights_[i]->getW()->getData();
-    real *topData = getOutputValue()->getData();
-    const std::shared_ptr<mkldnn::memory::desc> prvMD = getPrev(i)->getTopDataMD();
-    if (prvMD) {
-      dataBot_->initUser(botData, *prvMD, engineCpu_);
-    } else {
-      dataBot_->initUser(botData, botDims, memory::format::nchw, engineCpu_);
-    }
-    dataWgt_->initUser(wgtData, wgtDims, (gp_[i] == 1) ?
-                 memory::format::oihw : memory::format::goihw, engineCpu_);
-    if (hasBias) {
-      real *biasData = biases_->getW()->getData();
-      dataBias_->initUser(biasData, dataBias_->getDefaultDims(),
-        memory::format::x, engineCpu_);
-    }
-    // create conv desc from internal desc 
-    std::shared_ptr<convolution_forward::desc> fwdDesc;
-    if (hasBias) {
-      fwdDesc.reset(new convolution_forward::desc(prop_kind::forward_training,
-                          algorithm::convolution_direct,
-                          dataBot_->getMDAny(),
-                          dataWgt_->getMDAny(),
-                          dataBias_->getMDAny(),
-                          dataTop_->getMDAny(),
-                          strides, padding, padding,
-                          padding_kind::zero));
-    } else {
-      fwdDesc.reset(new convolution_forward::desc(prop_kind::forward_training,
-                          algorithm::convolution_direct,
-                          dataBot_->getMDAny(),
-                          dataWgt_->getMDAny(),
-                          dataTop_->getMDAny(),
-                          strides, padding, padding,
-                          padding_kind::zero));
-    }
-    fwdPD_.reset(new convolution_forward::primitive_desc(*fwdDesc, engineCpu_));
-    // init cvt
-    if (dataBot_->initCvt(fwdPD_->src_primitive_desc(), dnnCvtUser2Internal)) {
-      LOG(INFO) << "need reorder --- bottom data: "
-        << DNN_FORMAT[dataBot_->getUserFmt()]
-        << " >>>>> "
-        << DNN_FORMAT[dataBot_->getIntlFmt()];
-    }
-    if (dataWgt_->initCvt(fwdPD_->weights_primitive_desc(), dnnCvtUser2Internal)) {
-      LOG(INFO) << "need reorder --- weight data: "
-        << DNN_FORMAT[dataWgt_->getUserFmt()]
-        << " >>>>> "
-        << DNN_FORMAT[dataWgt_->getIntlFmt()];
-    }
-    if (hasBias) {
-      real *biasData = biases_->getW()->getData();
-      dataBias_->initUser(biasData, dataBias_->getDefaultDims(), memory::format::x, engineCpu_);
-      if (dataBias_->initCvt(fwdPD_->bias_primitive_desc(),
-        dnnCvtUser2Internal)) {
-        LOG(INFO) << "need reorder --- bias data: "
-          << DNN_FORMAT[dataBias_->getIntlFmt()]
-          << " >>>>> "
-          << DNN_FORMAT[dataBias_->getUserFmt()];
-      }
-    }
-    // init top user memory and cvt
-    if (setDnnTopDataFmt_) {
-      dataTop_->initUser(topData, fwdPD_->dst_primitive_desc());
-      setTopDataMD(dataTop_->getUserMD());
-    } else {
-      dataTop_->initUser(topData, topDims, memory::format::nchw, engineCpu_);
-    }
-    if (dataTop_->initCvt(fwdPD_->dst_primitive_desc(), dnnCvtInternal2User)) {
-      LOG(INFO) << "need reorder --- top data: " 
-        << DNN_FORMAT[dataTop_->getIntlFmt()]
-        << " >>>>> "
-        << DNN_FORMAT[dataTop_->getUserFmt()];
-    }
-    LOG(INFO) << "data format flow --- "
-      << DNN_FORMAT[dataBot_->getUserFmt()] << " >>> ("
-      << DNN_FORMAT[dataBot_->getIntlFmt()] << " >>> "
-      << DNN_FORMAT[dataTop_->getIntlFmt()] << ") >>> "
-      << DNN_FORMAT[dataTop_->getUserFmt()];
-    
+  LOG(INFO) << "reset mkldnn forward of pool layer: " << config_.name();
+
+  CHECK(bs_ == getInput(0).getBatchSize())
+    << "Assert batchsize of input layers are equal";
+  
+  // create dim structure that describes user data.
+  memory::dims botDims = {bs_, ic_[0], ih_[0], iw_[0]};
+  memory::dims kernel = {fh_, fw_};
+  memory::dims strides = {sh_, sw_};
+  memory::dims padding = {ph_, pw_};
+  memory::dims topDims = {bs_, oc_, oh_[0], ow_[0]};
+
+  dataBot_.reset(new MkldnnBuffer(botDims));
+  dataTop_.reset(new MkldnnBuffer(topDims));
+  
+  // init user memory of bottom, weights and bias
+  real *botData = getPrev(0)->getOutputValue()->getData();
+  real *topData = getOutputValue()->getData();
+  const std::shared_ptr<mkldnn::memory::desc> prvMD = getPrev(0)->getTopDataMD();
+  if (prvMD) {
+    dataBot_->initUser(botData, *prvMD, engineCpu_);
+  } else {
+    dataBot_->initUser(botData, botDims, memory::format::nchw, engineCpu_);
   }
-  printInfo();*/
+  // create pool desc from internal desc 
+  std::shared_ptr<pooling_forward::desc> fwdDesc;
+  fwdDesc.reset(new pooling_forward::desc(prop_kind::forward_training, poolAlgo_,
+                      dataBot_->getMDAny(), dataTop_->getMDAny(),
+                      strides, kernel, padding, padding,
+                      padding_kind::zero));
+  // init cvt
+  if (dataBot_->initCvt(dataBot_->getUserPD(), dnnCvtUser2Internal)) {
+    LOG(INFO) << "need reorder --- bottom data: "
+      << DNN_FORMAT[dataBot_->getUserFmt()]
+      << " >>>>> "
+      << DNN_FORMAT[dataBot_->getIntlFmt()];
+  }
+  fwdPD_.reset(new pooling_forward::primitive_desc(*fwdDesc, engineCpu_));
+
+  // init top user memory and cvt
+  if (setDnnTopDataFmt_) {
+    dataTop_->initUser(topData, fwdPD_->dst_primitive_desc());
+    setTopDataMD(dataTop_->getUserMD());
+  } else {
+    dataTop_->initUser(topData, topDims, memory::format::nchw, engineCpu_);
+  }
+  if (dataTop_->initCvt(fwdPD_->dst_primitive_desc(), dnnCvtInternal2User)) {
+    LOG(INFO) << "need reorder --- top data: " 
+      << DNN_FORMAT[dataTop_->getIntlFmt()]
+      << " >>>>> "
+      << DNN_FORMAT[dataTop_->getUserFmt()];
+  }
+  
+  bool isMax = poolAlgo_ != algorithm::pooling_avg;
+  if (isMax) {
+    workspace_.reset(new memory(fwdPD_->workspace_primitive_desc()));
+  } else {
+    auto p_workspace_desc = memory::primitive_desc(
+      {{}, memory::data_type::f32, memory::format(dataTop_->getIntlFmt())}, engineCpu_);
+    workspace_.reset(new memory(p_workspace_desc));
+  }
+  LOG(INFO) << "data format flow --- "
+    << DNN_FORMAT[dataBot_->getUserFmt()] << " >>> ("
+    << DNN_FORMAT[dataBot_->getIntlFmt()] << " >>> "
+    << DNN_FORMAT[dataTop_->getIntlFmt()] << ") >>> "
+    << DNN_FORMAT[dataTop_->getUserFmt()];
+  
+  printInfo();
 }
 
 void MkldnnPoolLayer::resetDnnBwd() {
@@ -356,57 +323,31 @@ void MkldnnPoolLayer::resetDnnBwd() {
 */
 }
 
-void MkldnnPoolLayer::submitFwdOnce(
-  int inputIdx, const MatrixPtr& botVal, const MatrixPtr& topVal) {
-  /*real* botdata = botVal->getData();
-  real* topdata = topVal->getData();
-  real* wgtdata = weights_[inputIdx]->getW()->getData();
-  std::vector<primitive> convFwd;
-  dataBot_->submitCvt(convFwd, botdata);
-  dataWgt_->submitCvt(convFwd, wgtdata);
-  if(biases_ && biases_->getW()) {
-    // only for shared bias
-    // TODO: enable unshared bias
-    real* biasdata = biases_->getW()->getData();
-    dataBias_->submitCvt(convFwd, biasdata);
-    convFwd.push_back(convolution_forward(*fwdPD_,
-                *(dataBot_->getIntlMem()), *(dataWgt_->getIntlMem()),
-                *(dataBias_->getIntlMem()), *(dataTop_->getIntlMem())));
-  } else {
-    convFwd.push_back(convolution_forward(*fwdPD_, *(dataBot_->getIntlMem()),
-                *(dataWgt_->getIntlMem()),
-                *(dataTop_->getIntlMem())));
-  }
+void MkldnnPoolLayer::myFwd(PassType passType) {
+  /// all sumbit cvt should be clear
+  clearAllCvtFlags();
+
+  real *botdata = getPrev(0)->getOutputValue()->getData();
+  real *topdata = getOutputValue()->getData();
+
+  std::vector<primitive> poolFwd;
+  dataBot_->submitCvt(poolFwd, botdata);
   
-  dataTop_->submitCvt(convFwd, topdata);
+  if(poolAlgo_ == algorithm::pooling_max) {
+    poolFwd.push_back(pooling_forward(*fwdPD_,
+      *(dataBot_->getIntlMem()), *(dataTop_->getIntlMem()),
+      *workspace_));
+  } else {
+    poolFwd.push_back(pooling_forward(*fwdPD_,
+      *(dataBot_->getIntlMem()), *(dataTop_->getIntlMem())));
+  }
+  dataTop_->submitCvt(poolFwd, topdata);
 
   // start forward
-  REGISTER_TIMER_INFO("dnnFwd", getName().c_str());
-  stream(stream::kind::eager).submit(convFwd).wait();
+  REGISTER_TIMER_INFO("mkldnnPoolFwd", getName().c_str());
+  stream(stream::kind::eager).submit(poolFwd).wait();
+//  LOG(INFO) << "------------" << topdata[0];// << "," << topdata[1] << "," << topdata[2];
 
-  */
-}
-
-void MkldnnPoolLayer::submitBwdData(
-  int inputIdx, const MatrixPtr& topGrad, const MatrixPtr& botGrad) {
-/*  if (botGrad == NULL) {
-    return;
-  }
-  real* topdiff = topGrad->getData();
-  real* wgtdata = weights_[inputIdx]->getW()->getData();
-  real* botdiff = botGrad->getData();
-  std::vector<primitive> convBwdData;
-  dataWgt_->submitCvt(convBwdData, wgtdata);
-  diffTop_->submitCvt(convBwdData, topdiff);
-  auto bwdData = convolution_backward_data(
-    *bwdDataPD_, *(diffTop_->getIntlMem()),
-    *(dataWgt_->getIntlMem()), *(diffBot_->getIntlMem()));
-  convBwdData.push_back(bwdData);
-  diffBot_->submitCvt(convBwdData, botdiff);
-  stream(stream::kind::eager).submit(convBwdData).wait();
-//   LOG(INFO) << "!!!!!!!!!backward data execute completed!!!!!!!!";
-
-*/
 }
 
 void MkldnnPoolLayer::exFwd(PassType passType) {
@@ -417,14 +358,14 @@ void MkldnnPoolLayer::exFwd(PassType passType) {
   MatrixPtr outV = out.value;
   outV->maxPoolForward(*inputV, ih_[0], iw_[0], ic_[0], fw_, fh_,
                        sh_, sw_, oh_[0], ow_[0], ph_, pw_);
+
+//  real *topdata = getOutputValue()->getData();
+//  LOG(INFO) << "------------" << topdata[0];// << "," << topdata[1] << "," << topdata[2];
 }
 
 void MkldnnPoolLayer::submitDnnFwd(PassType passType) {
-
-  /// all sumbit cvt should be clear
-//  clearAllCvtFlags();
-
-  exFwd(passType);
+//  exFwd(passType);
+  myFwd(passType);
 }
 
 void MkldnnPoolLayer::exBwd(const UpdateCallback &callback) {
@@ -434,10 +375,11 @@ void MkldnnPoolLayer::exBwd(const UpdateCallback &callback) {
   MatrixPtr inputV = in.value;
   MatrixPtr outV = getOutputValue();
   MatrixPtr inputGrad = in.grad;
-
-  if (NULL == inputGrad) {
+  
+  if (NULL == getInputGrad(0)) {
     return;
   }
+
   inputGrad->maxPoolBackward(*inputV, ih_[0], iw_[0], *outGrad, *outV,
                              fw_, fh_, sh_, sw_, oh_[0], iw_[0],
                              1, 1, ph_, pw_);

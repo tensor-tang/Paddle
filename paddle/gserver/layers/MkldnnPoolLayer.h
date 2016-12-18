@@ -19,26 +19,25 @@ namespace paddle {
  */
 class MkldnnPoolLayer : public MkldnnLayer {
 protected:
-  /*
-  /// For dnn convolution. Primitive Desc
-  std::shared_ptr<convolution_forward::primitive_desc> fwdPD_;
-  std::shared_ptr<convolution_backward_data::primitive_desc> bwdDataPD_;
-  std::shared_ptr<convolution_backward_weights::primitive_desc> bwdWgtPD_;
+  
+  /// For dnn pooling. Primitive Desc
+  std::shared_ptr<pooling_forward::primitive_desc> fwdPD_;
+  //std::shared_ptr<convolution_backward_data::primitive_desc> bwdDataPD_;
+  //std::shared_ptr<convolution_backward_weights::primitive_desc> bwdWgtPD_;
 
-  */
+  std::shared_ptr<memory> workspace_;
 
   // padding, stride and filter size
   int ph_, pw_;
   int sh_, sw_;
   int fh_, fw_;
   
-  std::string poolType_;
-
+  algorithm poolAlgo_;
 public:
   explicit MkldnnPoolLayer(const LayerConfig& config)
-    : MkldnnLayer(config)/*,
+    : MkldnnLayer(config),
       fwdPD_(NULL),
-      bwdDataPD_(NULL),
+      workspace_(NULL)/*,
       bwdWgtPD_(NULL)*/
     {}
 
@@ -55,18 +54,6 @@ public:
     if (diffTop_) diffTop_->clearCvtFlag();
   }
 
-  /* forward data
-   * input: botdata, wgtdata, biasdata
-   * output topdata
-   */
-  void submitFwdOnce(int inputIdx, const MatrixPtr& botVal, const MatrixPtr& topVal);
-
-  /* backward data
-   * input: topdiff, wgtdata
-   * output botdiff
-   */
-  void submitBwdData(int inputIdx, const MatrixPtr& topGrad, const MatrixPtr& botGrad);
-
   // return false if donot need reshape 
   bool reshapeOutput();
 
@@ -78,6 +65,7 @@ public:
   void submitDnnBwd(const UpdateCallback& callback);
 
 private:
+  void myFwd(PassType passType);
   void exFwd(PassType passType);
   void exBwd(const UpdateCallback &callback);
   
