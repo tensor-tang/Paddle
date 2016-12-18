@@ -1088,10 +1088,12 @@ def cnn_image_size(output_size, filter_size, padding, stride, caffe_mode):
 def parse_pool(pool, input_layer_name, pool_conf):
     pool_conf.pool_type = pool.pool_type
     config_assert(pool.pool_type in [
-        'max-projection', 'avg-projection', 'cudnn-max-pool', 'cudnn-avg-pool'
+        'max-projection', 'avg-projection', 'cudnn-max-pool', 'cudnn-avg-pool',
+        'mkldnn-max-pool', 'mkldnn-avg-pool'
     ], "pool-type %s is not in "
                   "['max-projection', 'avg-projection', "
-                  "'cudnn-max-pool', 'cudnn-avg-pool']" % pool.pool_type)
+                  "'cudnn-max-pool', 'cudnn-avg-pool', "
+                  "'mkldnn-max-pool', 'mkldnn-avg-pool']" % pool.pool_type)
 
     pool_conf.channels = pool.channels
     pool_conf.size_x = pool.size_x
@@ -1674,7 +1676,7 @@ class ConvLayerBase(LayerBase):
             (parallel_nn == 0 or self.config.device > -1)):
             self.layer_type = "cudnn_conv"
         else:
-            self.layer_type = "mkldnnconv" # "exconv"
+            self.layer_type = "exconv" # "mkldnnconv"
         # need to specify layer in config
         self.config.type = self.layer_type
 
@@ -1706,9 +1708,9 @@ class ConvLayerBase(LayerBase):
 class ConvLayer(ConvLayerBase):
     layer_type = 'exconv'
 
-@config_layer('dnnconv')
+@config_layer('mkldnnconv')
 class ConvLayer(ConvLayerBase):
-    layer_type = 'dnnconv'
+    layer_type = 'mkldnnconv'
 
 @config_layer('cudnn_conv')
 class ConvLayer(ConvLayerBase):
@@ -1788,9 +1790,11 @@ class NormLayer(LayerBase):
 
 @config_layer('pool')
 class PoolLayer(LayerBase):
+    layer_type = 'mkldnnpool' # 'pool'
     def __init__(self, name, inputs, device=None):
         super(PoolLayer, self).__init__(
-            name, 'pool', 0, inputs=inputs, device=device)
+            name, self.layer_type, 0, inputs=inputs, device=device)
+        print("---------after name: %s, pool type: %s -------" % (name, self.config.type))
         for input_index in xrange(len(self.inputs)):
             input_layer = self.get_input_layer(input_index)
             parse_pool(self.inputs[input_index].pool, input_layer.name,
@@ -1800,7 +1804,11 @@ class PoolLayer(LayerBase):
                                                     pool_conf.output_x))
             self.set_layer_size(
                 (pool_conf.output_x * pool_conf.output_y) * pool_conf.channels)
+        self.config.type = self.layer_type
 
+@config_layer('mkldnnpool')
+class MKLDNNPoolLayer(PoolLayer):
+    layer_type = 'mkldnnpool'        
 
 @config_layer('spp')
 class SpatialPyramidPoolLayer(LayerBase):

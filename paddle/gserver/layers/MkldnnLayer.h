@@ -139,9 +139,9 @@ public:
   }
   
   // for conv and pool only support caffe mode by now
-  int outputSize(int imageSize, int filterSize, int padding, int stride) {
+  int outputSize(int imageSize, int filterSize, int padding, int stride,
+                       bool caffeMode = true) {
     int outputSize;
-    bool caffeMode = true;
     if (!caffeMode) {
       outputSize =
           (imageSize - filterSize + 2 * padding + stride - 1) / stride + 1;

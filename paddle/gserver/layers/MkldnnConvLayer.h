@@ -61,28 +61,12 @@ public:
 
   bool initDnn(const LayerMap& layerMap, const ParameterMap& parameterMap);
 
-  /*
-  int dimSize(const memory::dims &t) {
-    int sz = 1;
-    for (size_t i = 0; i < t.size(); ++i) 
-      sz *= t[i];
-    return sz;
-  } */
+  void initDnnflags() {
+    setDnnTopDataFmt_ = false;
+    setDnnBotDiffFmt_.push_back(false);
+  }
 
   size_t getOneBatchSize();
-
-  int outputSize(int imageSize, int filterSize, int padding, int stride) {
-    int outputSize;
-    bool caffeMode = true;
-    if (!caffeMode) {
-      outputSize =
-          (imageSize - filterSize + 2 * padding + stride - 1) / stride + 1;
-    } else {
-      outputSize = (imageSize - filterSize + 2 * padding) / stride + 1;
-    }
-    CHECK_GE(outputSize, 1);
-    return outputSize;
-  }
   
   void clearAllCvtFlags() {
     if (dataBot_) dataBot_->clearCvtFlag();
