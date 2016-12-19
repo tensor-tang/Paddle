@@ -100,6 +100,8 @@ bool Layer::init(const LayerMap& layerMap, const ParameterMap& parameterMap) {
 
   /* specify the activation function according to the configuration */
   std::string action_type = config_.active_type();
+  if (!action_type.empty())
+    LOG(INFO) << getName() << ": action type: " << action_type;
   activation_.reset(ActivationFunction::create(action_type));
   CHECK(activation_);
 

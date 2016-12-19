@@ -191,6 +191,22 @@ void backward(Argument& act) { act.grad->reluDerivative(*act.value); }
 END_DEFINE_ACTIVATION(relu)
 
 /**
+ * @brief MKLDNN Relu Activation.
+ * forward. y = max(0, z)
+ *
+ * derivative of relu is:
+ *
+ *    1 if z > 0
+ *
+ *    0 otherwise.
+ */
+BEGIN_DEFINE_ACTIVATION(mkldnn_relu)
+void forward(Argument& act) { act.value->relu(*act.value); }
+
+void backward(Argument& act) { act.grad->reluDerivative(*act.value); }
+END_DEFINE_ACTIVATION(mkldnn_relu)
+
+/**
  * @brief BRelu Activation.
  *
  * forward. y = min(24, max(0, z))

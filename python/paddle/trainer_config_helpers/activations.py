@@ -127,7 +127,8 @@ class ReluActivation(BaseActivation):
     """
 
     def __init__(self):
-        BaseActivation.__init__(self, 'relu', True)
+        BaseActivation.__init__(self, 'mkldnn_relu', True)
+        # BaseActivation.__init__(self, 'relu', True)
 
 
 class BReluActivation(BaseActivation):
