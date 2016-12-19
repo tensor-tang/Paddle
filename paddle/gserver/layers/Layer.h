@@ -27,7 +27,10 @@ limitations under the License. */
 #include "paddle/gserver/activations/ActivationFunction.h"
 #include <paddle/parameter/ParallelParameter.h>
 #include <paddle/parameter/Weight.h>
+
+#ifdef PADDLE_USE_MKLDNN
 #include "mkldnn.hpp"
+#endif
 
 /// Macro for registering a layer type.
 /// Example: REGISTER_LAYER(crf_error, CRFDecodingErrorLayer);
@@ -102,6 +105,7 @@ protected:
   /// Mark input grad in(true) or out(false) of backward function.
   std::vector<bool> markInBackward_;
 
+#ifdef PADDLE_USE_MKLDNN
   /**
    * MKLDNN memory desc
    * if donot have MD, then their format are default nchw
@@ -111,6 +115,7 @@ protected:
   std::shared_ptr<mkldnn::memory::desc> topDataMD_;
   std::shared_ptr<mkldnn::memory::desc> topDiffMD_;
   std::string nextType_;
+#endif
 
 public:
   /**
@@ -214,7 +219,8 @@ public:
 
   /// Register a Layer
   static ClassRegistrar<Layer, LayerConfig> registrar_;
-  
+
+#ifdef PADDLE_USE_MKLDNN
   bool isNextLayerTypeEmpty() {
     return nextType_.empty();
   }
@@ -242,7 +248,7 @@ public:
   const std::shared_ptr<mkldnn::memory::desc> getTopDiffMD() {
     return topDiffMD_;
   }
-
+#endif
   /** 
    * Get the flag whether layer need to compute gradient.
    */

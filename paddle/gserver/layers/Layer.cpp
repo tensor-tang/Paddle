@@ -42,9 +42,7 @@ Layer::Layer(const LayerConfig& config, bool useGpu)
     : config_(config),
       useGpu_(useGpu),
       deviceId_(-1),
-      needSequenceInfo_(true),
-      topDataMD_(NULL),
-      topDiffMD_(NULL)
+      needSequenceInfo_(true)
       {}
 
 bool Layer::init(const LayerMap& layerMap, const ParameterMap& parameterMap) {
@@ -55,6 +53,10 @@ bool Layer::init(const LayerMap& layerMap, const ParameterMap& parameterMap) {
       useGpu_ = false;
     }
   }
+#ifdef PADDLE_USE_MKLDNN
+  topDataMD_ = NULL;
+  topDiffMD_ = NULL;
+#endif
 
   output_.deviceId = deviceId_;
 

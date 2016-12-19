@@ -155,6 +155,7 @@ if(WITH_OMP)
 endif()
 
 if(WITH_MKLDNN)
+    add_definitions(-DPADDLE_USE_MKLDNN)
     include_directories("${MKLDNN_INCLUDE_DIR}")
     set(MKLDNN_LIBS ${MKLDNN_LIBRARY})
 endif()

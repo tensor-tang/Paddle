@@ -1790,7 +1790,7 @@ class NormLayer(LayerBase):
 
 @config_layer('pool')
 class PoolLayer(LayerBase):
-    layer_type = 'mkldnnpool' # 'pool'
+    layer_type = 'pool' # 'mkldnnpool'
     def __init__(self, name, inputs, device=None):
         super(PoolLayer, self).__init__(
             name, self.layer_type, 0, inputs=inputs, device=device)
