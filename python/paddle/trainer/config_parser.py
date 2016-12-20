@@ -1794,7 +1794,6 @@ class PoolLayer(LayerBase):
     def __init__(self, name, inputs, device=None):
         super(PoolLayer, self).__init__(
             name, self.layer_type, 0, inputs=inputs, device=device)
-        print("---------after name: %s, pool type: %s -------" % (name, self.config.type))
         for input_index in xrange(len(self.inputs)):
             input_layer = self.get_input_layer(input_index)
             parse_pool(self.inputs[input_index].pool, input_layer.name,

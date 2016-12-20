@@ -195,6 +195,7 @@ void backward(Argument& act) { act.grad->reluDerivative(*act.value); }
 END_DEFINE_ACTIVATION(relu)
 
 #ifdef PADDLE_USE_MKLDNN
+
 /**
  * @brief MKLDNN Relu Activation.
  * forward  
@@ -213,26 +214,14 @@ public:
   float negative_slope;
 
   void resetDnnFwd(const Argument& arg) {
-    int batchsize = arg.getBatchSize();
-    if (bs_ == batchsize) {
+    if (bs_ == arg.getBatchSize()) {
       return;
     }
-    bs_ = batchsize;
-    oh_ = arg.getFrameHeight();
-    ow_ = arg.getFrameWidth();
-    oc_ = arg.value->getElementCnt()/(bs_*oh_*ow_);
 
+    MkldnnActivation::reshapeDnnFwd(arg);
     LOG(INFO) << this->getName() << " reshape batchsize: "
-      << bs_ << ", " << oc_ << ", " << oh_ << ", " << ow_;
-
-    engine_.reset(new engine(engine::cpu, 0));
-    negative_slope = -0.f; // careful: should be -0, not 0
-    memory::dims dm = {bs_, oc_, oh_, ow_};
-    srcMD_.reset(new memory::desc(dm, memory::data_type::f32,
-      memory::format::nchw));
-    dstMD_.reset(new memory::desc(dm, memory::data_type::f32,
-      memory::format::nchw));
-
+          << bs_ << ", " << oc_ << ", " << oh_ << ", " << ow_;
+    
     real* pdata = arg.value->getData();
     dataBot_.reset(new memory({*srcMD_, *engine_}, pdata));
     dataTop_.reset(new memory({*dstMD_, *engine_}, pdata));
@@ -241,6 +230,9 @@ public:
     // but in backward not sure it's OK if they are the same, need double check
     // maybe need define a temporary mkldnn:memory to handle the dst
     // and then copy it to the output
+
+    // careful: should be -0, not 0
+    negative_slope = -0.f; 
 
     auto reluMD = relu_forward::desc(prop_kind::forward_training, *srcMD_,
                                      negative_slope);
@@ -268,7 +260,7 @@ public:
 
 // mkldnn format only support nchw
   void forward(Argument& act) {
-    /* for test
+    /* for comparing with defalut result
     MatrixPtr tmp = Matrix::create(act.value->getHeight(), act.value->getWidth(), false, false);
     MatrixPtr in = Matrix::create(act.value->getHeight(), act.value->getWidth(), false, false);
     in->copyFrom(*act.value);
@@ -279,17 +271,124 @@ public:
     fwd.push_back(*reluFwd_);
     stream(stream::kind::eager).submit(fwd).wait();      
 
-    /* for test
+    /* for comparing with defalut result
     for (size_t i = 0; i < std::max(act.value->getElementCnt()/10, (size_t)1); ++i)
       LOG(INFO) << "----------src: " << in->getData()[i] << "; "
         << tmp->getData()[i] << " --- " << act.value->getData()[i];
     */
   }
+  void backward(Argument& act) { act.grad->reluDerivative(*act.value); }
+END_DEFINE_ACTIVATION(mkldnn_relu)
+
+/**
+ * @brief MKLDNN softmax Activation.
+ * \f[
+ * P(y=j|x) = \frac{e^{x^Tw_j}}{\sum^K_{k=1}e^{x^Tw_k}}
+ * \f]
+ */
+class ACTIVATION_CLASS_NAME(mkldnn_softmax)
+                        : public ActivationFunction, public MkldnnActivation { 
+private:
+  static const std::string name;
+  std::shared_ptr<softmax_forward> softmaxFwd_;
+  int axis;
+
+  // backward
+  MatrixPtr sftMaxSum_;
+  MatrixPtr sftMaxDot_;
+  MatrixPtr one_;
+
+public:
+  const std::string& getName() const { return name; }
+
+  void resetDnnFwd(const Argument& arg) {
+    if (bs_ == arg.getBatchSize()) {
+      return;
+    }
+
+    MkldnnActivation::reshapeDnnFwd(arg);
+    LOG(INFO) << this->getName() << " reshape batchsize: "
+          << bs_ << ", " << oc_ << ", " << oh_ << ", " << ow_;
+
+    real* pdata = arg.value->getData();
+    dataBot_.reset(new memory({*srcMD_, *engine_}, pdata));
+    dataTop_.reset(new memory({*dstMD_, *engine_}, pdata));
+    // TODO: check if OK use same pdata?
+    // in forward src and dst memory can be the same,
+    // but in backward not sure it's OK if they are the same, need double check
+    // maybe need define a temporary mkldnn:memory to handle the dst
+    // and then copy it to the output
+
+    axis = 1;
+    // only support forward_scoring by now
+    auto softmaxMD = softmax_forward::desc(prop_kind::forward_scoring, *srcMD_, axis);
+    auto softmaxPD = softmax_forward::primitive_desc(softmaxMD, *engine_);
+    softmaxFwd_.reset(new softmax_forward(softmaxPD, *dataBot_, *dataTop_));
+
+    needResetBwd_ = true;
+  }
+
+  /** 
+   * each dnn layer should have function
+   * to init or reset dnn backward
+   */
+  void resetDnnBwd(const Argument& arg) {
+    if (!needResetBwd_) 
+      return;
+    
+    // not implement
+    // in forward src and dst memory can be the same,
+    // but in backward not sure it's OK if they are the same, need double check
+    // maybe need define a temporary mkldnn:memory to handle the dst
+    // and then copy it to the output
+    needResetBwd_ = false;
+  }
+
+// mkldnn format only support nchw
+  void forward(Argument& act) {
+    // for comparing with defalut result
+    //MatrixPtr tmp = Matrix::create(act.value->getHeight(), act.value->getWidth(), false, false);
+    //MatrixPtr in = Matrix::create(act.value->getHeight(), act.value->getWidth(), false, false);
+    //in->copyFrom(*act.value);
+    //act.value->softmax(*tmp);
+    
+    std::vector<primitive> fwd;
+    fwd.push_back(*softmaxFwd_);
+    stream(stream::kind::eager).submit(fwd).wait();      
+    
+    // for comparing with defalut result
+    // for (size_t i = 0; i < std::max(act.value->getElementCnt()/10, (size_t)1); ++i)
+    //  LOG(INFO) << "----------src: " << in->getData()[i] << "; "
+    //    << tmp->getData()[i] << " --- " << act.value->getData()[i];
+    
+  }
 
   void backward(Argument& act) {
-    act.grad->reluDerivative(*act.value);
+    MatrixPtr outputV = act.value;
+    MatrixPtr outputG = act.grad;
+
+    if (outputG->useGpu()) {
+      outputG->softmaxBackward(*outputV);
+    } else {
+      SetDevice device(act.deviceId);
+      Matrix::resizeOrCreate(sftMaxDot_, outputG->getHeight(),
+                             outputG->getWidth(),
+                             /* trans */ false, useGpu(act.deviceId));
+      Matrix::resizeOrCreate(sftMaxSum_, outputG->getHeight(), 1,
+                             /* trans */ false, useGpu(act.deviceId));
+      if (!one_ || one_->getWidth() != outputG->getWidth()) {
+        Matrix::resizeOrCreate(one_, 1, outputG->getWidth(),
+                               /* trans */ false, useGpu(act.deviceId));
+        one_->one();
+      }
+
+      sftMaxDot_->dotMul(*outputG, *outputV);
+      sftMaxSum_->colMerge(*sftMaxDot_);
+
+      act.grad->softmaxDerivative(*act.value, *sftMaxSum_);
+    }
   }
-END_DEFINE_ACTIVATION(mkldnn_relu)
+END_DEFINE_ACTIVATION(mkldnn_softmax)
 
 #endif
 
