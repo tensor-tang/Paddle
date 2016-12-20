@@ -233,6 +233,28 @@ public:
     return nextType_;
   }
 
+  bool hasActivation() {
+    if (activation_ && !(activation_->getName().empty())) {
+      return true;
+    } else {
+      return false;
+    } 
+  }
+
+  bool hasMkldnnAct() {
+    if (!hasActivation()) {
+      return false;
+    }
+    const std::string dnn("mkldnn");
+    const std::string& type = activation_->getName();
+    // if type started with "mkldnn" return true
+    if (type.compare(0, dnn.length(), dnn) == 0 ) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+
   void setTopDataMD(const mkldnn::memory::desc md) {
     topDataMD_.reset(new mkldnn::memory::desc(md));
   }

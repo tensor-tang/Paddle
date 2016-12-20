@@ -60,6 +60,19 @@ public:
    */
   virtual void backward(Argument& act) = 0;
 
+#ifdef PADDLE_USE_MKLDNN
+  /** 
+   * each dnn layer should have function
+   * to init or reset dnn forward
+   */
+  virtual void resetDnnFwd(const Argument& arg) {}
+  /** 
+   * each dnn layer should have function
+   * to init or reset dnn backward
+   */
+  virtual void resetDnnBwd(const Argument& arg) {}
+#endif
+
   virtual const std::string& getName() const = 0;
 };
 

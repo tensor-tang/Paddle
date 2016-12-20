@@ -115,25 +115,32 @@ public:
   }
 
   bool isNextLayerDnn() {
+    if (hasActivation()) {
+      // if has activation, no matter if mkldnn activation, only support nchw
+      return false;
+    }
     const std::string dnn("mkldnn");
     if (!isNextLayerTypeEmpty()  // not empty
       && getNextLayerType().compare(0, dnn.length(), dnn) == 0 ) {
       // type started with "mkldnn"
       return true;
-    }
-    else {
+    } else {
       return false;
     }
   }
 
   bool isPrevLayerDnn(size_t idx) {
+    if (getPrev(idx) == NULL)
+      return false;
+    if (getPrev(idx)->hasActivation()) {
+      // if has activation, no matter if mkldnn activation, only support nchw
+      return false;
+    }
     const std::string dnn("mkldnn");
-    if (getPrev(idx) != NULL
-      && getPrev(idx)->getType().compare(0, dnn.length(), dnn) == 0 ) {
+    if (getPrev(idx)->getType().compare(0, dnn.length(), dnn) == 0 ) {
       // type started with "mkldnn"
       return true;
-    }
-    else {
+    } else {
       return false;
     }
   }

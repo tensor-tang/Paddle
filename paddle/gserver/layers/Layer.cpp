@@ -100,11 +100,12 @@ bool Layer::init(const LayerMap& layerMap, const ParameterMap& parameterMap) {
 
   /* specify the activation function according to the configuration */
   std::string action_type = config_.active_type();
-  if (!action_type.empty())
-    LOG(INFO) << getName() << ": action type: " << action_type;
   activation_.reset(ActivationFunction::create(action_type));
   CHECK(activation_);
-
+#ifdef PADDLE_USE_MKLDNN
+  if (hasActivation())
+      LOG(INFO) << getName() << ": action type: " << action_type;
+#endif
   initNeedFlags();
   markInBackward_.assign(inputLayers_.size(), false);
 
@@ -337,6 +338,12 @@ void Layer::showOutputStats() {
 }
 
 void Layer::forwardActivation() {
+#ifdef PADDLE_USE_MKLDNN
+  if (hasMkldnnAct()) {
+    activation_->resetDnnFwd(output_);
+  }
+#endif
+
   /* activation */
   activation_->forward(output_);
 
@@ -375,6 +382,12 @@ void Layer::backwardActivation() {
     MatrixPtr oGrad = getOutputGrad();
     oGrad->dotMul(*oGrad, *dropOutMask_);
   }
+
+#ifdef PADDLE_USE_MKLDNN
+    if (hasMkldnnAct()) {
+      activation_->resetDnnBwd(output_);
+    }
+#endif
 
   activation_->backward(output_);
 }

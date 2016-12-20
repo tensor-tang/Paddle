@@ -25,6 +25,10 @@ limitations under the License. */
 
 #include "paddle/utils/Logging.h"
 
+#ifdef PADDLE_USE_MKLDNN
+#include "MkldnnActivation.h"
+#endif
+
 namespace paddle {
 
 static ClassRegistrar<ActivationFunction> gActivationRegistrar;
@@ -190,21 +194,104 @@ void forward(Argument& act) { act.value->relu(*act.value); }
 void backward(Argument& act) { act.grad->reluDerivative(*act.value); }
 END_DEFINE_ACTIVATION(relu)
 
+#ifdef PADDLE_USE_MKLDNN
 /**
  * @brief MKLDNN Relu Activation.
- * forward. y = max(0, z)
- *
- * derivative of relu is:
- *
- *    1 if z > 0
- *
- *    0 otherwise.
+ * forward  
+ *  f(x) = negative_slope * x  (x <  0)
+ *  f(x) = x                   (x >= 0) 
  */
-BEGIN_DEFINE_ACTIVATION(mkldnn_relu)
-void forward(Argument& act) { act.value->relu(*act.value); }
+class ACTIVATION_CLASS_NAME(mkldnn_relu)
+                        : public ActivationFunction, public MkldnnActivation { 
+private:
+  static const std::string name;
+  std::shared_ptr<relu_forward> reluFwd_;
 
-void backward(Argument& act) { act.grad->reluDerivative(*act.value); }
+public:
+  const std::string& getName() const { return name; }
+
+  float negative_slope;
+
+  void resetDnnFwd(const Argument& arg) {
+    int batchsize = arg.getBatchSize();
+    if (bs_ == batchsize) {
+      return;
+    }
+    bs_ = batchsize;
+    oh_ = arg.getFrameHeight();
+    ow_ = arg.getFrameWidth();
+    oc_ = arg.value->getElementCnt()/(bs_*oh_*ow_);
+
+    LOG(INFO) << this->getName() << " reshape batchsize: "
+      << bs_ << ", " << oc_ << ", " << oh_ << ", " << ow_;
+
+    cpuEngine_.reset(new engine(engine::cpu, 0));
+    negative_slope = -0.f; // careful: should be -0, not 0
+    memory::dims dm = {bs_, oc_, oh_, ow_};
+    srcMD_.reset(new memory::desc(dm, memory::data_type::f32,
+      memory::format::nchw));
+    dstMD_.reset(new memory::desc(dm, memory::data_type::f32,
+      memory::format::nchw));
+
+    real* pdata = arg.value->getData();
+    dataBot_.reset(new memory({*srcMD_, *cpuEngine_}, pdata));
+    dataTop_.reset(new memory({*dstMD_, *cpuEngine_}, pdata));
+    // TODO: check if OK use same pdata?
+    // in forward src and dst memory can be the same,
+    // but in backward not sure it's OK if they are the same, need double check
+    // maybe need define a temporary mkldnn:memory to handle the dst
+    // and then copy it to the output
+
+    auto reluMD = relu_forward::desc(prop_kind::forward_training, *srcMD_,
+                                     negative_slope);
+    auto reluPD = relu_forward::primitive_desc(reluMD, *cpuEngine_);
+    reluFwd_.reset(new relu_forward(reluPD, *dataBot_, *dataTop_));
+
+    needResetBwd_ = true;
+  }
+
+  /** 
+   * each dnn layer should have function
+   * to init or reset dnn backward
+   */
+  void resetDnnBwd(const Argument& arg) {
+    if (!needResetBwd_) 
+      return;
+    
+    // not implement
+    // in forward src and dst memory can be the same,
+    // but in backward not sure it's OK if they are the same, need double check
+    // maybe need define a temporary mkldnn:memory to handle the dst
+    // and then copy it to the output
+    needResetBwd_ = false;
+  }
+
+// mkldnn format only support nchw
+  void forward(Argument& act) {
+    /* for test
+    MatrixPtr tmp = Matrix::create(act.value->getHeight(), act.value->getWidth(), false, false);
+    MatrixPtr in = Matrix::create(act.value->getHeight(), act.value->getWidth(), false, false);
+    in->copyFrom(*act.value);
+    act.value->relu(*tmp);
+    */
+    
+    std::vector<primitive> fwd;
+    fwd.push_back(*reluFwd_);
+    stream(stream::kind::eager).submit(fwd).wait();      
+
+    /* for test
+    for (size_t i = 0; i < std::max(act.value->getElementCnt()/10, (size_t)1); ++i)
+      LOG(INFO) << "----------src: " << in->getData()[i] << "; "
+        << tmp->getData()[i] << " --- " << act.value->getData()[i];
+    */
+  }
+
+  void backward(Argument& act) {
+    act.grad->reluDerivative(*act.value);
+  }
 END_DEFINE_ACTIVATION(mkldnn_relu)
+
+#endif
 
 /**
  * @brief BRelu Activation.
