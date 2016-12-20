@@ -225,7 +225,7 @@ public:
     LOG(INFO) << this->getName() << " reshape batchsize: "
       << bs_ << ", " << oc_ << ", " << oh_ << ", " << ow_;
 
-    cpuEngine_.reset(new engine(engine::cpu, 0));
+    engine_.reset(new engine(engine::cpu, 0));
     negative_slope = -0.f; // careful: should be -0, not 0
     memory::dims dm = {bs_, oc_, oh_, ow_};
     srcMD_.reset(new memory::desc(dm, memory::data_type::f32,
@@ -234,8 +234,8 @@ public:
       memory::format::nchw));
 
     real* pdata = arg.value->getData();
-    dataBot_.reset(new memory({*srcMD_, *cpuEngine_}, pdata));
-    dataTop_.reset(new memory({*dstMD_, *cpuEngine_}, pdata));
+    dataBot_.reset(new memory({*srcMD_, *engine_}, pdata));
+    dataTop_.reset(new memory({*dstMD_, *engine_}, pdata));
     // TODO: check if OK use same pdata?
     // in forward src and dst memory can be the same,
     // but in backward not sure it's OK if they are the same, need double check
@@ -244,7 +244,7 @@ public:
 
     auto reluMD = relu_forward::desc(prop_kind::forward_training, *srcMD_,
                                      negative_slope);
-    auto reluPD = relu_forward::primitive_desc(reluMD, *cpuEngine_);
+    auto reluPD = relu_forward::primitive_desc(reluMD, *engine_);
     reluFwd_.reset(new relu_forward(reluPD, *dataBot_, *dataTop_));
 
     needResetBwd_ = true;

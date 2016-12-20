@@ -19,7 +19,7 @@ namespace paddle {
 class MkldnnActivation {
 public:
   /// For dnn engine
-  std::shared_ptr<engine> cpuEngine_;
+  std::shared_ptr<engine> engine_;
   
   // dims
   int bs_, oc_, oh_, ow_;
@@ -33,7 +33,7 @@ public:
 
 public:
   explicit MkldnnActivation()
-    : cpuEngine_(NULL),
+    : engine_(NULL),
       bs_(0),
       oc_(0),
       oh_(0),

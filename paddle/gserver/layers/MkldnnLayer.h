@@ -24,7 +24,7 @@ static const std::string DNN_FORMAT[] = {
 class MkldnnLayer : public Layer {
 public:
   /// For dnn engine
-  engine engineCpu_;
+  std::shared_ptr<engine> engine_;
   
   /// data buffers
   MkldnnBufferPtr dataBot_;
@@ -54,7 +54,7 @@ public:
 public:
   explicit MkldnnLayer(const LayerConfig& config)
     : Layer(config),
-      engineCpu_(engine::cpu, 0),
+      engine_(new engine(engine::cpu, 0)),
       dataBot_(NULL),
       dataTop_(NULL),
       diffBot_(NULL),
