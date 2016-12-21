@@ -291,7 +291,7 @@ class ACTIVATION_CLASS_NAME(mkldnn_softmax)
 private:
   static const std::string name;
   std::shared_ptr<softmax_forward> softmaxFwd_;
-  int axis;
+  int axis; // 1 means bs*nc, 0 means nc*bs
 
   // backward
   MatrixPtr sftMaxSum_;
@@ -319,7 +319,7 @@ public:
     // maybe need define a temporary mkldnn:memory to handle the dst
     // and then copy it to the output
 
-    axis = 1;
+    axis = 1; // 1 means bs*nc, 0 means nc*bs
     // only support forward_scoring by now
     auto softmaxMD = softmax_forward::desc(prop_kind::forward_scoring, *srcMD_, axis);
     auto softmaxPD = softmax_forward::primitive_desc(softmaxMD, *engine_);
