@@ -205,9 +205,9 @@ void MkldnnConvLayer::resetDnnFwd() {
       if (dataBias_->initCvt(fwdPD_->bias_primitive_desc(),
         dnnCvtUser2Internal)) {
         LOG(INFO) << "need reorder --- bias data: "
-          << DNN_FORMAT[dataBias_->getIntlFmt()]
+          << DNN_FORMAT[dataBias_->getUserFmt()]
           << " >>>>> "
-          << DNN_FORMAT[dataBias_->getUserFmt()];
+          << DNN_FORMAT[dataBias_->getIntlFmt()];
       }
     }
     // init top user memory and cvt
@@ -410,7 +410,6 @@ void MkldnnConvLayer::submitFwdOnce(
                 *(dataWgt_->getIntlMem()),
                 *(dataTop_->getIntlMem())));
   }
-  
   dataTop_->submitCvt(convFwd, topdata);
 
   // start forward
