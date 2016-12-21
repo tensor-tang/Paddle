@@ -19,7 +19,7 @@ limitations under the License. */
 
 namespace paddle {
 
-REGISTER_LAYER(mkldnnpool, MkldnnPoolLayer);
+REGISTER_LAYER(mkldnn_pool, MkldnnPoolLayer);
 
 bool MkldnnPoolLayer::initDnn(const LayerMap &layerMap,
                            const ParameterMap &parameterMap) {

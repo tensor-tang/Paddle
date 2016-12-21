@@ -1676,11 +1676,11 @@ class ConvLayerBase(LayerBase):
             config_assert(use_gpu, "cudnn_conv only support GPU")
 
         if (use_gpu == 1 and self.layer_type != "exconv" and
-            self.layer_type != "mkldnnconv" and
+            self.layer_type != "mkldnn_conv" and
             (parallel_nn == 0 or self.config.device > -1)):
             self.layer_type = "cudnn_conv"
         else:
-            self.layer_type = "exconv" # "mkldnnconv"
+            self.layer_type = "mkldnn_conv" # "exconv"
         # need to specify layer in config
         self.config.type = self.layer_type
 
@@ -1712,9 +1712,9 @@ class ConvLayerBase(LayerBase):
 class ConvLayer(ConvLayerBase):
     layer_type = 'exconv'
 
-@config_layer('mkldnnconv')
+@config_layer('mkldnn_conv')
 class ConvLayer(ConvLayerBase):
-    layer_type = 'mkldnnconv'
+    layer_type = 'mkldnn_conv'
 
 @config_layer('cudnn_conv')
 class ConvLayer(ConvLayerBase):
@@ -1794,7 +1794,7 @@ class NormLayer(LayerBase):
 
 @config_layer('pool')
 class PoolLayer(LayerBase):
-    layer_type = 'pool' # 'mkldnnpool'
+    layer_type = 'mkldnn_pool' # 'pool'
     def __init__(self, name, inputs, device=None):
         super(PoolLayer, self).__init__(
             name, self.layer_type, 0, inputs=inputs, device=device)
@@ -1809,9 +1809,9 @@ class PoolLayer(LayerBase):
                 (pool_conf.output_x * pool_conf.output_y) * pool_conf.channels)
         self.config.type = self.layer_type
 
-@config_layer('mkldnnpool')
+@config_layer('mkldnn_pool')
 class MKLDNNPoolLayer(PoolLayer):
-    layer_type = 'mkldnnpool'        
+    layer_type = 'mkldnn_pool'        
 
 @config_layer('spp')
 class SpatialPyramidPoolLayer(LayerBase):
