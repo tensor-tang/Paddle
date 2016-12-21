@@ -1505,8 +1505,9 @@ class MultiClassCrossEntropySelfNormCostLayer(LayerBase):
 
 @config_layer('fc')
 class FCLayer(LayerBase):
+    layer_type = 'mkldnn_fc' # 'fc'
     def __init__(self, name, size, inputs, bias=True, **xargs):
-        super(FCLayer, self).__init__(name, 'fc', size, inputs=inputs, **xargs)
+        super(FCLayer, self).__init__(name, self.layer_type, size, inputs=inputs, **xargs)
         for input_index in xrange(len(self.inputs)):
             input_layer = self.get_input_layer(input_index)
             psize = self.config.size * input_layer.size
@@ -1523,6 +1524,9 @@ class FCLayer(LayerBase):
                                         format)
         self.create_bias_parameter(bias, self.config.size)
 
+@config_layer('mkldnn_fc')
+class MKLDNNFcLayer(FCLayer):
+    layer_type = 'mkldnn_fc'
 
 @config_layer('selective_fc')
 class SelectiveFCLayer(LayerBase):
