@@ -62,13 +62,20 @@ bool MkldnnConvLayer::initDnn(const LayerMap &layerMap,
     }
   }
 
+  // should add this flag to layer proto and get from it
+  usePaddleFmt_ = true;
+
   /* initialize the weightList */
   CHECK(inputLayers_.size() == parameters_.size());
   for (size_t i = 0; i < inputLayers_.size(); i++) {
     size_t height, width;
-    height = oc_;
-    width = ic_[i] * fh_[i] * fw_[i] / gp_[i];
-
+    if (usePaddleFmt_) {
+      height = ic_[i] * fh_[i] * fw_[i] / gp_[i];
+      width = oc_;
+    } else {
+      height = oc_;
+      width = ic_[i] * fh_[i] * fw_[i] / gp_[i];
+    }
     // create a new weight
     CHECK_EQ(parameters_[i]->getSize(), width * height);
     Weight* w = new Weight(height, width, parameters_[i]);
@@ -394,6 +401,14 @@ void MkldnnConvLayer::submitFwdOnce(
   real* botdata = botVal->getData();
   real* topdata = topVal->getData();
   real* wgtdata = weights_[inputIdx]->getW()->getData();
+  MatrixPtr myWgt;
+  if (usePaddleFmt_) {
+    myWgt = Matrix::create(oc_,
+      ic_[inputIdx]*fh_[inputIdx]*fw_[inputIdx]/gp_[inputIdx], false, false);
+    weights_[inputIdx]->getW()->transpose(myWgt, false);
+    wgtdata = myWgt->getData();
+  }
+  
   std::vector<primitive> convFwd;
   dataBot_->submitCvt(convFwd, botdata);
   dataWgt_->submitCvt(convFwd, wgtdata);
@@ -423,8 +438,16 @@ void MkldnnConvLayer::submitBwdData(
     return;
   }
   real* topdiff = topGrad->getData();
-  real* wgtdata = weights_[inputIdx]->getW()->getData();
   real* botdiff = botGrad->getData();
+  real* wgtdata = weights_[inputIdx]->getW()->getData();
+  MatrixPtr myWgt;
+  if (usePaddleFmt_) {
+    myWgt = Matrix::create(oc_, 
+      ic_[inputIdx]*fh_[inputIdx]*fw_[inputIdx]/gp_[inputIdx], false, false);
+    weights_[inputIdx]->getW()->transpose(myWgt, false);
+    wgtdata = myWgt->getData();
+  }
+  
   std::vector<primitive> convBwdData;
   dataWgt_->submitCvt(convBwdData, wgtdata);
   diffTop_->submitCvt(convBwdData, topdiff);
@@ -442,6 +465,13 @@ void MkldnnConvLayer::submitBwdWgts(
   real* botdata = botVal->getData();
   real* topdiff = topGrad->getData();
   real* wgtdiff = weights_[inputIdx]->getWGrad()->getData();
+  MatrixPtr myWgt;
+  if (usePaddleFmt_) {
+    myWgt = Matrix::create(oc_, 
+      ic_[inputIdx]*fh_[inputIdx]*fw_[inputIdx]/gp_[inputIdx], false, false);
+    wgtdiff = myWgt->getData();
+  }
+  
   std::vector<primitive> convBwdWgt;
   std::shared_ptr<convolution_backward_weights> bwdWgt;
   dataBot_->submitCvt(convBwdWgt, botdata);
@@ -462,6 +492,10 @@ void MkldnnConvLayer::submitBwdWgts(
   }
   diffWgt_->submitCvt(convBwdWgt, wgtdiff);
   stream(stream::kind::eager).submit(convBwdWgt).wait();
+
+  if (usePaddleFmt_) {
+    myWgt->transpose(weights_[inputIdx]->getWGrad_mutable(), false);
+  }
 //    LOG(INFO) << "!!!!!!!!!backward filter execute completed!!!!!!!!";
 }
 
@@ -508,8 +542,12 @@ void MkldnnConvLayer::exBwdData(MatrixPtr topDiff, int i) {
   Matrix::resizeOrCreate(transOutValue_, bs_ * oc_, subN, false, false);
   real *localGradData = topDiff->getData();
   real *tgtGradData = tgtGrad->getData();
-  MatrixPtr exWgt = Matrix::create(ic_[i]*fh_[i]*fw_[i]/gp_[i], oc_, false, false);
-  weights_[i]->getW()->transpose(exWgt, false);
+  MatrixPtr exWgt = weights_[i]->getW();
+  if (!usePaddleFmt_) {
+    MatrixPtr exWgt = Matrix::create(ic_[i]*fh_[i]*fw_[i]/gp_[i], oc_, false, false);
+    weights_[i]->getW()->transpose(exWgt, false);
+  }
+  
   for (size_t n = 0; n < size_t(bs_); n++) {
     real *wgtData = exWgt->getData();
     real *expandInData = expandInput_->getData();
@@ -538,12 +576,15 @@ void MkldnnConvLayer::exBwdData(MatrixPtr topDiff, int i) {
     oneGradTmp->clear();
     // move the data-pointer
     tgtGradData += ih_[i] * iw_[i] * ic_[i];
-    }
   }
+}
 
 void MkldnnConvLayer::exBwdWgts(MatrixPtr topDiff, int i) {
-  MatrixPtr exWgt = Matrix::create(ic_[i]*fh_[i]*fw_[i]/gp_[i], oc_, false, false);
-  weights_[i]->getWGrad()->transpose(exWgt, false);
+  MatrixPtr exWgt = weights_[i]->getWGrad();
+  if (!usePaddleFmt_) {
+    exWgt = Matrix::create(ic_[i]*fh_[i]*fw_[i]/gp_[i], oc_, false, false);
+    weights_[i]->getWGrad()->transpose(exWgt, false);
+  }
   MatrixPtr weightGrad = exWgt;
   MatrixPtr inputV = getPrev(i)->getOutputValue();
   int subM = oc_ / gp_[i];
@@ -579,7 +620,8 @@ void MkldnnConvLayer::exBwdWgts(MatrixPtr topDiff, int i) {
       }
     }
   // transpose to my wgts
-  exWgt->transpose(weights_[i]->getWGrad_mutable(), false);
+  if (!usePaddleFmt_)
+    exWgt->transpose(weights_[i]->getWGrad_mutable(), false);
 }
 
 void MkldnnConvLayer::exBackward(const UpdateCallback &callback) {

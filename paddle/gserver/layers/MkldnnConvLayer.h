@@ -37,6 +37,9 @@ protected:
   std::vector<int> fh_, fw_;
   // group
   std::vector<int> gp_;
+
+  // use 
+  bool usePaddleFmt_;
   
   /// shape of weight: (oc, ic*fh*fw/gp)
   WeightList weights_;
