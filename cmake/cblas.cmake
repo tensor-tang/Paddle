@@ -54,16 +54,17 @@ set(ATLAS_LIB_SEARCH_PATHS
         /usr/lib/blas/atlas
         /usr/lib/atlas
         /usr/lib/atlas-base   # special for ubuntu 14.04.
+        /usr/lib64/atlas
     )
 find_path(ATLAS_INC_DIR NAMES cblas.h 
   PATHS ${ATLAS_INCLUDE_SEARCH_PATHS})
 find_path(ATLAS_CLAPACK_INC_DIR NAMES clapack.h
   PATHS ${ATLAS_INCLUDE_SEARCH_PATHS})
-find_library(ATLAS_CBLAS_LIB NAMES cblas libcblas.so.3 
+find_library(ATLAS_CBLAS_LIB NAMES libcblas.so cblas libcblas.so.3 
   PATHS ${ATLAS_LIB_SEARCH_PATHS})
-find_library(ATLAS_LIB NAMES lapack_atlas liblapack_atlas.so.3
+find_library(ATLAS_LIB NAMES libatlas.so libtatlas.so 
+  lapack_atlas liblapack_atlas.so.3
   PATHS ${ATLAS_LIB_SEARCH_PATHS})
-
 if(ATLAS_INC_DIR AND ATLAS_CBLAS_LIB AND ATLAS_LIB)
   set(CBLAS_PROVIDER ATLAS)
   set(CBLAS_INC_DIR ${ATLAS_INC_DIR} ${ATLAS_CLAPACK_INC_DIR})
