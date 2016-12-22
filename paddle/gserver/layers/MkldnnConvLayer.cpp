@@ -131,7 +131,7 @@ bool MkldnnConvLayer::reshapeOutput() {
   return true;
 }
 
-void MkldnnConvLayer::resetDnnFwd() {
+void MkldnnConvLayer::resetDnnFwd(PassType passType) {
   LOG(INFO) << "reset mkldnn conv forward of layer: " << config_.name();
   // TODO: only care about i==0 by now
   memory::dims biasDims = {oc_};

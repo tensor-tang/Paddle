@@ -96,7 +96,7 @@ bool MkldnnPoolLayer::reshapeOutput() {
   return true;
 }
 
-void MkldnnPoolLayer::resetDnnFwd() {
+void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
   LOG(INFO) << "reset mkldnn forward of pool layer: " << config_.name();
 
   CHECK(bs_ == getInput(0).getBatchSize())

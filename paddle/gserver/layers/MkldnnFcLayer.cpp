@@ -117,7 +117,7 @@ bool MkldnnFcLayer::reshapeOutput() {
   return true;
 }
 
-void MkldnnFcLayer::resetDnnFwd() {
+void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   LOG(INFO) << "reset mkldnn forward of fc layer: " << config_.name();
 
   CHECK(bs_ == getInput(0).getBatchSize())

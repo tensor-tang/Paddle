@@ -57,7 +57,7 @@ public:
   // return false if donot need reshape 
   bool reshapeOutput();
 
-  void resetDnnFwd();
+  void resetDnnFwd(PassType passType);
   
   void resetDnnBwd();
 

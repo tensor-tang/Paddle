@@ -258,7 +258,7 @@ bool MkldnnBatchNormLayer::reshapeOutput() {
   return true;
 }
 
-void MkldnnBatchNormLayer::resetDnnFwd() {
+void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   /*
   LOG(INFO) << "reset mkldnn forward of fc layer: " << config_.name();
 

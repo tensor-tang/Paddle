@@ -83,7 +83,7 @@ public:
     // reshape if batchsize changes
     if (reshapeOutput()) {
       // dnn fwd init or reset
-      resetDnnFwd();
+      resetDnnFwd(passType);
       needResetBwd_ = true;
     }
     
@@ -108,9 +108,11 @@ public:
    * each layer can have its own implements.
    */
   virtual void initDnnflags() {
-    setDnnTopDataFmt_ = isNextLayerDnn();
+    // do not use this function so far, so set false
+    // TODO: enable it when all mkldnn layers done  
+    setDnnTopDataFmt_ = false; //isNextLayerDnn();
     for (size_t i = 0; i != inputLayers_.size(); ++i) {
-      setDnnBotDiffFmt_.push_back(isPrevLayerDnn(i));
+      setDnnBotDiffFmt_.push_back(false); //(isPrevLayerDnn(i));
     }
   }
 
@@ -180,7 +182,7 @@ public:
    * each dnn layer should have function
    * to init or reset dnn forward
    */
-  virtual void resetDnnFwd() = 0;
+  virtual void resetDnnFwd(PassType passType) = 0;
   
   /** 
    * each dnn layer should have function
