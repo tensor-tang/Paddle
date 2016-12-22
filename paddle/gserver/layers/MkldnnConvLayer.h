@@ -38,7 +38,7 @@ protected:
   // group
   std::vector<int> gp_;
 
-  // use 
+  // use paddle weight format 
   bool usePaddleFmt_;
   
   /// shape of weight: (oc, ic*fh*fw/gp)

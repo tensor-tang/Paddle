@@ -1830,7 +1830,7 @@ class SpatialPyramidPoolLayer(LayerBase):
 
 @config_layer('batch_norm')
 class BatchNormLayer(LayerBase):
-    layer_type = 'batch_norm'
+    layer_type = 'mkldnn_batch_norm' # 'batch_norm'
 
     def __init__(self,
                  name,
@@ -1869,9 +1869,10 @@ class BatchNormLayer(LayerBase):
         # Automatically select cudnn_batch_norm for GPU and batch_norm for CPU.
         # Also based on cudnn version.
         use_cudnn = use_gpu and batch_norm_type != "batch_norm" and \
+            batch_norm_type != "mkldnn_batch_norm" and \
             ((not parallel_nn) or self.config.device > -1) and \
             cudnn_version >= 4007
-        self.layer_type = "cudnn_batch_norm" if use_cudnn else "batch_norm"
+        self.layer_type = "cudnn_batch_norm" if use_cudnn else "mkldnn_batch_norm" # "batch_norm"
         super(BatchNormLayer, self).__init__(
             name,
             self.layer_type,
@@ -1903,6 +1904,9 @@ class BatchNormLayer(LayerBase):
     def calc_parameter_size(self, image_conf):
         return image_conf.channels
 
+@config_layer('mkldnn_batch_norm')
+class MkldnnBatchNormLayer(BatchNormLayer):
+    layer_type = 'mkldnn_batch_norm'
 
 @config_layer('trans')
 class TransLayer(LayerBase):

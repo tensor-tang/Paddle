@@ -241,7 +241,7 @@ void MkldnnConvLayer::resetDnnFwd() {
 }
 
 void MkldnnConvLayer::resetDnnBwd() {
-  LOG(INFO) << "init or reset conv backward of layer: " << config_.name();
+/*  LOG(INFO) << "init or reset conv backward of layer: " << config_.name();
   bool hasBias = (biases_ && biases_->getWGrad()) ? true : false;
   // TODO: only care about i==0 by now
   real *topdiff = getOutputGrad()->getData();
@@ -272,7 +272,7 @@ void MkldnnConvLayer::resetDnnBwd() {
     memory::dims strides = {sh_[i], sw_[i]};
     memory::dims padding = {ph_[i], pw_[i]};
 
-    /* backward weight and bias before data*****************************/
+    // backward weight and bias before data*****************************
     if (weights_[i]->getWGrad()) {
       real* wgtdiff = weights_[i]->getWGrad()->getData();
       // init weight diff user
@@ -344,7 +344,7 @@ void MkldnnConvLayer::resetDnnBwd() {
     }
     CHECK(dataBot_->getIntlPD() == bwdWgtPD_->src_primitive_desc());
     
-    /* then backward data *************************************/
+    // then backward data *************************************
     LayerPtr prevLayer = getPrev(i);
     if (NULL == prevLayer->getOutputGrad()) {
       continue; // data layer has not diff
@@ -393,7 +393,7 @@ void MkldnnConvLayer::resetDnnBwd() {
       << DNN_FORMAT[diffTop_->getUserFmt()];
 
   }
-
+*/
 }
 
 void MkldnnConvLayer::submitFwdOnce(
