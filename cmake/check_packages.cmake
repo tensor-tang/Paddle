@@ -14,6 +14,12 @@ if(WITH_STYLE_CHECK)
   find_package(PythonInterp REQUIRED)
 endif()
 
+if(WITH_MKLDNN)
+  if(NOT MKLDNN_FOUND)
+    message(FATAL_ERROR "MKLDNN is not found. Please install MKLDNN or disable WITH_MKLDNN")
+  endif()
+endif()
+
 if(WITH_GLOG)
   find_package(Glog REQUIRED)
 endif()

@@ -110,10 +110,14 @@ function(link_paddle_exe TARGET_NAME)
         ${PROTOBUF_LIBRARY}
         ${CMAKE_THREAD_LIBS_INIT}
         ${CBLAS_LIBS}
-        ${MKLDNN_LIBS}
         ${ZLIB_LIBRARIES}
         ${INTERAL_LIBS}
         ${CMAKE_DL_LIBS})
+
+    if(WITH_MKLDNN)
+        target_link_libraries(${TARGET_NAME}
+            ${MKLDNN_LIBS})
+    endif()
 
     if(WITH_RDMA)
         target_link_libraries(${TARGET_NAME}
