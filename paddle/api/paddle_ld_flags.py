@@ -50,6 +50,9 @@ try:
             self.with_glog = PaddleLDFlag.cmake_bool(WITH_GLOG)
             self.glog_libs = LIBGLOG_LIBRARY
 
+            self.with_mkldnn = PaddleLDFlag.cmake_bool(WITH_MKLDNN)
+            self.mkldnn_libs = MKLDNN_LIBS
+
             self.with_gflags = PaddleLDFlag.cmake_bool(WITH_GFLAGS)
             self.with_coverage = PaddleLDFlag.cmake_bool(WITH_COVERALLS)
             self.gflags_libs = GFLAGS_LIBRARIES
@@ -98,6 +101,8 @@ try:
                 libs.append(self.normalize_flag(self.python_libs))
             if self.with_glog:
                 libs.append(self.normalize_flag(self.glog_libs))
+            if self.with_mkldnn:
+                libs.append(self.normalize_flag(self.mkldnn_libs)) 
             if self.with_gflags:
                 libs.append(self.normalize_flag(self.gflags_libs))
             if self.with_gpu:
