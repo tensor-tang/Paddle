@@ -28,12 +28,24 @@ protected:
   bool usePaddleFmt_;
 
   /// data buffers
-  MkldnnBufferPtr dataWgt_;
-  MkldnnBufferPtr dataBias_;
+  MkldnnBufferPtr wgtScaleShift_;
+  MkldnnBufferPtr mean_;
+  MkldnnBufferPtr var_;
+  
+  MatrixPtr myScaleShift_; // scale and shift, 2*oc
+  MatrixPtr localMean_;  // m
+  MatrixPtr localVar_;  // v^2
+
   /// diff buffer
 //  MkldnnBufferPtr diffWgt_;
 //  MkldnnBufferPtr diffBias_;
-  bool hasBias_;
+
+  bool useScaleShift_;
+  
+  // since MKLDNN have some issue with ih==iw==1
+  // so then use default paddle code in this case
+  bool useEx_;
+  
   /// Epsilon value used in the batch normalization formula.
   static const real EPS;
 protected:
@@ -55,7 +67,6 @@ protected:
 
   /// Save intermediate results computed during the forward pass,
   /// these can then be reused to speed up the backward pass.
-  MatrixPtr savedMean_;
   MatrixPtr savedInvVar_;
 
   /// Height or width of input image feature, now height is equal to width.
@@ -103,12 +114,14 @@ public:
     : MkldnnLayer(config),
       fwdPD_(NULL),
       usePaddleFmt_(true),
-      dataWgt_(NULL),
-      dataBias_(NULL),/*
+      wgtScaleShift_(NULL),
+      mean_(NULL),
+      var_(NULL),/*
       diffWgt_(NULL),
       diffBias_(NULL),
       bwdWgtPD_(NULL)*/
-      hasBias_(false)
+      useScaleShift_(true),
+      useEx_(false)
     {}
 
   ~MkldnnBatchNormLayer() {}
@@ -122,8 +135,9 @@ public:
     if (dataTop_) dataTop_->clearCvtFlag();
     if (diffBot_) diffBot_->clearCvtFlag();
     if (diffTop_) diffTop_->clearCvtFlag();
-    if (dataBias_) dataBias_->clearCvtFlag();
-    if (dataWgt_) dataWgt_->clearCvtFlag();
+    if (wgtScaleShift_) wgtScaleShift_->clearCvtFlag();
+    if (mean_) mean_->clearCvtFlag();
+    if (var_) var_->clearCvtFlag();
   //  if (diffBias_) diffBias_->clearCvtFlag();
   //  if (diffWgt_) diffWgt_->clearCvtFlag();
   }
@@ -149,7 +163,6 @@ public:
   static Layer* create(const LayerConfig& config);
 
 private:
-  void calFeatureMapSize();
   void myFwd(PassType passType);
   void exFwd(PassType passType);
   void exBwd(const UpdateCallback &callback);
@@ -157,10 +170,10 @@ private:
   void printInfo() {
     for(size_t i = 0; i < iw_.size(); ++i) {
       LOG(INFO)
-        << "ih: " << ih_[i] << ", iw: " << iw_[i]
-        << ", ic: " << ic_[i] 
-        << ", oh: " << oh_[i] << ", ow: " << ow_[i]
-        << ", oc: " << oc_;
+        << "ic: " << ic_[i]
+        << ", ih: " << ih_[i] << ", iw: " << iw_[i]
+        << ", oc: " << oc_
+        << ", oh: " << oh_[i] << ", ow: " << ow_[i];
     }
   }
 };
