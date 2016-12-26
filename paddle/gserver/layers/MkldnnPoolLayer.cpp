@@ -36,7 +36,6 @@ bool MkldnnPoolLayer::initDnn(const LayerMap &layerMap,
     poolAlgo_= algorithm::pooling_max;
   } else if (poolType_ == "avg-projection") {
     poolAlgo_ = algorithm::pooling_avg;
-    LOG(FATAL) << "Only support max pooling by now!";
   } else {
     LOG(FATAL) << "unknow pooling type!";
   }
@@ -68,10 +67,9 @@ size_t MkldnnPoolLayer::getOneBatchSize() {
   if (height != 0) ih_[0] = height;
   if (width != 0) iw_[0] = width;
   // output image dimensions
-  // TODO: why default use false caffe mode??
-  oh_[0] = outputSize(ih_[0], fh_, ph_, sh_);
-  ow_[0] = outputSize(iw_[0], fw_, pw_, sw_);
-  
+  // TODO: why use false caffe mode??
+  oh_[0] = outputSize(ih_[0], fh_, ph_, sh_, false);
+  ow_[0] = outputSize(iw_[0], fw_, pw_, sw_, false);
   return oh_[0] * ow_[0] * oc_;
 }
 
@@ -121,12 +119,16 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
   } else {
     dataBot_->initUser(botData, botDims, memory::format::nchw, *engine_);
   }
+
   // create pool desc from internal desc 
   std::shared_ptr<pooling_forward::desc> fwdDesc;
-  fwdDesc.reset(new pooling_forward::desc(prop_kind::forward_training, poolAlgo_,
-                      dataBot_->getMDAny(), dataTop_->getMDAny(),
-                      strides, kernel, padding, padding,
-                      padding_kind::zero));
+  prop_kind pk = (passType == PASS_TEST) ? prop_kind::forward_scoring :
+    prop_kind::forward_training;
+
+  fwdDesc.reset(new pooling_forward::desc(pk, poolAlgo_,
+                    dataBot_->getMDAny(), dataTop_->getMDAny(),
+                    strides, kernel, padding, padding,
+                    padding_kind::zero));
   // init cvt
   if (dataBot_->initCvt(dataBot_->getUserPD(), dnnCvtUser2Internal)) {
     LOG(INFO) << "need reorder --- bottom data: "
@@ -149,9 +151,9 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
       << " >>>>> "
       << DNN_FORMAT[dataTop_->getUserFmt()];
   }
-  
-  bool isMax = poolAlgo_ != algorithm::pooling_avg;
-  if (isMax) {
+
+  withWorkspace_ = passType == PASS_TRAIN && poolAlgo_ != algorithm::pooling_avg;
+  if (withWorkspace_) {
     workspace_.reset(new memory(fwdPD_->workspace_primitive_desc()));
   } else {
     auto p_workspace_desc = memory::primitive_desc(
@@ -333,7 +335,7 @@ void MkldnnPoolLayer::myFwd(PassType passType) {
   std::vector<primitive> poolFwd;
   dataBot_->submitCvt(poolFwd, botdata);
   
-  if(poolAlgo_ == algorithm::pooling_max) {
+  if(withWorkspace_) {
     poolFwd.push_back(pooling_forward(*fwdPD_,
       *(dataBot_->getIntlMem()), *(dataTop_->getIntlMem()),
       *workspace_));

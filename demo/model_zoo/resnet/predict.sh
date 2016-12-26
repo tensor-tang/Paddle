@@ -19,5 +19,5 @@ python classify.py \
      --conf=resnet.py\
      --model=model/resnet_50 \
      --multi_crop \
-     --use_gpu=1 \
+     --use_gpu=0 \
      --data=./example/test.list

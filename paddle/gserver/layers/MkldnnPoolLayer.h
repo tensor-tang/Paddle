@@ -26,13 +26,14 @@ protected:
   //std::shared_ptr<convolution_backward_weights::primitive_desc> bwdWgtPD_;
 
   std::shared_ptr<memory> workspace_;
-
+  bool withWorkspace_;
   // padding, stride and filter size
   int ph_, pw_;
   int sh_, sw_;
   int fh_, fw_;
   
   algorithm poolAlgo_;
+  
 public:
   explicit MkldnnPoolLayer(const LayerConfig& config)
     : MkldnnLayer(config),
