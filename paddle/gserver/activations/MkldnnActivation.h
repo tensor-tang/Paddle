@@ -8,8 +8,6 @@
 #include "mkldnn.hpp"
 // #include "paddle/gserver/layers/MkldnnMemory.h"
 
-using namespace mkldnn;
-
 namespace paddle {
 
 /**
@@ -19,21 +17,21 @@ namespace paddle {
 class MkldnnActivation {
 public:
   /// For dnn engine
-  std::shared_ptr<engine> engine_;
+  std::shared_ptr<mkldnn::engine> engine_;
   
   // dims
   int bs_, oc_, oh_, ow_;
   
   // mkldnn
-  std::shared_ptr<memory::desc> srcMD_;
-  std::shared_ptr<memory::desc> dstMD_;
-  std::shared_ptr<memory> dataBot_;
-  std::shared_ptr<memory> dataTop_;
+  std::shared_ptr<mkldnn::memory::desc> srcMD_;
+  std::shared_ptr<mkldnn::memory::desc> dstMD_;
+  std::shared_ptr<mkldnn::memory> dataBot_;
+  std::shared_ptr<mkldnn::memory> dataTop_;
   bool needResetBwd_;
 
 public:
   explicit MkldnnActivation()
-    : engine_(new engine(engine::cpu, 0)),
+    : engine_(new mkldnn::engine(mkldnn::engine::cpu, 0)),
       bs_(0),
       oc_(0),
       oh_(0),
@@ -64,7 +62,7 @@ public:
    */
   void reshapeDnnFwd(const Argument& arg) {
     int batchsize = arg.getBatchSize();
-    
+
     if (bs_ == batchsize) {
       return;
     }
@@ -76,19 +74,19 @@ public:
       oh_ = 1;
       ow_ = 1;
       oc_ = arg.value->getElementCnt()/(bs_*oh_*ow_);
-      memory::dims dm = {bs_, oc_};
-      srcMD_.reset(new memory::desc(dm, memory::data_type::f32,
-        memory::format::nc));
-      dstMD_.reset(new memory::desc(dm, memory::data_type::f32,
-        memory::format::nc));
+      mkldnn::memory::dims dm = {bs_, oc_};
+      srcMD_.reset(new mkldnn::memory::desc(dm, mkldnn::memory::data_type::f32,
+        mkldnn::memory::format::nc));
+      dstMD_.reset(new mkldnn::memory::desc(dm, mkldnn::memory::data_type::f32,
+        mkldnn::memory::format::nc));
     } else {
       CHECK(oh_ != 0 && ow_ != 0) << "neither should be zero";
       oc_ = arg.value->getElementCnt()/(bs_*oh_*ow_);
-      memory::dims dm = {bs_, oc_, oh_, ow_};
-      srcMD_.reset(new memory::desc(dm, memory::data_type::f32,
-        memory::format::nchw));
-      dstMD_.reset(new memory::desc(dm, memory::data_type::f32,
-        memory::format::nchw));
+      mkldnn::memory::dims dm = {bs_, oc_, oh_, ow_};
+      srcMD_.reset(new mkldnn::memory::desc(dm, mkldnn::memory::data_type::f32,
+        mkldnn::memory::format::nchw));
+      dstMD_.reset(new mkldnn::memory::desc(dm, mkldnn::memory::data_type::f32,
+        mkldnn::memory::format::nchw));
     }
   }
 };

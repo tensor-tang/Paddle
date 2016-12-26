@@ -422,7 +422,6 @@ void Trainer::trainOneDataBatch(DataBatch& dataBatch) {
     if (mod >= FLAGS_average_test_period - FLAGS_log_period) {
       if (mod == FLAGS_average_test_period - FLAGS_log_period) {
         averageEvaluator_->start();
-
       }
       trainerInternal_.getParameterUpdater()->apply();
       if (FLAGS_prev_batch_state) {
