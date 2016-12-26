@@ -265,7 +265,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
     // mkldnn has some issue with this case, so use paddle code instead
     useEx_ = true;
     usePaddleFmt_ = true; // force to true
-    LOG(INFO) << "Skip MKLDNN prepare when ";
+    LOG(INFO) << "Skip MKLDNN prepare when iw==ih==1";
     return;
   }
   useEx_ = false;
@@ -283,9 +283,12 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   if (passType == PASS_TEST && config_.has_use_global_stats()) {
     useGlobalStats_ = config_.use_global_stats();
   }
+  if (passType == PASS_TRAIN && useGlobalStats_ == true) {
+    LOG(FATAL) << "this should not happen!!! use gloal stat in training";
+  }
   prop_kind pk = (passType == PASS_TEST) ? prop_kind::forward_scoring :
     prop_kind::forward_training;
-  unsigned flags = 0;
+  unsigned flags = 0u;
   if (useGlobalStats_) 
     flags = (flags | batch_normalization_flag::use_global_stats);
   if (useScaleShift_)
@@ -323,6 +326,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   if (setDnnTopDataFmt_) {
     dataTop_->initUser(topData, fwdPD_->dst_primitive_desc());
     setTopDataMD(dataTop_->getUserMD());
+    LOG(FATAL) << "should not be here so far...........";
   } else {
     dataTop_->initUser(topData, topDims, memory::format::nchw, *engine_);
   }
@@ -354,21 +358,34 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
     LOG(WARNING) << "sure do not need scale and shift???";
   }
   
-  if (passType != PASS_TEST || useGlobalStats_) {
+  if (passType == PASS_TRAIN || useGlobalStats_) {
     mean_.reset(new MkldnnBuffer({oc_}));
     var_.reset(new MkldnnBuffer({oc_}));
     // TODO: if input is userPD, should accept dnnCvtNoNeed, because do not care
     mean_->initUser(localMean_->getData(), {oc_}, memory::format::x, *engine_);
-    if (mean_->initCvt(fwdPD_->mean_primitive_desc(), dnnCvtUser2Internal)) {
-      LOG(FATAL) << "should donot need cvt!!! format-- user vs intl:"
-        << DNN_FORMAT[mean_->getUserFmt()] << " vs " 
-        << DNN_FORMAT[mean_->getIntlFmt()];
-    }
     var_->initUser(localVar_->getData(), {oc_}, memory::format::x, *engine_);
-    if (var_->initCvt(fwdPD_->variance_primitive_desc(), dnnCvtUser2Internal)) {
-      LOG(FATAL) << "should donot need cvt!!! format-- user vs intl:"
-        << DNN_FORMAT[var_->getUserFmt()] << " vs " 
-        << DNN_FORMAT[var_->getIntlFmt()];
+    if (useGlobalStats_) {
+      if (mean_->initCvt(fwdPD_->mean_primitive_desc(), dnnCvtUser2Internal)) {
+        LOG(FATAL) << "should donot need cvt!!! format-- user vs intl:"
+          << DNN_FORMAT[mean_->getUserFmt()] << " vs " 
+          << DNN_FORMAT[mean_->getIntlFmt()];
+      }
+      if (var_->initCvt(fwdPD_->variance_primitive_desc(), dnnCvtUser2Internal)) {
+        LOG(FATAL) << "should donot need cvt!!! format-- user vs intl:"
+          << DNN_FORMAT[var_->getUserFmt()] << " vs " 
+          << DNN_FORMAT[var_->getIntlFmt()];
+      }
+    } else {
+      if (mean_->initCvt(fwdPD_->mean_primitive_desc(), dnnCvtInternal2User)) {
+        LOG(FATAL) << "should donot need cvt!!! format-- user vs intl:"
+          << DNN_FORMAT[mean_->getUserFmt()] << " vs " 
+          << DNN_FORMAT[mean_->getIntlFmt()];
+      }
+      if (var_->initCvt(fwdPD_->variance_primitive_desc(), dnnCvtInternal2User)) {
+        LOG(FATAL) << "should donot need cvt!!! format-- user vs intl:"
+          << DNN_FORMAT[var_->getUserFmt()] << " vs " 
+          << DNN_FORMAT[var_->getIntlFmt()];
+      }
     }
   }
   
@@ -386,13 +403,9 @@ void MkldnnBatchNormLayer::resetDnnBwd() {
 }
 
 void MkldnnBatchNormLayer::myFwd(PassType passType) {
-  // in training always calculate it, do not use GlobalStats
-  // in testing depends on choice
-  useGlobalStats_ = (passType == PASS_TEST);
-  if (passType == PASS_TEST && config_.has_use_global_stats()) {
-    useGlobalStats_ = config_.use_global_stats();
+  if (passType == PASS_TRAIN && useGlobalStats_ == true) {
+    LOG(FATAL) << "this should not happen!!! use gloal stat in training";
   }
-
   /// all sumbit cvt should be clear
   clearAllCvtFlags();
   std::vector<primitive> fwd;
@@ -404,7 +417,6 @@ void MkldnnBatchNormLayer::myFwd(PassType passType) {
   // data wgt
   if (useScaleShift_ ) {
     if (usePaddleFmt_) {
-      myScaleShift_ = Matrix::create(2, oc_, false, false);
       memcpy(myScaleShift_->getData(), weight_->getW()->getData(),
         sizeof(real) * oc_);
       memcpy(myScaleShift_->getData() + oc_, biases_->getW()->getData(),
@@ -420,7 +432,6 @@ void MkldnnBatchNormLayer::myFwd(PassType passType) {
     real *wgtdata = myScaleShift_->getData();
     wgtScaleShift_->submitCvt(fwd, wgtdata);
   }
-
   if (useGlobalStats_) {
     if (firstTest_) {
       LOG(INFO) << "should be here only once.................in Testing";
@@ -431,7 +442,44 @@ void MkldnnBatchNormLayer::myFwd(PassType passType) {
   } else {
     firstTest_ = true;
   }
-  
+  if (passType == PASS_TEST) {
+    if (useGlobalStats_) {
+      // mean and var are inputs, submit them before BN fwd
+      mean_->submitCvt(fwd, localMean_->getData());
+      var_->submitCvt(fwd, localVar_->getData());
+      fwd.push_back(useScaleShift_
+          ? batch_normalization_forward(*fwdPD_, *dataBot_->getIntlMem(),
+              (const primitive::at)(*mean_->getIntlMem()),
+              (const primitive::at)(*var_->getIntlMem()),
+              *wgtScaleShift_->getIntlMem(),
+              *dataTop_->getIntlMem())
+          : batch_normalization_forward(*fwdPD_, *dataBot_->getIntlMem(),
+              *mean_->getIntlMem(), *var_->getIntlMem(),
+              *dataTop_->getIntlMem()));
+    } else {
+      //LOG(INFO) << "testing and use local mean and var";
+      fwd.push_back(useScaleShift_
+        ? batch_normalization_forward(*fwdPD_, *dataBot_->getIntlMem(),
+            *wgtScaleShift_->getIntlMem(),
+            *dataTop_->getIntlMem())
+        : batch_normalization_forward(*fwdPD_, *dataBot_->getIntlMem(),
+            *dataTop_->getIntlMem()));
+    }
+  } else {
+    CHECK(useGlobalStats_ == false) << "useGlobalStats shoud not happed in train";
+    fwd.push_back(useScaleShift_
+          ? batch_normalization_forward(*fwdPD_, *dataBot_->getIntlMem(),
+              *wgtScaleShift_->getIntlMem(),
+              *dataTop_->getIntlMem(),
+              *mean_->getIntlMem(), *var_->getIntlMem())
+          : batch_normalization_forward(*fwdPD_, *dataBot_->getIntlMem(),
+              *dataTop_->getIntlMem(),
+              *mean_->getIntlMem(), *var_->getIntlMem()));
+    // mean and var are outputs, submit them after BN fwd
+    mean_->submitCvt(fwd, localMean_->getData());
+    var_->submitCvt(fwd, localVar_->getData());
+  }
+  /*
   if (passType == PASS_TEST && !useGlobalStats_) {
     LOG(INFO) << "testing and use local mean and var, maybe should not be here...";
     fwd.push_back(useScaleShift_
@@ -442,12 +490,6 @@ void MkldnnBatchNormLayer::myFwd(PassType passType) {
           *dataTop_->getIntlMem()));
   } else {
     if (useGlobalStats_) {
-      /*if (firstTest_) {
-        LOG(INFO) << "should not be here .................";
-        localMean_->copyFrom(*(movingMean_->getW()));
-        localVar_->copyFrom(*(movingVar_->getW()));
-        firstTest_ = false;
-      }*/
       // mean and var are inputs, submit them before BN fwd
       mean_->submitCvt(fwd, localMean_->getData());
       var_->submitCvt(fwd, localVar_->getData());
@@ -474,7 +516,7 @@ void MkldnnBatchNormLayer::myFwd(PassType passType) {
       var_->submitCvt(fwd, localVar_->getData());
     }
   }
-
+*/
   // submit top after BN fwd
   real *topdata = getOutputValue()->getData();
   dataTop_->submitCvt(fwd, topdata);
@@ -484,7 +526,7 @@ void MkldnnBatchNormLayer::myFwd(PassType passType) {
   REGISTER_TIMER_INFO("mkldnn_BN_Fwd", getName().c_str());
   stream(stream::kind::eager).submit(fwd).wait();
 
-  if (passType != PASS_TEST && !useGlobalStats_) {
+  if (passType == PASS_TRAIN && !useGlobalStats_) {
     //LOG(INFO) << "cal moving .............. should not in testing";
     // calculating and saving moving mean and variance
     MatrixPtr movingMean = movingMean_->getW();
