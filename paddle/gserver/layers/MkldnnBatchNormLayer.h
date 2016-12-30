@@ -8,8 +8,6 @@
 #include "mkldnn.hpp"
 #include "MkldnnMemory.h"
 
-using namespace mkldnn;
-
 namespace paddle {
 
 /**
@@ -20,19 +18,19 @@ namespace paddle {
 class MkldnnBatchNormLayer : public MkldnnLayer {
 protected:
   /// For dnn fc. Primitive Desc
-  std::shared_ptr<batch_normalization_forward::primitive_desc> fwdPD_;
-  //std::shared_ptr<convolution_backward_data::primitive_desc> bwdDataPD_;
-  //std::shared_ptr<convolution_backward_weights::primitive_desc> bwdWgtPD_;
+  std::shared_ptr<mkldnn::batch_normalization_forward::primitive_desc> fwdPD_;
+  // std::shared_ptr<convolution_backward_data::primitive_desc> bwdDataPD_;
+  // std::shared_ptr<convolution_backward_weights::primitive_desc> bwdWgtPD_;
 
-  // use paddle weight format 
+  // use paddle weight format
   bool usePaddleFmt_;
 
   /// data buffers
   MkldnnBufferPtr wgtScaleShift_;
   MkldnnBufferPtr mean_;
   MkldnnBufferPtr var_;
-  
-  MatrixPtr myScaleShift_; // scale and shift, 2*oc
+
+  MatrixPtr myScaleShift_;  // scale and shift, 2*oc
   MatrixPtr localMean_;  // m
   MatrixPtr localVar_;  // v^2
 
@@ -41,13 +39,14 @@ protected:
 //  MkldnnBufferPtr diffBias_;
 
   bool useScaleShift_;
-  
+
   // since MKLDNN have some issue with ih==iw==1
   // so then use default paddle code in this case
   bool useEx_;
-  
+
   /// Epsilon value used in the batch normalization formula.
   static const real EPS;
+
 protected:
   /// Feature dimension. If the input layer is conv layer, it is the channels
     /// of feature map of the conv layer. If the input layer is fully-connected
@@ -74,14 +73,12 @@ protected:
 
   /// Height * Width.
   int imgPixels_;
-  
-  
+
   // if useGlobalStats_ is true, will use the loaded mean and variance.
   // otherwise, calculate mean and variance in this mini-batch.
   bool useGlobalStats_;
   // use to compute moving mean and variance.
   real movingAvgFraction_;
-
 
   /// Load pre-calculated mean and std.
   void setMeanAndStd();
@@ -100,7 +97,6 @@ protected:
   /// to batch, channels* imagePixels.
   void shrinkMat(const MatrixPtr& in, MatrixPtr& out);
 
-
   /// Load mean and variance only once flag.
   bool firstTest_;
   MatrixPtr tmpMat_, tmpGrad_;
@@ -108,7 +104,6 @@ protected:
   MatrixPtr expandedInGrad_, expandedOutGrad_, inGrad_;
   MatrixPtr normIn_, normInGrad_, meanGrad_, stdGrad_;
 
-  
 public:
   explicit MkldnnBatchNormLayer(const LayerConfig& config)
     : MkldnnLayer(config),
@@ -116,16 +111,16 @@ public:
       usePaddleFmt_(true),
       wgtScaleShift_(NULL),
       mean_(NULL),
-      var_(NULL),/*
-      diffWgt_(NULL),
-      diffBias_(NULL),
-      bwdWgtPD_(NULL)*/
+      var_(NULL),
+//      diffWgt_(NULL),
+//      diffBias_(NULL),
+//      bwdWgtPD_(NULL)
       useScaleShift_(true),
       useEx_(false)
     {}
 
   ~MkldnnBatchNormLayer() {}
-  
+
   bool initDnn(const LayerMap& layerMap, const ParameterMap& parameterMap);
 
   size_t getOneBatchSize();
@@ -142,17 +137,15 @@ public:
   //  if (diffWgt_) diffWgt_->clearCvtFlag();
   }
 
-  // return false if donot need reshape 
+  // return false if donot need reshape
   bool reshapeOutput();
 
   void resetDnnFwd(PassType passType);
-  
+
   void resetDnnBwd();
 
   void submitDnnFwd(PassType passType);
   void submitDnnBwd(const UpdateCallback& callback);
-  
-
 
   /**
    * @brief Create BatchNorm layer by norm_type, including batch_norm and
@@ -166,9 +159,9 @@ private:
   void myFwd(PassType passType);
   void exFwd(PassType passType);
   void exBwd(const UpdateCallback &callback);
-  
+
   void printInfo() {
-    for(size_t i = 0; i < iw_.size(); ++i) {
+    for (size_t i = 0; i < iw_.size(); ++i) {
       LOG(INFO)
         << "ic: " << ic_[i]
         << ", ih: " << ih_[i] << ", iw: " << iw_[i]

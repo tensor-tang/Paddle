@@ -8,12 +8,11 @@
 #include "mkldnn.hpp"
 #include "MkldnnMemory.h"
 
-using namespace mkldnn;
-
 namespace paddle {
 
 static const std::string DNN_FORMAT[] = {
-  "undef", "any", "blocked", "x", "nc", "nchw", "nhwc", "chwn", "nChw8c", //oIhw8i",
+  "undef", "any", "blocked", "x", "nc", "nchw", "nhwc", "chwn", "nChw8c",
+  // oIhw8i",
   "oi", "oihw", "ihwo", "OIhw8i8o", "OIhw8o8i", "Ohwi8o", "goihw", "gOIhw8i8o",
   "gOIhw8o8i"};
 
@@ -24,8 +23,8 @@ static const std::string DNN_FORMAT[] = {
 class MkldnnLayer : public Layer {
 public:
   /// For dnn engine
-  std::shared_ptr<engine> engine_;
-  
+  std::shared_ptr<mkldnn::engine> engine_;
+
   /// data buffers
   MkldnnBufferPtr dataBot_;
   MkldnnBufferPtr dataTop_;
@@ -49,12 +48,11 @@ public:
   // flags whether to set memory format of top data or bot diff
   bool setDnnTopDataFmt_;
   std::vector<bool> setDnnBotDiffFmt_;
-  
 
 public:
   explicit MkldnnLayer(const LayerConfig& config)
     : Layer(config),
-      engine_(new engine(engine::cpu, 0)),
+      engine_(new mkldnn::engine(mkldnn::engine::cpu, 0)),
       dataBot_(NULL),
       dataTop_(NULL),
       diffBot_(NULL),
@@ -76,7 +74,7 @@ public:
 
     return initDnn(layerMap, parameterMap);
   }
-  
+
   void forward(PassType passType) {
     Layer::forward(passType);
 
@@ -86,11 +84,11 @@ public:
       resetDnnFwd(passType);
       needResetBwd_ = true;
     }
-    
+
     // submit dnn forward
     submitDnnFwd(passType);
   }
-  
+
   void backward(const UpdateCallback& callback) {
     if (needResetBwd_) {
       // dnn fwd init or reset
@@ -101,7 +99,7 @@ public:
     // submit dnn backward
     submitDnnBwd(callback);
   }
-  
+
   /**
    * init the flags whether to set memory desc
    * of top data or bot diff.
@@ -109,10 +107,10 @@ public:
    */
   virtual void initDnnflags() {
     // do not use this function so far, so set false
-    // TODO: enable it when all mkldnn layers done  
-    setDnnTopDataFmt_ = false; //isNextLayerDnn();
+    // TODO(TJ): enable it when all mkldnn layers done
+    setDnnTopDataFmt_ = false;  // isNextLayerDnn();
     for (size_t i = 0; i != inputLayers_.size(); ++i) {
-      setDnnBotDiffFmt_.push_back(false); //(isPrevLayerDnn(i));
+      setDnnBotDiffFmt_.push_back(false);  // (isPrevLayerDnn(i));
     }
   }
 
@@ -139,14 +137,14 @@ public:
       return false;
     }
     const std::string dnn("mkldnn");
-    if (getPrev(idx)->getType().compare(0, dnn.length(), dnn) == 0 ) {
+    if (getPrev(idx)->getType().compare(0, dnn.length(), dnn) == 0) {
       // type started with "mkldnn"
       return true;
     } else {
       return false;
     }
   }
-  
+
   // for conv and pool only support caffe mode by now
   int outputSize(int imageSize, int filterSize, int padding, int stride,
                        bool caffeMode = true) {
@@ -170,7 +168,7 @@ public:
    */
   virtual bool initDnn(const LayerMap& layerMap,
                            const ParameterMap& parameterMap) = 0;
-  
+
   /** 
    * each dnn layer should have function
    * to reshape the size and data of output if batchsize changes
@@ -183,7 +181,7 @@ public:
    * to init or reset dnn forward
    */
   virtual void resetDnnFwd(PassType passType) = 0;
-  
+
   /** 
    * each dnn layer should have function
    * to init or reset dnn backward
@@ -192,9 +190,6 @@ public:
 
   virtual void submitDnnFwd(PassType passType) = 0;
   virtual void submitDnnBwd(const UpdateCallback& callback) = 0;
-
-  
-
 };
 
 }  // namespace paddle

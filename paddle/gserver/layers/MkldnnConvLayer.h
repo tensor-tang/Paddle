@@ -8,8 +8,6 @@
 #include "mkldnn.hpp"
 #include "MkldnnMemory.h"
 
-using namespace mkldnn;
-
 namespace paddle {
 
 /**
@@ -20,10 +18,11 @@ namespace paddle {
 class MkldnnConvLayer : public MkldnnLayer {
 protected:
   /// For dnn convolution. Primitive Desc
-  std::shared_ptr<convolution_forward::primitive_desc> fwdPD_;
-  std::shared_ptr<convolution_backward_data::primitive_desc> bwdDataPD_;
-  std::shared_ptr<convolution_backward_weights::primitive_desc> bwdWgtPD_;
-  
+  std::shared_ptr<mkldnn::convolution_forward::primitive_desc> fwdPD_;
+  std::shared_ptr<mkldnn::convolution_backward_data::primitive_desc> bwdDataPD_;
+  std::shared_ptr<
+    mkldnn::convolution_backward_weights::primitive_desc> bwdWgtPD_;
+
   /// data buffers
   MkldnnBufferPtr dataWgt_;
   MkldnnBufferPtr dataBias_;
@@ -38,9 +37,9 @@ protected:
   // group
   std::vector<int> gp_;
 
-  // use paddle weight format 
+  // use paddle weight format
   bool usePaddleFmt_;
-  
+
   /// shape of weight: (oc, ic*fh*fw/gp)
   WeightList weights_;
   /// If shared_biases is false shape of bias: (oc, 1)
@@ -70,7 +69,7 @@ public:
   }
 
   size_t getOneBatchSize();
-  
+
   void clearAllCvtFlags() {
     if (dataBot_) dataBot_->clearCvtFlag();
     if (dataTop_) dataTop_->clearCvtFlag();
@@ -86,27 +85,29 @@ public:
    * input: botdata, wgtdata, biasdata
    * output topdata
    */
-  void submitFwdOnce(int inputIdx, const MatrixPtr& botVal, const MatrixPtr& topVal);
+  void submitFwdOnce(
+    int inputIdx, const MatrixPtr& botVal, const MatrixPtr& topVal);
 
   /* backward data
    * input: topdiff, wgtdata
    * output botdiff
    */
-  void submitBwdData(int inputIdx, const MatrixPtr& topGrad, const MatrixPtr& botGrad);
+  void submitBwdData(
+    int inputIdx, const MatrixPtr& topGrad, const MatrixPtr& botGrad);
 
   /* backward wgt and bias
    * input: topdiff, botdata
    * output wgtdiff, biasdiff
    */
-  void submitBwdWgts(int inputIdx, const MatrixPtr& botVal, const MatrixPtr& topGrad);
+  void submitBwdWgts(
+    int inputIdx, const MatrixPtr& botVal, const MatrixPtr& topGrad);
 
-  // return false if donot need reshape 
+  // return false if donot need reshape
   bool reshapeOutput();
 
   void resetDnnFwd(PassType passType);
-  
-  void resetDnnBwd();
 
+  void resetDnnBwd();
 
   void submitDnnFwd(PassType passType);
   void submitDnnBwd(const UpdateCallback& callback);
@@ -115,10 +116,10 @@ private:
   void exBackward(const UpdateCallback &callback);
   void exBwdBias(MatrixPtr topDiff);
   void exBwdData(MatrixPtr topDiff, int i);
-  void exBwdWgts(MatrixPtr topDiff, int i) ;
-  
+  void exBwdWgts(MatrixPtr topDiff, int i);
+
   void printInfo() {
-    for(size_t i = 0; i < iw_.size(); ++i) {
+    for (size_t i = 0; i < iw_.size(); ++i) {
       LOG(INFO)
         << "ih: " << ih_[i] << ", iw: " << iw_[i]
         << ", ic: " << ic_[i] << ", gp: " << gp_[i]

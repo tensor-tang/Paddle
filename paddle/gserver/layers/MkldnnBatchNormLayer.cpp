@@ -18,12 +18,12 @@ limitations under the License. */
 #include "MkldnnBatchNormLayer.h"
 #include <string.h>
 
-
 // ex fc
 #include "paddle/math/SparseMatrix.h"
 #include <vector>
 #include <algorithm>
 
+using namespace mkldnn;  // NOLINT
 
 namespace paddle {
 
@@ -33,11 +33,10 @@ const real MkldnnBatchNormLayer::EPS = 1E-5;
 
 bool MkldnnBatchNormLayer::initDnn(const LayerMap &layerMap,
                            const ParameterMap &parameterMap) {
-
   /* initialize the weightList */
   // first is Input in configure
   // other two is created in config_parser.py
-  // TODO: why other two is created in config_parser.py???
+  // TODO(TJ): why other two is created in config_parser.py???
   // actually only use 1 input
   CHECK_EQ(inputLayers_.size(), 3U);
   CHECK_EQ(inputLayers_.size(), parameters_.size());
@@ -68,10 +67,10 @@ bool MkldnnBatchNormLayer::initDnn(const LayerMap &layerMap,
   if (ih_[0] == iw_[0] && ih_[0] == 1) {
     // mkldnn has some issue with this case, so use paddle code instead
     useEx_ = true;
-    usePaddleFmt_ = true; // force to true
+    usePaddleFmt_ = true;  // force to true
   }
   if (!usePaddleFmt_)
-    LOG(FATAL) << "have not considerated do not use paddle fmt in this layer yet";
+    LOG(FATAL) << "have not considerated do not use paddle fmt here yet";
   if (config_.has_use_global_stats()) {
     useGlobalStats_ = config_.use_global_stats();
   }
@@ -89,7 +88,7 @@ bool MkldnnBatchNormLayer::initDnn(const LayerMap &layerMap,
   localVar_ = Matrix::create(1, oc_, false, false);
   localMean_->zeroMem();
   localVar_->zeroMem();
-  
+
   savedInvVar_ = Matrix::create(1, oc_, false, useGpu_);
   savedInvVar_->zeroMem();
 
@@ -117,7 +116,8 @@ void MkldnnBatchNormLayer::calMeanAndStd(const MatrixPtr& mat) {
   // Here using clipping.
   savedInvVar_->downClip(real(0.0));
 
-  //LOG(INFO) << "ex mean var" << localMean_->getData()[1] << "," << savedInvVar_->getData()[1];
+// LOG(INFO) << "ex mean var" << localMean_->getData()[1]
+// << "," << savedInvVar_->getData()[1];
 
   calMovingMeanAndVar();
 
@@ -237,12 +237,12 @@ size_t MkldnnBatchNormLayer::getOneBatchSize() {
   return oc_ * oh_[0] * ow_[0];
 }
 
-// whether reset batchsize and image size of input and output 
+// whether reset batchsize and image size of input and output
 bool MkldnnBatchNormLayer::reshapeOutput() {
   if (bs_ == getInput(0).getBatchSize()) {
     // can remove reserveOutput when confirm how multi inputs work
     // and whether to clear diff
-    resetOutput(bs_, getOneBatchSize()); 
+    resetOutput(bs_, getOneBatchSize());
     return false;
   }
   // reset data
@@ -264,7 +264,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   if (ih_[0] == iw_[0] && ih_[0] == 1) {
     // mkldnn has some issue with this case, so use paddle code instead
     useEx_ = true;
-    usePaddleFmt_ = true; // force to true
+    usePaddleFmt_ = true;  // force to true
     LOG(INFO) << "Skip MKLDNN prepare when iw==ih==1";
     return;
   }
@@ -289,12 +289,12 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   prop_kind pk = (passType == PASS_TEST) ? prop_kind::forward_scoring :
     prop_kind::forward_training;
   unsigned flags = 0u;
-  if (useGlobalStats_) 
+  if (useGlobalStats_)
     flags = (flags | batch_normalization_flag::use_global_stats);
   if (useScaleShift_)
     flags = (flags | batch_normalization_flag::use_scale_shift);
 
-  //create dim structure that describes user data.
+  // create dim structure that describes user data.
   memory::dims botDims, wgtDims, topDims;
   botDims = {bs_, ic_[0], ih_[0], iw_[0]};
   topDims = {bs_, oc_, oh_[0], ow_[0]};  // == botDims
@@ -302,18 +302,19 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   dataTop_.reset(new MkldnnBuffer(topDims));
   real *botData = getPrev(0)->getOutputValue()->getData();
   real *topData = getOutputValue()->getData();
-  const std::shared_ptr<mkldnn::memory::desc> prvMD = getPrev(0)->getTopDataMD();
+  const std::shared_ptr<memory::desc> prvMD = getPrev(0)->getTopDataMD();
   if (prvMD) {
     LOG(FATAL) << "should not be here so far...........";
     dataBot_->initUser(botData, *prvMD, *engine_);
   } else {
     dataBot_->initUser(botData, botDims, memory::format::nchw, *engine_);
   }
-  
+
   std::shared_ptr<batch_normalization_forward::desc> fwdDesc;
-  fwdDesc.reset(new batch_normalization_forward::desc(pk, 
+  fwdDesc.reset(new batch_normalization_forward::desc(pk,
     dataBot_->getUserMD(), EPS, flags));
-  fwdPD_.reset(new batch_normalization_forward::primitive_desc(*fwdDesc, *engine_));
+  fwdPD_.reset(new batch_normalization_forward::primitive_desc(
+    *fwdDesc, *engine_));
 
   // init bottom cvt
   if (dataBot_->initCvt(dataBot_->getUserPD(), dnnCvtUser2Internal)) {
@@ -331,7 +332,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
     dataTop_->initUser(topData, topDims, memory::format::nchw, *engine_);
   }
   if (dataTop_->initCvt(fwdPD_->dst_primitive_desc(), dnnCvtInternal2User)) {
-    LOG(INFO) << "need reorder --- top data: " 
+    LOG(INFO) << "need reorder --- top data: "
       << DNN_FORMAT[dataTop_->getIntlFmt()]
       << " >>>>> "
       << DNN_FORMAT[dataTop_->getUserFmt()];
@@ -349,52 +350,55 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
     wgtDims = {2, oc_};
     wgtScaleShift_.reset(new MkldnnBuffer(wgtDims));
     wgtScaleShift_->initUser(wgtData, wgtDims, memory::format::nc, *engine_);
-    if (wgtScaleShift_->initCvt(fwdPD_->weights_primitive_desc(), dnnCvtUser2Internal)) {
+    if (wgtScaleShift_->initCvt(
+      fwdPD_->weights_primitive_desc(), dnnCvtUser2Internal)) {
       LOG(FATAL) << "should donot need cvt!!! user vs intl format:"
-      << DNN_FORMAT[wgtScaleShift_->getUserFmt()] << " vs " 
+      << DNN_FORMAT[wgtScaleShift_->getUserFmt()] << " vs "
       << DNN_FORMAT[wgtScaleShift_->getIntlFmt()];
     }
   } else {
     LOG(WARNING) << "sure do not need scale and shift???";
   }
-  
+
   if (passType == PASS_TRAIN || useGlobalStats_) {
     mean_.reset(new MkldnnBuffer({oc_}));
     var_.reset(new MkldnnBuffer({oc_}));
-    // TODO: if input is userPD, should accept dnnCvtNoNeed, because do not care
+    // TODO(TJ): if input is userPD, maybe need accept dnnCvtNoNeed
     mean_->initUser(localMean_->getData(), {oc_}, memory::format::x, *engine_);
     var_->initUser(localVar_->getData(), {oc_}, memory::format::x, *engine_);
     if (useGlobalStats_) {
       if (mean_->initCvt(fwdPD_->mean_primitive_desc(), dnnCvtUser2Internal)) {
         LOG(FATAL) << "should donot need cvt!!! format-- user vs intl:"
-          << DNN_FORMAT[mean_->getUserFmt()] << " vs " 
+          << DNN_FORMAT[mean_->getUserFmt()] << " vs "
           << DNN_FORMAT[mean_->getIntlFmt()];
       }
-      if (var_->initCvt(fwdPD_->variance_primitive_desc(), dnnCvtUser2Internal)) {
+      if (var_->initCvt(
+        fwdPD_->variance_primitive_desc(), dnnCvtUser2Internal)) {
         LOG(FATAL) << "should donot need cvt!!! format-- user vs intl:"
-          << DNN_FORMAT[var_->getUserFmt()] << " vs " 
+          << DNN_FORMAT[var_->getUserFmt()] << " vs "
           << DNN_FORMAT[var_->getIntlFmt()];
       }
     } else {
-      if (mean_->initCvt(fwdPD_->mean_primitive_desc(), dnnCvtInternal2User)) {
+      if (mean_->initCvt(
+        fwdPD_->mean_primitive_desc(), dnnCvtInternal2User)) {
         LOG(FATAL) << "should donot need cvt!!! format-- user vs intl:"
-          << DNN_FORMAT[mean_->getUserFmt()] << " vs " 
+          << DNN_FORMAT[mean_->getUserFmt()] << " vs "
           << DNN_FORMAT[mean_->getIntlFmt()];
       }
-      if (var_->initCvt(fwdPD_->variance_primitive_desc(), dnnCvtInternal2User)) {
+      if (var_->initCvt(
+        fwdPD_->variance_primitive_desc(), dnnCvtInternal2User)) {
         LOG(FATAL) << "should donot need cvt!!! format-- user vs intl:"
-          << DNN_FORMAT[var_->getUserFmt()] << " vs " 
+          << DNN_FORMAT[var_->getUserFmt()] << " vs "
           << DNN_FORMAT[var_->getIntlFmt()];
       }
     }
   }
-  
+
   LOG(INFO) << "data format flow --- "
     << DNN_FORMAT[dataBot_->getUserFmt()] << " >>> ("
     << DNN_FORMAT[dataBot_->getIntlFmt()] << " >>> "
     << DNN_FORMAT[dataTop_->getIntlFmt()] << ") >>> "
     << DNN_FORMAT[dataTop_->getUserFmt()];
-
 }
 
 void MkldnnBatchNormLayer::resetDnnBwd() {
@@ -409,13 +413,13 @@ void MkldnnBatchNormLayer::myFwd(PassType passType) {
   /// all sumbit cvt should be clear
   clearAllCvtFlags();
   std::vector<primitive> fwd;
-  
+
   // data bottom
   real *botdata = getPrev(0)->getOutputValue()->getData();
   dataBot_->submitCvt(fwd, botdata);
-  
+
   // data wgt
-  if (useScaleShift_ ) {
+  if (useScaleShift_) {
     if (usePaddleFmt_) {
       memcpy(myScaleShift_->getData(), weight_->getW()->getData(),
         sizeof(real) * oc_);
@@ -457,7 +461,7 @@ void MkldnnBatchNormLayer::myFwd(PassType passType) {
               *mean_->getIntlMem(), *var_->getIntlMem(),
               *dataTop_->getIntlMem()));
     } else {
-      //LOG(INFO) << "testing and use local mean and var";
+      // LOG(INFO) << "testing and use local mean and var";
       fwd.push_back(useScaleShift_
         ? batch_normalization_forward(*fwdPD_, *dataBot_->getIntlMem(),
             *wgtScaleShift_->getIntlMem(),
@@ -466,7 +470,8 @@ void MkldnnBatchNormLayer::myFwd(PassType passType) {
             *dataTop_->getIntlMem()));
     }
   } else {
-    CHECK(useGlobalStats_ == false) << "useGlobalStats shoud not happed in train";
+    CHECK(useGlobalStats_ == false)
+      << "useGlobalStats shoud not happed in train";
     fwd.push_back(useScaleShift_
           ? batch_normalization_forward(*fwdPD_, *dataBot_->getIntlMem(),
               *wgtScaleShift_->getIntlMem(),
@@ -520,14 +525,14 @@ void MkldnnBatchNormLayer::myFwd(PassType passType) {
   // submit top after BN fwd
   real *topdata = getOutputValue()->getData();
   dataTop_->submitCvt(fwd, topdata);
-//LOG(INFO) << botdata[1] << "," << localMean_->getData()[1] << ","
-//  << localVar_->getData()[1] << "," << myScaleShift_->getData()[1] << topdata[1];
+// LOG(INFO) << botdata[1] << "," << localMean_->getData()[1] << "," <<
+// localVar_->getData()[1] << "," << myScaleShift_->getData()[1] << topdata[1];
   // start forward
   REGISTER_TIMER_INFO("mkldnn_BN_Fwd", getName().c_str());
   stream(stream::kind::eager).submit(fwd).wait();
 
   if (passType == PASS_TRAIN && !useGlobalStats_) {
-    //LOG(INFO) << "cal moving .............. should not in testing";
+    // LOG(INFO) << "cal moving .............. should not in testing";
     // calculating and saving moving mean and variance
     MatrixPtr movingMean = movingMean_->getW();
     MatrixPtr movingVar = movingVar_->getW();
@@ -539,13 +544,15 @@ void MkldnnBatchNormLayer::myFwd(PassType passType) {
       mvMean->add(*localMean_, movingAvgFraction_, 1.0 - movingAvgFraction_);
       mvVar->add(*localVar_, movingAvgFraction_, 1.0 - movingAvgFraction_);
     } else {
-      movingMean->add(*localMean_, movingAvgFraction_, 1.0 - movingAvgFraction_);
+      movingMean->add(
+        *localMean_, movingAvgFraction_, 1.0 - movingAvgFraction_);
       movingVar->add(*localVar_, movingAvgFraction_, 1.0 - movingAvgFraction_);
     }
   }
-//  if (passType != PASS_TEST)
+/*  if (passType != PASS_TEST)
 //    LOG(INFO) << "my mean var" << localMean_->getData()[1] << "," << localVar_->getData()[1];
 //  LOG(INFO) << "my ------------" << topdata[0] << "," << topdata[1] << "," << topdata[2] << "," << topdata[oc_*oh_[0]*ow_[0]-1];
+*/
 }
 
 void MkldnnBatchNormLayer::exFwd(PassType passType) {
@@ -578,9 +585,9 @@ void MkldnnBatchNormLayer::exFwd(PassType passType) {
   normIn_->divRowVector(*savedInvVar_);  // divide std.
   expandedOut_->assign(*normIn_);
 
-//  if (!useEx_){
-//    LOG(INFO) << localMean_->getData()[1] << "," << savedInvVar_->getData()[1] << "," << normIn_->getData()[1];
-//  }
+/*  if (!useEx_){
+    LOG(INFO) << localMean_->getData()[1] << "," << savedInvVar_->getData()[1] << "," << normIn_->getData()[1];
+  }*/
   expandedOut_->mulRowVector(*weight_->getW());  // multiple gamma.
   if (biases_) {
     expandedOut_->addBias(*(biases_->getW()), 1);  // add beta.
@@ -593,10 +600,11 @@ void MkldnnBatchNormLayer::exFwd(PassType passType) {
   } else {
     // just for my test to compare with my result
     // can be remove when finish this layer
-    MatrixPtr out = Matrix::create(bs_, oc_*oh_[0]*ow_[0], false, false);//getOutputValue();
+    MatrixPtr out = Matrix::create(bs_, oc_*oh_[0]*ow_[0], false, false);
+    // MatrixPtr out = getOutputValue();
     shrinkMat(expandedOut_, out);
-    //  real *topdata = out->getData();
-    //  LOG(INFO) << "ex ------------" << topdata[0] << "," << topdata[1] << "," << topdata[2] << "," << topdata[oc_*oh_[0]*ow_[0]-1];
+/*  real *topdata = out->getData();
+  LOG(INFO) << "ex ------------" << topdata[0] << "," << topdata[1] << "," << topdata[2] << "," << topdata[oc_*oh_[0]*ow_[0]-1];*/
   }
 }
 
@@ -635,7 +643,7 @@ void MkldnnBatchNormLayer::exBwd(const UpdateCallback &callback) {
                          useGpu_);
   Matrix::resizeOrCreate(tmpGrad_, batchSize * imgPixels_, oc_, false,
                          useGpu_);
-  if(!useEx_) {
+  if (!useEx_) {
     // when use mkldnn should  prepare some matrix for ex Bwd
     Matrix::resizeOrCreate(normIn_, bs_ * imgPixels_, oc_, false, useGpu_);
     Matrix::resizeOrCreate(expandedIn_, bs_ * imgPixels_, oc_, false, useGpu_);
@@ -645,14 +653,14 @@ void MkldnnBatchNormLayer::exBwd(const UpdateCallback &callback) {
     normIn_->assign(*expandedIn_);
     normIn_->addBias(*localMean_, -1);  // subtract mean.
     normIn_->divRowVector(*savedInvVar_);  // divide std.
-//    LOG(INFO) << localMean_->getData()[1] << "," << savedInvVar_->getData()[1] << "," << normIn_->getData()[1];
+// LOG(INFO) << localMean_->getData()[1] << ","
+// << savedInvVar_->getData()[1] << "," << normIn_->getData()[1];
   }
   expandMat(getOutputGrad(), expandedOutGrad_);
   // compute derivatives.
   if (biases_ && biases_->getWGrad()) {
     REGISTER_TIMER_INFO("BpBiasTimer", getName().c_str());
     biases_->getWGrad()->collectBias(*expandedOutGrad_, 1);
-    /* Increasing the number of gradient */
     biases_->getParameterPtr()->incUpdate(callback);
   }
   if (weight_->getWGrad()) {
@@ -686,13 +694,10 @@ void MkldnnBatchNormLayer::exBwd(const UpdateCallback &callback) {
     REGISTER_TIMER_INFO("WeightUpdate", getName().c_str());
     weight_->getParameterPtr()->incUpdate(callback);
   }
-
 }
 
 void MkldnnBatchNormLayer::submitDnnBwd(const UpdateCallback &callback) {
-
   exBwd(callback);
-
   // dnn backward
 }
 

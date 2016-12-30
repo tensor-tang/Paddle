@@ -12,18 +12,13 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
 
-
 #include "paddle/utils/Logging.h"
 #include "paddle/utils/Stat.h"
 #include "MkldnnConvLayer.h"
 
-//using namespace mkldnn;
-
-#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
-
+using namespace mkldnn;  // NOLINT
 
 namespace paddle {
-
 
 REGISTER_LAYER(mkldnn_conv, MkldnnConvLayer);
 
@@ -36,7 +31,7 @@ bool MkldnnConvLayer::initDnn(const LayerMap &layerMap,
   }
   LOG(INFO) << "input layer size:" << inputLayers_.size();
   if (inputLayers_.size() != 1) {
-     // TODO: considerate more than One input
+     // TODO(TJ): considerate more than One input
     LOG(FATAL) << "Only support one input layer with MKL-DNN by now!";
   }
   bs_ = 0;
@@ -95,7 +90,7 @@ size_t MkldnnConvLayer::getOneBatchSize() {
   size_t layerSize = 0;
   for (size_t i = 0; i < inputLayers_.size(); i++) {
     // all output size should be the same
-    // TODO: only care about i==0 by now
+    // TODO(TJ): only care about i==0 by now
     // check out the output size
     CHECK(layerSize == 0 || oh_[i] * ow_[i] * size_t(oc_) == layerSize);
     layerSize = oh_[i] * ow_[i] * oc_;
@@ -103,11 +98,12 @@ size_t MkldnnConvLayer::getOneBatchSize() {
   return layerSize;
 }
 
-// whether reset batchsize and image size of input and output 
+// whether reset batchsize and image size of input and output
 bool MkldnnConvLayer::reshapeOutput() {
   if (bs_ == getInput(0).getBatchSize()) {
-    // can remove resetoutput when confirm how multi inputs work and whether to clear diff
-    resetOutput(bs_, getOneBatchSize()); 
+    // can remove resetoutput
+    // when confirm how multi inputs work and whether to clear diff
+    resetOutput(bs_, getOneBatchSize());
     return false;
   }
   // reset image size
@@ -119,11 +115,10 @@ bool MkldnnConvLayer::reshapeOutput() {
     // output image dimensions
     oh_[i] = outputSize(ih_[i], fh_[i], ph_[i], sh_[i]);
     ow_[i] = outputSize(iw_[i], fw_[i], pw_[i], sw_[i]);
-    
   }
   getOutput().setFrameHeight(oh_[0]);
   getOutput().setFrameWidth(ow_[0]);
-  
+
   // reset data
   bs_ = getInput(0).getBatchSize();
   resetOutput(bs_, getOneBatchSize());
@@ -133,22 +128,20 @@ bool MkldnnConvLayer::reshapeOutput() {
 
 void MkldnnConvLayer::resetDnnFwd(PassType passType) {
   LOG(INFO) << "reset mkldnn conv forward of layer: " << config_.name();
-  // TODO: only care about i==0 by now
+  // TODO(TJ): only care about i==0 by now
   memory::dims biasDims = {oc_};
   bool hasBias = (biases_ && biases_->getW()) ? true : false;
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     CHECK(bs_ == getInput(i).getBatchSize())
       << "Assert batchsize of input layers are equal";
-    
     // create dim structure that describes user data.
     memory::dims botDims = {bs_, ic_[i], ih_[i], iw_[i]};
-    memory::dims wgtDims = (gp_[i] == 1) ? 
+    memory::dims wgtDims = (gp_[i] == 1) ?
         memory::dims{oc_, ic_[i], fh_[i], fw_[i]}
       : memory::dims{gp_[i], oc_/gp_[i], ic_[i]/gp_[i], fh_[i], fw_[i]};
     memory::dims strides = {sh_[i], sw_[i]};
     memory::dims padding = {ph_[i], pw_[i]};
     memory::dims topDims = {bs_, oc_, oh_[i], ow_[i]};
-    
     dataBot_.reset(new MkldnnBuffer(botDims));
     dataWgt_.reset(new MkldnnBuffer(wgtDims));
     dataTop_.reset(new MkldnnBuffer(topDims));
@@ -159,7 +152,7 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
     real *botData = getPrev(i)->getOutputValue()->getData();
     real *wgtData = weights_[i]->getW()->getData();
     real *topData = getOutputValue()->getData();
-    const std::shared_ptr<mkldnn::memory::desc> prvMD = getPrev(i)->getTopDataMD();
+    const std::shared_ptr<memory::desc> prvMD = getPrev(i)->getTopDataMD();
     if (prvMD) {
       dataBot_->initUser(botData, *prvMD, *engine_);
     } else {
@@ -172,7 +165,7 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
       dataBias_->initUser(biasData, dataBias_->getDefaultDims(),
         memory::format::x, *engine_);
     }
-    // create conv desc from internal desc 
+    // create conv desc from internal desc
     std::shared_ptr<convolution_forward::desc> fwdDesc;
     if (hasBias) {
       fwdDesc.reset(new convolution_forward::desc(prop_kind::forward_training,
@@ -200,7 +193,8 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
         << " >>>>> "
         << DNN_FORMAT[dataBot_->getIntlFmt()];
     }
-    if (dataWgt_->initCvt(fwdPD_->weights_primitive_desc(), dnnCvtUser2Internal)) {
+    if (dataWgt_->initCvt(
+      fwdPD_->weights_primitive_desc(), dnnCvtUser2Internal)) {
       LOG(INFO) << "need reorder --- weight data: "
         << DNN_FORMAT[dataWgt_->getUserFmt()]
         << " >>>>> "
@@ -208,7 +202,8 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
     }
     if (hasBias) {
       real *biasData = biases_->getW()->getData();
-      dataBias_->initUser(biasData, dataBias_->getDefaultDims(), memory::format::x, *engine_);
+      dataBias_->initUser(
+        biasData, dataBias_->getDefaultDims(), memory::format::x, *engine_);
       if (dataBias_->initCvt(fwdPD_->bias_primitive_desc(),
         dnnCvtUser2Internal)) {
         LOG(INFO) << "need reorder --- bias data: "
@@ -225,7 +220,7 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
       dataTop_->initUser(topData, topDims, memory::format::nchw, *engine_);
     }
     if (dataTop_->initCvt(fwdPD_->dst_primitive_desc(), dnnCvtInternal2User)) {
-      LOG(INFO) << "need reorder --- top data: " 
+      LOG(INFO) << "need reorder --- top data: "
         << DNN_FORMAT[dataTop_->getIntlFmt()]
         << " >>>>> "
         << DNN_FORMAT[dataTop_->getUserFmt()];
@@ -235,7 +230,6 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
       << DNN_FORMAT[dataBot_->getIntlFmt()] << " >>> "
       << DNN_FORMAT[dataTop_->getIntlFmt()] << ") >>> "
       << DNN_FORMAT[dataTop_->getUserFmt()];
-    
   }
   printInfo();
 }
@@ -408,13 +402,13 @@ void MkldnnConvLayer::submitFwdOnce(
     weights_[inputIdx]->getW()->transpose(myWgt, false);
     wgtdata = myWgt->getData();
   }
-  
+
   std::vector<primitive> convFwd;
   dataBot_->submitCvt(convFwd, botdata);
   dataWgt_->submitCvt(convFwd, wgtdata);
-  if(biases_ && biases_->getW()) {
+  if (biases_ && biases_->getW()) {
     // only for shared bias
-    // TODO: enable unshared bias
+    // TODO(TJ): enable unshared bias
     real* biasdata = biases_->getW()->getData();
     dataBias_->submitCvt(convFwd, biasdata);
     convFwd.push_back(convolution_forward(*fwdPD_,
@@ -442,12 +436,12 @@ void MkldnnConvLayer::submitBwdData(
   real* wgtdata = weights_[inputIdx]->getW()->getData();
   MatrixPtr myWgt;
   if (usePaddleFmt_) {
-    myWgt = Matrix::create(oc_, 
+    myWgt = Matrix::create(oc_,
       ic_[inputIdx]*fh_[inputIdx]*fw_[inputIdx]/gp_[inputIdx], false, false);
     weights_[inputIdx]->getW()->transpose(myWgt, false);
     wgtdata = myWgt->getData();
   }
-  
+
   std::vector<primitive> convBwdData;
   dataWgt_->submitCvt(convBwdData, wgtdata);
   diffTop_->submitCvt(convBwdData, topdiff);
@@ -467,11 +461,11 @@ void MkldnnConvLayer::submitBwdWgts(
   real* wgtdiff = weights_[inputIdx]->getWGrad()->getData();
   MatrixPtr myWgt;
   if (usePaddleFmt_) {
-    myWgt = Matrix::create(oc_, 
+    myWgt = Matrix::create(oc_,
       ic_[inputIdx]*fh_[inputIdx]*fw_[inputIdx]/gp_[inputIdx], false, false);
     wgtdiff = myWgt->getData();
   }
-  
+
   std::vector<primitive> convBwdWgt;
   std::shared_ptr<convolution_backward_weights> bwdWgt;
   dataBot_->submitCvt(convBwdWgt, botdata);
@@ -480,13 +474,13 @@ void MkldnnConvLayer::submitBwdWgts(
     // bias backward can only execute in filter backward with MKL-DNN
     real* biasdiff = biases_->getWGrad()->getData();
     bwdWgt.reset(new convolution_backward_weights(*bwdWgtPD_,
-      *(dataBot_->getIntlMem()), *(diffTop_->getIntlMem()), 
+      *(dataBot_->getIntlMem()), *(diffTop_->getIntlMem()),
       *(diffWgt_->getIntlMem()), *(diffBias_->getIntlMem())));
     convBwdWgt.push_back(*bwdWgt);
     diffBias_->submitCvt(convBwdWgt, biasdiff);
   } else {
     bwdWgt.reset(new convolution_backward_weights(*bwdWgtPD_,
-      *(dataBot_->getIntlMem()), *(diffTop_->getIntlMem()), 
+      *(dataBot_->getIntlMem()), *(diffTop_->getIntlMem()),
       *(diffWgt_->getIntlMem())));
     convBwdWgt.push_back(*bwdWgt);
   }
@@ -500,10 +494,9 @@ void MkldnnConvLayer::submitBwdWgts(
 }
 
 void MkldnnConvLayer::submitDnnFwd(PassType passType) {
-
   /// all sumbit cvt should be clear
   clearAllCvtFlags();
-  
+
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     submitFwdOnce(i, getPrev(i)->getOutputValue(), getOutputValue());
   }
@@ -516,8 +509,8 @@ void MkldnnConvLayer::exBwdBias(MatrixPtr topDiff) {
   MatrixPtr biases =
     Matrix::create(biases_->getWGrad()->getData(), 1,
     biases_->getWGrad()->getElementCnt(), false, useGpu_);
-  size_t mapW = getOneBatchSize() / oc_; //oh*ow
-  size_t mapH = topDiff->getElementCnt() / mapW; //oc*bs
+  size_t mapW = getOneBatchSize() / oc_;  // oh*ow
+  size_t mapH = topDiff->getElementCnt() / mapW;  // oc*bs
   MatrixPtr vTmp = Matrix::create(topDiff->getData(), mapH, mapW, false, false);
   MatrixPtr transOutValue_;
   Matrix::resizeOrCreate(transOutValue_, mapW, mapH, false, false);
@@ -544,10 +537,11 @@ void MkldnnConvLayer::exBwdData(MatrixPtr topDiff, int i) {
   real *tgtGradData = tgtGrad->getData();
   MatrixPtr exWgt = weights_[i]->getW();
   if (!usePaddleFmt_) {
-    MatrixPtr exWgt = Matrix::create(ic_[i]*fh_[i]*fw_[i]/gp_[i], oc_, false, false);
+    MatrixPtr exWgt = Matrix::create(
+      ic_[i] * fh_[i] * fw_[i] / gp_[i], oc_, false, false);
     weights_[i]->getW()->transpose(exWgt, false);
   }
-  
+
   for (size_t n = 0; n < size_t(bs_); n++) {
     real *wgtData = exWgt->getData();
     real *expandInData = expandInput_->getData();
@@ -642,7 +636,6 @@ void MkldnnConvLayer::exBackward(const UpdateCallback &callback) {
 void MkldnnConvLayer::submitDnnBwd(const UpdateCallback &callback) {
   // backward activation
   backwardActivation();
-
   exBackward(callback);
 
   // dnn backward

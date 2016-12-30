@@ -8,8 +8,6 @@
 #include "mkldnn.hpp"
 #include "MkldnnMemory.h"
 
-using namespace mkldnn;
-
 namespace paddle {
 
 /**
@@ -19,27 +17,26 @@ namespace paddle {
  */
 class MkldnnPoolLayer : public MkldnnLayer {
 protected:
-  
   /// For dnn pooling. Primitive Desc
-  std::shared_ptr<pooling_forward::primitive_desc> fwdPD_;
-  //std::shared_ptr<convolution_backward_data::primitive_desc> bwdDataPD_;
-  //std::shared_ptr<convolution_backward_weights::primitive_desc> bwdWgtPD_;
+  std::shared_ptr<mkldnn::pooling_forward::primitive_desc> fwdPD_;
+  // std::shared_ptr<convolution_backward_data::primitive_desc> bwdDataPD_;
+  // std::shared_ptr<convolution_backward_weights::primitive_desc> bwdWgtPD_;
 
-  std::shared_ptr<memory> workspace_;
+  std::shared_ptr<mkldnn::memory> workspace_;
   bool withWorkspace_;
   // padding, stride and filter size
   int ph_, pw_;
   int sh_, sw_;
   int fh_, fw_;
-  
-  algorithm poolAlgo_;
-  
+
+  mkldnn::algorithm poolAlgo_;
+
 public:
   explicit MkldnnPoolLayer(const LayerConfig& config)
     : MkldnnLayer(config),
       fwdPD_(NULL),
-      workspace_(NULL)/*,
-      bwdWgtPD_(NULL)*/
+      workspace_(NULL)
+//      bwdWgtPD_(NULL)
     {}
 
   ~MkldnnPoolLayer() {}
@@ -55,26 +52,27 @@ public:
     if (diffTop_) diffTop_->clearCvtFlag();
   }
 
-  // return false if donot need reshape 
+  // return false if donot need reshape
   bool reshapeOutput();
 
   void resetDnnFwd(PassType passType);
-  
+
   void resetDnnBwd();
 
   void submitDnnFwd(PassType passType);
+
   void submitDnnBwd(const UpdateCallback& callback);
 
 private:
   void myFwd(PassType passType);
   void exFwd(PassType passType);
   void exBwd(const UpdateCallback &callback);
-  
+
   void printInfo() {
-    for(size_t i = 0; i < iw_.size(); ++i) {
+    for (size_t i = 0; i < iw_.size(); ++i) {
       LOG(INFO)
         << "ih: " << ih_[i] << ", iw: " << iw_[i]
-        << ", ic: " << ic_[i] 
+        << ", ic: " << ic_[i]
         << ", oh: " << oh_[i] << ", ow: " << ow_[i]
         << ", fh: " << fh_ << ", fw: " << fw_
         << ", ph: " << ph_ << ", pw: " << pw_

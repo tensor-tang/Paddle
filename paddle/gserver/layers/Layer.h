@@ -238,7 +238,7 @@ public:
       return true;
     } else {
       return false;
-    } 
+    }
   }
 
   bool hasMkldnnAct() {
@@ -248,7 +248,7 @@ public:
     const std::string dnn("mkldnn");
     const std::string& type = activation_->getName();
     // if type started with "mkldnn" return true
-    if (type.compare(0, dnn.length(), dnn) == 0 ) {
+    if (type.compare(0, dnn.length(), dnn) == 0) {
       return true;
     } else {
       return false;

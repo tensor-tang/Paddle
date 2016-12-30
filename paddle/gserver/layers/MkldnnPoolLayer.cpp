@@ -12,10 +12,11 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
 
-
 #include "paddle/utils/Logging.h"
 #include "paddle/utils/Stat.h"
 #include "MkldnnPoolLayer.h"
+
+using namespace mkldnn;  // NOLINT
 
 namespace paddle {
 
@@ -23,7 +24,6 @@ REGISTER_LAYER(mkldnn_pool, MkldnnPoolLayer);
 
 bool MkldnnPoolLayer::initDnn(const LayerMap &layerMap,
                            const ParameterMap &parameterMap) {
-
   /* the size of inputs for pool-layer is 1 */
   CHECK_EQ(config_.inputs_size(), 1);
 
@@ -33,13 +33,13 @@ bool MkldnnPoolLayer::initDnn(const LayerMap &layerMap,
 //  }
   const std::string& poolType_ = conf.pool_type();
   if (poolType_ == "max-projection") {
-    poolAlgo_= algorithm::pooling_max;
+    poolAlgo_ = algorithm::pooling_max;
   } else if (poolType_ == "avg-projection") {
     poolAlgo_ = algorithm::pooling_avg;
   } else {
     LOG(FATAL) << "unknow pooling type!";
   }
-  
+
   ic_.push_back(conf.channels());
   iw_.push_back(conf.img_size());
   ow_.push_back(conf.output_x());
@@ -60,32 +60,30 @@ bool MkldnnPoolLayer::initDnn(const LayerMap &layerMap,
 
 size_t MkldnnPoolLayer::getOneBatchSize() {
   CHECK_NE(inputLayers_.size(), 0UL);
-
   int height = inputLayers_[0]->getOutput().getFrameHeight();
   int width = inputLayers_[0]->getOutput().getFrameWidth();
-  
   if (height != 0) ih_[0] = height;
   if (width != 0) iw_[0] = width;
-  // output image dimensions
-  // TODO: why use false caffe mode??
+  // TODO(TJ): why use false caffe mode??
   oh_[0] = outputSize(ih_[0], fh_, ph_, sh_, false);
   ow_[0] = outputSize(iw_[0], fw_, pw_, sw_, false);
   return oh_[0] * ow_[0] * oc_;
 }
 
-// whether reset batchsize and image size of input and output 
+// whether reset batchsize and image size of input and output
 bool MkldnnPoolLayer::reshapeOutput() {
   if (bs_ == getInput(0).getBatchSize()) {
-    // can remove resetoutput when confirm how multi inputs work and whether to clear diff
-    resetOutput(bs_, getOneBatchSize()); 
+    // can remove resetoutput
+    // when confirm how multi inputs work and whether to clear diff
+    resetOutput(bs_, getOneBatchSize());
     return false;
   }
-  
+
   // reset image size
   size_t layersize = getOneBatchSize();
   getOutput().setFrameHeight(oh_[0]);
   getOutput().setFrameWidth(ow_[0]);
-  
+
   // reset data
   bs_ = getInput(0).getBatchSize();
   LOG(INFO) << "layer name: " << getName();
@@ -99,7 +97,7 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
 
   CHECK(bs_ == getInput(0).getBatchSize())
     << "Assert batchsize of input layers are equal";
-  
+
   // create dim structure that describes user data.
   memory::dims botDims = {bs_, ic_[0], ih_[0], iw_[0]};
   memory::dims kernel = {fh_, fw_};
@@ -109,18 +107,18 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
 
   dataBot_.reset(new MkldnnBuffer(botDims));
   dataTop_.reset(new MkldnnBuffer(topDims));
-  
+
   // init user memory of bottom, weights and bias
   real *botData = getPrev(0)->getOutputValue()->getData();
   real *topData = getOutputValue()->getData();
-  const std::shared_ptr<mkldnn::memory::desc> prvMD = getPrev(0)->getTopDataMD();
+  const std::shared_ptr<memory::desc> prvMD = getPrev(0)->getTopDataMD();
   if (prvMD) {
     dataBot_->initUser(botData, *prvMD, *engine_);
   } else {
     dataBot_->initUser(botData, botDims, memory::format::nchw, *engine_);
   }
 
-  // create pool desc from internal desc 
+  // create pool desc from internal desc
   std::shared_ptr<pooling_forward::desc> fwdDesc;
   prop_kind pk = (passType == PASS_TEST) ? prop_kind::forward_scoring :
     prop_kind::forward_training;
@@ -146,18 +144,19 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
     dataTop_->initUser(topData, topDims, memory::format::nchw, *engine_);
   }
   if (dataTop_->initCvt(fwdPD_->dst_primitive_desc(), dnnCvtInternal2User)) {
-    LOG(INFO) << "need reorder --- top data: " 
+    LOG(INFO) << "need reorder --- top data: "
       << DNN_FORMAT[dataTop_->getIntlFmt()]
       << " >>>>> "
       << DNN_FORMAT[dataTop_->getUserFmt()];
   }
 
-  withWorkspace_ = passType == PASS_TRAIN && poolAlgo_ != algorithm::pooling_avg;
+  withWorkspace_ = passType != PASS_TEST && poolAlgo_ != algorithm::pooling_avg;
   if (withWorkspace_) {
     workspace_.reset(new memory(fwdPD_->workspace_primitive_desc()));
   } else {
     auto p_workspace_desc = memory::primitive_desc(
-      {{}, memory::data_type::f32, memory::format(dataTop_->getIntlFmt())}, *engine_);
+      {{}, memory::data_type::f32, memory::format(dataTop_->getIntlFmt())},
+      *engine_);
     workspace_.reset(new memory(p_workspace_desc));
   }
   LOG(INFO) << "data format flow --- "
@@ -165,7 +164,6 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
     << DNN_FORMAT[dataBot_->getIntlFmt()] << " >>> "
     << DNN_FORMAT[dataTop_->getIntlFmt()] << ") >>> "
     << DNN_FORMAT[dataTop_->getUserFmt()];
-  
   printInfo();
 }
 
@@ -334,8 +332,8 @@ void MkldnnPoolLayer::myFwd(PassType passType) {
 
   std::vector<primitive> poolFwd;
   dataBot_->submitCvt(poolFwd, botdata);
-  
-  if(withWorkspace_) {
+
+  if (withWorkspace_) {
     poolFwd.push_back(pooling_forward(*fwdPD_,
       *(dataBot_->getIntlMem()), *(dataTop_->getIntlMem()),
       *workspace_));
@@ -348,8 +346,8 @@ void MkldnnPoolLayer::myFwd(PassType passType) {
   // start forward
   REGISTER_TIMER_INFO("mkldnnPoolFwd", getName().c_str());
   stream(stream::kind::eager).submit(poolFwd).wait();
-//  LOG(INFO) << "------------" << topdata[0];// << "," << topdata[1] << "," << topdata[2];
-
+//  LOG(INFO) << "------------" << topdata[0];
+// << "," << topdata[1] << "," << topdata[2];
 }
 
 void MkldnnPoolLayer::exFwd(PassType passType) {
@@ -362,7 +360,8 @@ void MkldnnPoolLayer::exFwd(PassType passType) {
                        sh_, sw_, oh_[0], ow_[0], ph_, pw_);
 
 //  real *topdata = getOutputValue()->getData();
-//  LOG(INFO) << "------------" << topdata[0];// << "," << topdata[1] << "," << topdata[2];
+//  LOG(INFO) << "------------" << topdata[0];
+// << "," << topdata[1] << "," << topdata[2];
 }
 
 void MkldnnPoolLayer::submitDnnFwd(PassType passType) {
@@ -377,7 +376,7 @@ void MkldnnPoolLayer::exBwd(const UpdateCallback &callback) {
   MatrixPtr inputV = in.value;
   MatrixPtr outV = getOutputValue();
   MatrixPtr inputGrad = in.grad;
-  
+
   if (NULL == getInputGrad(0)) {
     return;
   }
@@ -388,7 +387,6 @@ void MkldnnPoolLayer::exBwd(const UpdateCallback &callback) {
 }
 
 void MkldnnPoolLayer::submitDnnBwd(const UpdateCallback &callback) {
-
   exBwd(callback);
 
   // dnn backward

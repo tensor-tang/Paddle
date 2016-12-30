@@ -8,8 +8,6 @@
 #include "mkldnn.hpp"
 #include "MkldnnMemory.h"
 
-using namespace mkldnn;
-
 namespace paddle {
 
 /**
@@ -20,11 +18,11 @@ namespace paddle {
 class MkldnnFcLayer : public MkldnnLayer {
 protected:
   /// For dnn fc. Primitive Desc
-  std::shared_ptr<inner_product_forward::primitive_desc> fwdPD_;
-  //std::shared_ptr<convolution_backward_data::primitive_desc> bwdDataPD_;
-  //std::shared_ptr<convolution_backward_weights::primitive_desc> bwdWgtPD_;
+  std::shared_ptr<mkldnn::inner_product_forward::primitive_desc> fwdPD_;
+  // std::shared_ptr<convolution_backward_data::primitive_desc> bwdDataPD_;
+  // std::shared_ptr<convolution_backward_weights::primitive_desc> bwdWgtPD_;
 
-  // if image width and height !=0 
+  // if image width and height !=0
   bool has_spatial_;
   /// data buffers
   MkldnnBufferPtr dataWgt_;
@@ -37,21 +35,21 @@ protected:
   // fc
   WeightList weights_;
   std::unique_ptr<Weight> biases_;
+
 public:
   explicit MkldnnFcLayer(const LayerConfig& config)
     : MkldnnLayer(config),
       fwdPD_(NULL),
       has_spatial_(false),
       dataWgt_(NULL),
-      dataBias_(NULL),/*
-      diffWgt_(NULL),
-      diffBias_(NULL),
-      bwdWgtPD_(NULL)*/
+      dataBias_(NULL),
+//      diffWgt_(NULL),
+//      diffBias_(NULL),
+//      bwdWgtPD_(NULL)
       hasBias_(false)
     {}
 
   ~MkldnnFcLayer() {}
-  
 
   bool initDnn(const LayerMap& layerMap, const ParameterMap& parameterMap);
 
@@ -68,30 +66,31 @@ public:
   //  if (diffWgt_) diffWgt_->clearCvtFlag();
   }
 
-  // return false if donot need reshape 
+  // return false if donot need reshape
   bool reshapeOutput();
 
   void resetDnnFwd(PassType passType);
-  
+
   void resetDnnBwd();
 
   void submitDnnFwd(PassType passType);
   void submitDnnBwd(const UpdateCallback& callback);
+
   // keep for paddle
   void prefetch();
 
 private:
   Weight& getWeight(int idx) { return *weights_[idx]; }
-  
+
   void myFwd(PassType passType);
   void exFwd(PassType passType);
   void exBwd(const UpdateCallback &callback);
-  
+
   void printInfo() {
-    for(size_t i = 0; i < iw_.size(); ++i) {
+    for (size_t i = 0; i < iw_.size(); ++i) {
       LOG(INFO)
         << "ih: " << ih_[i] << ", iw: " << iw_[i]
-        << ", ic: " << ic_[i] 
+        << ", ic: " << ic_[i]
         << ", oh: " << oh_[i] << ", ow: " << ow_[i]
         << ", oc: " << oc_;
     }

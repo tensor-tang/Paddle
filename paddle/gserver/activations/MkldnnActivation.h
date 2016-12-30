@@ -18,10 +18,10 @@ class MkldnnActivation {
 public:
   /// For dnn engine
   std::shared_ptr<mkldnn::engine> engine_;
-  
+
   // dims
   int bs_, oc_, oh_, ow_;
-  
+
   // mkldnn
   std::shared_ptr<mkldnn::memory::desc> srcMD_;
   std::shared_ptr<mkldnn::memory::desc> dstMD_;
@@ -30,7 +30,7 @@ public:
   bool needResetBwd_;
 
 public:
-  explicit MkldnnActivation()
+  MkldnnActivation()
     : engine_(new mkldnn::engine(mkldnn::engine::cpu, 0)),
       bs_(0),
       oc_(0),
@@ -67,7 +67,7 @@ public:
       return;
     }
     bs_ = batchsize;
-    oh_ = arg.getFrameHeight(); 
+    oh_ = arg.getFrameHeight();
     ow_ = arg.getFrameWidth();
     if (oh_ == 0 && ow_ == 0) {
       // in softmax get width and height return 0

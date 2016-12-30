@@ -12,17 +12,16 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
 
-
 #include "paddle/utils/Logging.h"
 #include "paddle/utils/Stat.h"
 #include "MkldnnFcLayer.h"
-
 
 // ex fc
 #include "paddle/math/SparseMatrix.h"
 #include <vector>
 #include <algorithm>
 
+using namespace mkldnn;  // NOLINT
 
 namespace paddle {
 
@@ -33,7 +32,7 @@ bool MkldnnFcLayer::initDnn(const LayerMap &layerMap,
   // only support 1 input layer by now
   CHECK_EQ(config_.inputs_size(), 1);
   CHECK(inputLayers_.size() == parameters_.size());
-  
+
   bs_ = 0;
   oc_ = getSize();
   has_spatial_ = false;
@@ -50,7 +49,8 @@ bool MkldnnFcLayer::initDnn(const LayerMap &layerMap,
     } else {
       CHECK_EQ(parameters_[i]->getSize(), oc_ * ic_[i]);
     }
-    // TODO: when backward done maybe we donot need reley on weight format of paddle
+    // TODO(TJ): when backward done
+    // maybe we donot need reley on weight format of paddle
     Weight* w = new Weight(ic_[i], oc_, parameters_[i]);
 
     // append the new weight to the list
@@ -101,13 +101,13 @@ size_t MkldnnFcLayer::getOneBatchSize() {
   return layerSize;
 }
 
-// whether reset batchsize and image size of input and output 
+// whether reset batchsize and image size of input and output
 bool MkldnnFcLayer::reshapeOutput() {
   REGISTER_TIMER_INFO("FwResetTimer", getName().c_str());
   if (bs_ == getInput(0).getBatchSize()) {
     // can remove reserveOutput when confirm how multi inputs work
     // and whether to clear diff
-    reserveOutput(bs_, getOneBatchSize()); 
+    reserveOutput(bs_, getOneBatchSize());
     return false;
   }
   // reserve data
@@ -119,17 +119,17 @@ bool MkldnnFcLayer::reshapeOutput() {
 
 void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   LOG(INFO) << "reset mkldnn forward of fc layer: " << config_.name();
-
   CHECK(bs_ == getInput(0).getBatchSize())
     << "Assert batchsize of input layers are equal";
   hasBias_ = (biases_ && biases_->getW()) ? true : false;
-  //create dim structure that describes user data.
+  // create dim structure that describes user data.
   memory::dims botDims, wgtDims, biasDims, topDims;
   memory::format botFmt, wgtFmt, biasFmt, topFmt;
   if (!has_spatial_) {
     botDims = {bs_, ic_[0]};
-    wgtDims = {oc_, ic_[0]}; // transpose from paddle weight
-    // TODO: when backward done maybe we donot need reley on weight format of paddle
+    wgtDims = {oc_, ic_[0]};  // transpose from paddle weight
+    // TODO(TJ): when backward done
+    // maybe we donot need reley on weight format of paddle
     botFmt = memory::format::nc;
     wgtFmt = memory::format::oi;
   } else {
@@ -155,16 +155,15 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   real *botData = getPrev(0)->getOutputValue()->getData();
   real *topData = getOutputValue()->getData();
   real *wgtData = weights_[0]->getW()->getData();
-  const std::shared_ptr<mkldnn::memory::desc> prvMD = getPrev(0)->getTopDataMD();
+  const std::shared_ptr<memory::desc> prvMD = getPrev(0)->getTopDataMD();
   if (prvMD) {
     dataBot_->initUser(botData, *prvMD, *engine_);
   } else {
-    
     dataBot_->initUser(botData, botDims, botFmt, *engine_);
   }
   dataWgt_->initUser(wgtData, wgtDims, wgtFmt, *engine_);
 
-  // create fc desc from internal desc 
+  // create fc desc from internal desc
   std::shared_ptr<inner_product_forward::desc> fwdDesc;
   if (hasBias_) {
     real *biasData = biases_->getW()->getData();
@@ -176,23 +175,26 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
     fwdDesc.reset(new inner_product_forward::desc(
         prop_kind::forward_training, dataBot_->getMDAny(),
         dataWgt_->getMDAny(), dataTop_->getMDAny()));
-  }  
+  }
   fwdPD_.reset(new inner_product_forward::primitive_desc(*fwdDesc, *engine_));
   // init cvt
-  if (dataBot_->initCvt(fwdPD_->src_primitive_desc(), dnnCvtUser2Internal)) {
+  if (dataBot_->initCvt(
+    fwdPD_->src_primitive_desc(), dnnCvtUser2Internal)) {
     LOG(INFO) << "need reorder --- bottom data: "
       << DNN_FORMAT[dataBot_->getUserFmt()]
       << " >>>>> "
       << DNN_FORMAT[dataBot_->getIntlFmt()];
   }
-  if (dataWgt_->initCvt(fwdPD_->weights_primitive_desc(), dnnCvtUser2Internal)) {
+  if (dataWgt_->initCvt(
+    fwdPD_->weights_primitive_desc(), dnnCvtUser2Internal)) {
     LOG(INFO) << "need reorder --- weight data: "
       << DNN_FORMAT[dataWgt_->getUserFmt()]
       << " >>>>> "
       << DNN_FORMAT[dataWgt_->getIntlFmt()];
   }
   if (hasBias_) {
-    if (dataBias_->initCvt(fwdPD_->bias_primitive_desc(), dnnCvtUser2Internal)) {
+    if (dataBias_->initCvt(
+      fwdPD_->bias_primitive_desc(), dnnCvtUser2Internal)) {
       LOG(INFO) << "need reorder --- bias data: "
         << DNN_FORMAT[dataBias_->getUserFmt()]
         << " >>>>> "
@@ -206,8 +208,9 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   } else {
     dataTop_->initUser(topData, topDims, topFmt, *engine_);
   }
-  if (dataTop_->initCvt(fwdPD_->dst_primitive_desc(), dnnCvtInternal2User)) {
-    LOG(INFO) << "need reorder --- top data: " 
+  if (dataTop_->initCvt
+    (fwdPD_->dst_primitive_desc(), dnnCvtInternal2User)) {
+    LOG(INFO) << "need reorder --- top data: "
       << DNN_FORMAT[dataTop_->getIntlFmt()]
       << " >>>>> "
       << DNN_FORMAT[dataTop_->getUserFmt()];
@@ -217,9 +220,7 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
     << DNN_FORMAT[dataBot_->getIntlFmt()] << " >>> "
     << DNN_FORMAT[dataTop_->getIntlFmt()] << ") >>> "
     << DNN_FORMAT[dataTop_->getUserFmt()];
-  
   printInfo();
-  
 }
 
 void MkldnnFcLayer::resetDnnBwd() {
@@ -231,24 +232,22 @@ void MkldnnFcLayer::myFwd(PassType passType) {
   /// all sumbit cvt should be clear
   clearAllCvtFlags();
   CHECK(getInput(0).value) << "The input of 'fc' layer must be matrix";
-
   real *botdata = getPrev(0)->getOutputValue()->getData();
   real *topdata = getOutputValue()->getData();
-
-  // so far used paddle's format, transpose. TODO: use dnn format to save time in future!
+  // so far used paddle's format, transpose.
+  // TODO(TJ): use dnn format to save time in future!
   MatrixPtr myWgt = Matrix::create(oc_, ic_[0], false, false);
   weights_[0]->getW()->transpose(myWgt, false);
-  real *wgtdata = myWgt->getData();//weights_[0]->getW()->getData();
-
+  real *wgtdata = myWgt->getData();  // weights_[0]->getW()->getData();
   std::vector<primitive> fwd;
   dataBot_->submitCvt(fwd, botdata);
   dataWgt_->submitCvt(fwd, wgtdata);
-  if(hasBias_) {
+  if (hasBias_) {
     real *biasdata = biases_->getW()->getData();
     dataBias_->submitCvt(fwd, biasdata);
     fwd.push_back(inner_product_forward(*fwdPD_,
       *(dataBot_->getIntlMem()), *(dataWgt_->getIntlMem()),
-      *(dataBias_->getIntlMem()),*(dataTop_->getIntlMem())));
+      *(dataBias_->getIntlMem()), *(dataTop_->getIntlMem())));
   } else {
     fwd.push_back(inner_product_forward(*fwdPD_,
       *(dataBot_->getIntlMem()), *(dataWgt_->getIntlMem()),
@@ -259,8 +258,7 @@ void MkldnnFcLayer::myFwd(PassType passType) {
   // start forward
   REGISTER_TIMER_INFO("mkldnn_FcFwd", getName().c_str());
   stream(stream::kind::eager).submit(fwd).wait();
-  
-//  LOG(INFO) << "my ------------" << topdata[0] << "," << topdata[1] << "," << topdata[2];
+//  LOG(INFO) << "my-" << topdata[0] << "," << topdata[1] << "," << topdata[2];
 
   // activation
   REGISTER_TIMER_INFO("mkldnn_FcFwAtvTimer", getName().c_str());
@@ -268,11 +266,11 @@ void MkldnnFcLayer::myFwd(PassType passType) {
 }
 
 void MkldnnFcLayer::exFwd(PassType passType) {
-  /* malloc memory for the output_ if necessary */
+  /* malloc memory for the output_ if necessary
   //int batchSize = getInput(0).getBatchSize();
   //int size = getSize();
   //reserveOutput(batchSize, size);
-  //MatrixPtr outV = getOutputValue();
+  //MatrixPtr outV = getOutputValue()*/;
 
   MatrixPtr outV = Matrix::create(bs_, oc_, false, false);
   outV->zeroMem();
@@ -282,22 +280,17 @@ void MkldnnFcLayer::exFwd(PassType passType) {
     i == 0 ? outV->mul(input.value, weights_[i]->getW(), 1, 0)
            : outV->mul(input.value, weights_[i]->getW(), 1, 1);
   }
-
   /* add the bias-vector */
   if (biases_.get() != NULL) {
     outV->addBias(*(biases_->getW()), 1);
   }
-
-  real *topdata = outV->getData();
-  LOG(INFO) << "ex ------------" << topdata[0] << "," << topdata[1] << "," << topdata[2];
-
-  //forwardActivation();
-  
+/*  real *topdata = outV->getData();
+  LOG(INFO) << "ex ------------" << topdata[0] << "," << topdata[1] << "," << topdata[2];*/
+  // forwardActivation();
 }
 
 void MkldnnFcLayer::submitDnnFwd(PassType passType) {
   myFwd(passType);
-
 //  exFwd(passType);
 }
 
@@ -339,20 +332,16 @@ void MkldnnFcLayer::exBwd(const UpdateCallback &callback) {
       REGISTER_TIMER_INFO("BpMulTimer", getName().c_str());
       preGrad->mul(getOutputGrad(), weights_T, 1, 1);
     }
-
     hl_set_sync_flag(syncFlag);
     {
       REGISTER_TIMER_INFO("WeightUpdate", getName().c_str());
       weights_[i]->getParameterPtr()->incUpdate(callback);
     }
   }
-
 }
 
 void MkldnnFcLayer::submitDnnBwd(const UpdateCallback &callback) {
-
   exBwd(callback);
-
   // dnn backward
   /*
   for (size_t i = 0; i != inputLayers_.size(); ++i) {

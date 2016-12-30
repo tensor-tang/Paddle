@@ -29,7 +29,7 @@ limitations under the License. */
 #include "MkldnnActivation.h"
 #endif
 
-namespace paddle {
+namespace paddle {  // NOLINT
 
 static ClassRegistrar<ActivationFunction> gActivationRegistrar;
 /**
