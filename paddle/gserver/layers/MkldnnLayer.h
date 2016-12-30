@@ -145,7 +145,21 @@ public:
     }
   }
 
-  // for conv and pool only support caffe mode by now
+  // for conv only support caffe mode by now
+  // TODO(TJ): figure out why pool use false caffe mode
+  /**
+   * Calculate output size based on caffeMode_.
+   * - input(+padding): 0123456789
+   * - imageSize(+padding) = 10;
+   * - filterSize = 3;
+   * - stride = 2;
+   * - caffeMode_ is true:
+       - output: (012), (234), (456), (678)
+       - outputSize = 4;
+   * - caffeMode_ is false:
+   *   - output: (012), (234), (456), (678), (9)
+   *   - outputSize = 5;
+   */
   int outputSize(int imageSize, int filterSize, int padding, int stride,
                        bool caffeMode = true) {
     int outputSize;
