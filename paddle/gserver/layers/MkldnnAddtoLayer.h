@@ -23,7 +23,6 @@ namespace paddle {
  * The config file api is addto_layer.
  */
 class MkldnnAddtoLayer : public MkldnnLayer {
-
 protected:
   std::shared_ptr<mkldnn::sum::primitive_desc> fwdPD_;
   std::vector<MkldnnBufferPtr> dataBottoms_;
@@ -85,9 +84,8 @@ public:
 private:
   void myFwd(PassType passType);
   void exFwd(PassType passType);
-
   void exBwd(const UpdateCallback &callback);
-  
+
   void printInfo() {
     for (size_t i = 0; i < ic_.size(); ++i) {
       LOG(INFO)

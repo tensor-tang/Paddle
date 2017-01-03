@@ -82,7 +82,7 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
     }
     botPDs.push_back(dataBottoms_[i]->getUserPD());
     scales_.push_back(1.0);  // no scale here
-    
+
     // init bot cvt
     if (dataBottoms_[i]->initCvt(
       dataBottoms_[i]->getUserPD(), dnnCvtUser2Internal)) {
@@ -104,7 +104,7 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
     dataTop_->initUser(topData, fwdPD_->dst_primitive_desc());
     setTopDataMD(dataTop_->getUserMD());
   }
-  
+
   fwdPD_.reset(new sum::primitive_desc(dataTop_->getUserMD(), scales_, botPDs));
 
   // init top cvt
@@ -143,7 +143,6 @@ void MkldnnAddtoLayer::myFwd(PassType passType) {
 
 void MkldnnAddtoLayer::exFwd(PassType passType) {
   MatrixPtr outV = Matrix::create(bs_, oc_, false, false);
-  
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     MatrixPtr input = getInputValue(i);
     i == 0 ? outV->assign(*input) : outV->add(*input);
@@ -156,7 +155,7 @@ void MkldnnAddtoLayer::submitDnnFwd(PassType passType) {
   myFwd(passType);
 
 //  exFwd(passType);
-  
+
   /* add the bias-vector */
   if (biases_.get() != NULL) {
     getOutputValue()->addBias(*(biases_->getW()), 1);
