@@ -1831,7 +1831,6 @@ class SpatialPyramidPoolLayer(LayerBase):
 @config_layer('batch_norm')
 class BatchNormLayer(LayerBase):
     layer_type = 'mkldnn_batch_norm' # 'batch_norm'
-
     def __init__(self,
                  name,
                  inputs,
@@ -2091,15 +2090,19 @@ class NCELayer(LayerBase):
 
 @config_layer('addto')
 class AddToLayer(LayerBase):
+    layer_type = 'mkldnn_addto' # 'addto'
     def __init__(self, name, inputs, bias=True, **xargs):
         super(AddToLayer, self).__init__(
-            name, 'addto', 0, inputs=inputs, **xargs)
+            name, self.layer_type, 0, inputs=inputs, **xargs)
         config_assert(len(inputs) > 0, 'inputs cannot be empty for AddToLayer')
         for input_index in xrange(len(self.inputs)):
             input_layer = self.get_input_layer(input_index)
             self.set_layer_size(input_layer.size)
         self.create_bias_parameter(bias, self.config.size)
 
+@config_layer('mkldnn_addto')
+class MkldnnAddToLayer(AddToLayer):
+    layer_type = 'mkldnn_addto'
 
 @config_layer('agent')
 class AgentLayer(LayerBase):
