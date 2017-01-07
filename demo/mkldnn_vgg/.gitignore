@@ -1,0 +1,8 @@
+data/cifar-10-batches-py
+data/cifar-out
+models_vgg_19/*
+plot.png
+log*
+*pyc
+train.list
+test.list
