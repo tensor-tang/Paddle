@@ -123,6 +123,7 @@ bool MkldnnConvLayer::reshapeOutput() {
   bs_ = getInput(0).getBatchSize();
   resetOutput(bs_, getOneBatchSize());
   LOG(INFO) << "reshape batch size: " << bs_;
+  printInfo();
   return true;
 }
 
@@ -231,7 +232,6 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
       << DNN_FORMAT[dataTop_->getIntlFmt()] << ") >>> "
       << DNN_FORMAT[dataTop_->getUserFmt()];
   }
-  printInfo();
 }
 
 void MkldnnConvLayer::resetDnnBwd() {

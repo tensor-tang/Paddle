@@ -89,6 +89,7 @@ bool MkldnnPoolLayer::reshapeOutput() {
   LOG(INFO) << "layer name: " << getName();
   LOG(INFO) << "reshape batch size: " << bs_;
   resetOutput(bs_, layersize);
+  printInfo();
   return true;
 }
 
@@ -164,7 +165,6 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
     << DNN_FORMAT[dataBot_->getIntlFmt()] << " >>> "
     << DNN_FORMAT[dataTop_->getIntlFmt()] << ") >>> "
     << DNN_FORMAT[dataTop_->getUserFmt()];
-  printInfo();
 }
 
 void MkldnnPoolLayer::resetDnnBwd() {

@@ -12,9 +12,11 @@ namespace paddle {
 
 static const std::string DNN_FORMAT[] = {
   "undef", "any", "blocked", "x", "nc", "nchw", "nhwc", "chwn", "nChw8c",
-  // oIhw8i",
-  "oi", "oihw", "ihwo", "OIhw8i8o", "OIhw8o8i", "Ohwi8o", "goihw", "gOIhw8i8o",
-  "gOIhw8o8i"};
+  "nChw16c", "oi", "io", "oihw", "ihwo", "OIhw8i8o", "OIhw16i16o", "OIhw8o8i",
+  "Ohwi8o", "Ohwi16o", "goihw", "gOIhw8i8o", "gOIhw16i16o",
+  "gOIhw8o8i", "gOIhw16o16i"};
+  // mkldnn_oIhw8i = mkldnn_nChw8c
+  // mkldnn_oIhw16i = mkldnn_nChw16c
 
 /**
  * @brief Base class of Dnnlayer.

@@ -53,6 +53,7 @@ bool MkldnnAddtoLayer::reshapeOutput() {
   bs_ = getInput(0).getBatchSize();
   LOG(INFO) << "reshape batch size: " << bs_;
   reserveOutput(bs_, getOneBatchSize());
+  printInfo();
   return true;
 }
 
@@ -114,8 +115,6 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
       << " >>>>> "
       << DNN_FORMAT[dataTop_->getUserFmt()];
   }
-
-  printInfo();
 }
 
 void MkldnnAddtoLayer::myFwd(PassType passType) {

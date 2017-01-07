@@ -253,6 +253,7 @@ bool MkldnnBatchNormLayer::reshapeOutput() {
 
   LOG(INFO) << "reshape batch size: " << bs_;
   resetOutput(bs_, getOneBatchSize());
+  printInfo();
   return true;
 }
 
@@ -260,7 +261,6 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   LOG(INFO) << "reset mkldnn forward of batch_norm layer: " << config_.name();
   CHECK(bs_ == getInput(0).getBatchSize())
     << "Assert batchsize of input layers are equal";
-  printInfo();
   if (ih_[0] == iw_[0] && ih_[0] == 1) {
     // mkldnn has some issue with this case, so use paddle code instead
     useEx_ = true;

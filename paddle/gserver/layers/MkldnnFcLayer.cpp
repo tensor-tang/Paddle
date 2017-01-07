@@ -114,6 +114,7 @@ bool MkldnnFcLayer::reshapeOutput() {
   bs_ = getInput(0).getBatchSize();
   LOG(INFO) << "reshape batch size: " << bs_;
   reserveOutput(bs_, getOneBatchSize());
+  printInfo();
   return true;
 }
 
@@ -220,7 +221,6 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
     << DNN_FORMAT[dataBot_->getIntlFmt()] << " >>> "
     << DNN_FORMAT[dataTop_->getIntlFmt()] << ") >>> "
     << DNN_FORMAT[dataTop_->getUserFmt()];
-  printInfo();
 }
 
 void MkldnnFcLayer::resetDnnBwd() {
