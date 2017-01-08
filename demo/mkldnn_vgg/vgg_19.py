@@ -16,28 +16,29 @@ from paddle.trainer_config_helpers import *
 
 is_predict = get_config_arg("is_predict", bool, False)
 is_test = get_config_arg("is_test", bool, False)
+data_provider = get_config_arg("data_provider", bool, True)
 ####################Data Configuration ##################
-src_size = 32
 img_size = 224
+crop_size = 224
 data_size = 3 * img_size * img_size
 num_classes = 1000
-label_size = num_classes if not is_predict else 1
-if not is_predict:
-    data_dir = 'data/cifar-out/batches/'
-    meta_path = data_dir + 'batches.meta'
-    train_list = 'train.list' if not is_test else None
+if not is_predict and data_provider:
+    train_list = 'data/train.list' if not is_test else None
+    test_list = 'data/train.list'
     args = {
-        'mean_img_size': src_size,
+        # mean_path or mean_value only choose one
         'mean_value': [103.939, 116.779, 123.68],
         'img_size': img_size,
+        'crop_size': crop_size,
         'num_classes': num_classes,
         'use_jpeg': 1,
-        'color': "color"
+        'color': True,
+        'swap_channel': [2, 1, 0]
     }
 
     define_py_data_sources2(
         train_list,
-        test_list="train.list",
+        test_list,
         module='image_provider',
         obj='processData',
         args=args)
@@ -128,7 +129,8 @@ def vgg_19_network(input_image, num_channels, num_classes=1000):
 
     return fc_layer(input=tmp, size=num_classes, act=SoftmaxActivation())
 
-predict = vgg_19_network(input_image=img, num_channels=3, num_classes=label_size)
+label_size = num_classes if not is_predict else 1
+predict = vgg_19_network(input_image=img, num_channels=3, num_classes=num_classes)
 
 # small_vgg is predefined in trainer_config_helpers.networks
 #predict = small_vgg(input_image=img, num_channels=3, num_classes=label_size)

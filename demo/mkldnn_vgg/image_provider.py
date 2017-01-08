@@ -12,88 +12,87 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import io
 import random
-
-import numpy as np
-import paddle.utils.image_util as image_util
+from paddle.utils.image_util import *
 from paddle.trainer.PyDataProvider2 import *
 
-
-#
-# {'img_size': 32,
-# 'settings': <paddle.trainer.PyDataProviderWrapper.Cls instance at 0x7fea27cb6050>,
-# 'color': True,
-# 'mean_img_size': 32,
-# 'meta': './data/cifar-out/batches/batches.meta',
-# 'num_classes': 10,
-# 'file_list': ('./data/cifar-out/batches/train_batch_000',),
-# 'use_jpeg': True}
-def hook(settings, img_size, mean_img_size, num_classes, color, use_jpeg,
+def hook(settings, img_size, crop_size, num_classes, color, file_list, use_jpeg,
          is_train, **kwargs):
-    settings.mean_img_size = mean_img_size
     settings.img_size = img_size
+    settings.crop_size = crop_size
+    settings.mean_img_size = settings.crop_size
     settings.num_classes = num_classes
     settings.color = color
     settings.is_train = is_train
+    settings.use_jpeg = use_jpeg
+    settings.file_list = file_list
+
+    settings.is_swap_channel = kwargs.get('swap_channel', None)
+    if settings.is_swap_channel is not None:
+        settings.swap_channel = settings.is_swap_channel
+        settings.is_swap_channel = True
 
     if settings.color:
-        settings.img_raw_size = settings.img_size * settings.img_size * 3
+        settings.img_input_size = settings.crop_size * settings.crop_size * 3
     else:
-        settings.img_raw_size = settings.img_size * settings.img_size
-    
-    settings.use_jpeg = use_jpeg
-    settings.meta_path = kwargs.get('meta', None)
-    if not settings.meta_path:
+        settings.img_input_size = settings.crop_size * settings.crop_size
+
+    settings.mean_path = kwargs.get('mean_path', None)
+    settings.mean_value = kwargs.get('mean_value', None)
+    # can not specify both mean_path and mean_value.
+    assert not (settings.mean_path and settings.mean_value)
+    if not settings.mean_path:
         settings.mean_value = kwargs.get('mean_value')
-        sz = settings.img_size * settings.img_size
+        sz = settings.crop_size * settings.crop_size
         settings.img_mean = np.zeros(sz * 3, dtype=np.single)
         for idx, value in enumerate(settings.mean_value):
             settings.img_mean[idx * sz:(idx + 1) * sz] = value
-        settings.img_mean = settings.img_mean.reshape(3, settings.img_size,
-                                                      settings.img_size)
+        settings.img_mean = settings.img_mean.reshape(3, settings.crop_size,
+                                                      settings.crop_size)
     else:
-        src_size = kwargs.get('src_size')
-        settings.img_mean = image_util.load_meta(settings.meta_path,
+        settings.img_mean = load_meta(settings.meta_path,
                                              settings.mean_img_size,
                                              src_size, settings.color)
 
-    settings.logger.info('Image size: %s', settings.img_size)
-    settings.logger.info('Meta path: %s', settings.meta_path)
     settings.input_types = [
-        dense_vector(settings.img_raw_size),  # image feature
-        integer_value(settings.num_classes)
-    ]  # labels
-
+        dense_vector(settings.img_input_size),  # image feature
+        integer_value(settings.num_classes)  # labels
+    ]
+    settings.logger.info('Image short side: %s', settings.img_size)
+    settings.logger.info('Crop size: %s', settings.crop_size)
+    if settings.is_swap_channel:
+        settings.logger.info('swap channel: %s', settings.swap_channel)
     settings.logger.info('DataProvider Initialization finished')
 
-
-@provider(init_hook=hook, min_pool_size=0)
+@provider(init_hook=hook, min_pool_size=1, pool_size=20)  # , should_shuffle=False) 
 def processData(settings, file_list):
     """
     The main function for loading data.
     Load the batch, iterate all the images and labels in this batch.
     file_list: the batch file list.
     """
-    with open(file_list, 'r') as fdata:
-        lines = [line.strip() for line in fdata]
+    print("-----------------", file_list)
+    with open(file_list, 'r') as fpart:
+        lines = [line.strip() for line in fpart]
         if settings.is_train:
             random.shuffle(lines)
         for file_name in lines:
-            with io.open(file_name.strip(), 'rb') as file:
-                data = cPickle.load(file)
-                indexes = list(range(len(data['images'])))
-                if settings.is_train:
-                    random.shuffle(indexes)
-                for i in indexes:
-                    if settings.use_jpeg == 1:
-                        img = image_util.decode_jpeg(data['images'][i])
-                    else:
-                        img = data['images'][i]
-                    #img = image_util.resize_image(img, (settings.img_size, settings.img_size))
-                    img_feat = image_util.preprocess_img(
-                        img, settings.img_mean, settings.img_size,
-                        settings.is_train, settings.color)
-                    #print(img_feat.shape[0], img.shape[0])
-                    label = data['labels'][i]
-                    yield img_feat.astype('float32'), int(label)
+            img_path, lab = file_name.strip().split(' ')
+            img = Image.open(img_path)
+        #    print("-----------------", img_path, int(lab.strip()))
+            img.load()
+            img = img.resize((settings.img_size, settings.img_size), Image.ANTIALIAS)
+            img = np.array(img).astype(np.float32)
+        #    print(len(img.shape), img.size)
+            if len(img.shape) == 3:
+        #        print("before------", img.shape[0], img.shape[1], img.shape[2])
+                img = np.swapaxes(img, 1, 2)
+                img = np.swapaxes(img, 1, 0)
+        #        print("after-------", img.shape[0], img.shape[1], img.shape[2])
+            # swap channel
+                if settings.is_swap_channel:
+                    img = img[settings.swap_channel, :, :]
+                img_feat = preprocess_img(
+                         img, settings.img_mean, settings.crop_size,
+                         settings.is_train, settings.color)
+                yield img_feat.tolist(), int(lab.strip())
