@@ -17,15 +17,20 @@ from paddle.trainer_config_helpers import *
 is_predict = get_config_arg("is_predict", bool, False)
 is_test = get_config_arg("is_test", bool, False)
 ####################Data Configuration ##################
+src_size = 32
+img_size = 224
+data_size = 3 * img_size * img_size
+num_classes = 1000
+label_size = num_classes if not is_predict else 1
 if not is_predict:
     data_dir = 'data/cifar-out/batches/'
     meta_path = data_dir + 'batches.meta'
     train_list = 'train.list' if not is_test else None
     args = {
-        'meta': meta_path,
-        'mean_img_size': 32,
-        'img_size': 32,
-        'num_classes': 10,
+        'mean_img_size': src_size,
+        'mean_value': [103.939, 116.779, 123.68],
+        'img_size': img_size,
+        'num_classes': num_classes,
         'use_jpeg': 1,
         'color': "color"
     }
@@ -39,14 +44,13 @@ if not is_predict:
 
 ######################Algorithm Configuration #############
 settings(
-    batch_size=128,
+    batch_size=32,
     learning_rate=0.1 / 128.0,
     learning_method=MomentumOptimizer(0.9),
     regularization=L2Regularization(0.0005 * 128))
 
 #######################Network Configuration #############
-data_size = 3 * 32 * 32
-label_size = 10
+
 img = data_layer(name='image', size=data_size)
 def vgg_19_network(input_image, num_channels, num_classes=1000):
     """

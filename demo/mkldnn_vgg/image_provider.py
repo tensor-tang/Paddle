@@ -15,6 +15,7 @@
 import io
 import random
 
+import numpy as np
 import paddle.utils.image_util as image_util
 from paddle.trainer.PyDataProvider2 import *
 
@@ -28,7 +29,7 @@ from paddle.trainer.PyDataProvider2 import *
 # 'num_classes': 10,
 # 'file_list': ('./data/cifar-out/batches/train_batch_000',),
 # 'use_jpeg': True}
-def hook(settings, img_size, mean_img_size, num_classes, color, meta, use_jpeg,
+def hook(settings, img_size, mean_img_size, num_classes, color, use_jpeg,
          is_train, **kwargs):
     settings.mean_img_size = mean_img_size
     settings.img_size = img_size
@@ -40,13 +41,22 @@ def hook(settings, img_size, mean_img_size, num_classes, color, meta, use_jpeg,
         settings.img_raw_size = settings.img_size * settings.img_size * 3
     else:
         settings.img_raw_size = settings.img_size * settings.img_size
-
-    settings.meta_path = meta
+    
     settings.use_jpeg = use_jpeg
-
-    settings.img_mean = image_util.load_meta(settings.meta_path,
+    settings.meta_path = kwargs.get('meta', None)
+    if not settings.meta_path:
+        settings.mean_value = kwargs.get('mean_value')
+        sz = settings.img_size * settings.img_size
+        settings.img_mean = np.zeros(sz * 3, dtype=np.single)
+        for idx, value in enumerate(settings.mean_value):
+            settings.img_mean[idx * sz:(idx + 1) * sz] = value
+        settings.img_mean = settings.img_mean.reshape(3, settings.img_size,
+                                                      settings.img_size)
+    else:
+        src_size = kwargs.get('src_size')
+        settings.img_mean = image_util.load_meta(settings.meta_path,
                                              settings.mean_img_size,
-                                             settings.img_size, settings.color)
+                                             src_size, settings.color)
 
     settings.logger.info('Image size: %s', settings.img_size)
     settings.logger.info('Meta path: %s', settings.meta_path)
@@ -67,7 +77,8 @@ def processData(settings, file_list):
     """
     with open(file_list, 'r') as fdata:
         lines = [line.strip() for line in fdata]
-        #random.shuffle(lines)
+        if settings.is_train:
+            random.shuffle(lines)
         for file_name in lines:
             with io.open(file_name.strip(), 'rb') as file:
                 data = cPickle.load(file)
@@ -79,8 +90,10 @@ def processData(settings, file_list):
                         img = image_util.decode_jpeg(data['images'][i])
                     else:
                         img = data['images'][i]
+                    #img = image_util.resize_image(img, (settings.img_size, settings.img_size))
                     img_feat = image_util.preprocess_img(
                         img, settings.img_mean, settings.img_size,
                         settings.is_train, settings.color)
+                    #print(img_feat.shape[0], img.shape[0])
                     label = data['labels'][i]
                     yield img_feat.astype('float32'), int(label)
