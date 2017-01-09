@@ -36,6 +36,9 @@ protected:
   WeightList weights_;
   std::unique_ptr<Weight> biases_;
 
+  // input size (== ic*ih*iw) by batch size 
+  std::vector<size_t> inputSizeByBS_;
+
 public:
   explicit MkldnnFcLayer(const LayerConfig& config)
     : MkldnnLayer(config),

@@ -38,20 +38,21 @@ bool MkldnnFcLayer::initDnn(const LayerMap &layerMap,
   has_spatial_ = false;
   for (size_t i = 0; i < inputLayers_.size(); i++) {
     // Option the parameters
-    ic_.push_back(inputLayers_[i]->getSize());
+    ic_.push_back(0);
     iw_.push_back(0);
     ih_.push_back(0);
     ow_.push_back(0);
     oh_.push_back(0);
+    inputSizeByBS_.push_back(inputLayers_[i]->getSize());  // == ic*ih*iw
     // create a new weight
     if (parameters_[i]->isSparse()) {
-      CHECK_LE(parameters_[i]->getSize(), oc_ * ic_[i]);
+      CHECK_LE(parameters_[i]->getSize(), oc_ * inputSizeByBS_[i]);
     } else {
-      CHECK_EQ(parameters_[i]->getSize(), oc_ * ic_[i]);
+      CHECK_EQ(parameters_[i]->getSize(), oc_ * inputSizeByBS_[i]);
     }
     // TODO(TJ): when backward done
     // maybe we donot need reley on weight format of paddle
-    Weight* w = new Weight(ic_[i], oc_, parameters_[i]);
+    Weight* w = new Weight(inputSizeByBS_[i], oc_, parameters_[i]);
 
     // append the new weight to the list
     weights_.emplace_back(w);
@@ -92,6 +93,7 @@ size_t MkldnnFcLayer::getOneBatchSize() {
       ih_[i] = 1;
       iw_[i] = 1;
     }
+    ic_[i] = inputSizeByBS_[i] / (iw_[i] * ih_[i]);
     oh_[i] = 1;
     ow_[i] = 1;
     CHECK(ih_[i] * iw_[i]);
@@ -136,8 +138,8 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   } else {
     botDims = {bs_, ic_[0], ih_[0], iw_[0]};
     wgtDims = {oc_, ic_[0], ih_[0], iw_[0]};
-    botFmt = memory::format::nchw;
-    wgtFmt = memory::format::oihw;
+    botFmt = memory::format::nchw;  // perfect fmt is or nChw8c
+    wgtFmt = memory::format::oihw;  // perfect fmt is or oIhw8i
   }
   // no matter what inputs
   topDims = {bs_, oc_};
@@ -159,6 +161,7 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   const std::shared_ptr<memory::desc> prvMD = getPrev(0)->getTopDataMD();
   if (prvMD) {
     dataBot_->initUser(botData, *prvMD, *engine_);
+    LOG(FATAL) << "should not be here";
   } else {
     dataBot_->initUser(botData, botDims, botFmt, *engine_);
   }
@@ -206,6 +209,7 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   if (setDnnTopDataFmt_) {
     dataTop_->initUser(topData, fwdPD_->dst_primitive_desc());
     setTopDataMD(dataTop_->getUserMD());
+    LOG(FATAL) << "should not be here";
   } else {
     dataTop_->initUser(topData, topDims, topFmt, *engine_);
   }
@@ -236,7 +240,7 @@ void MkldnnFcLayer::myFwd(PassType passType) {
   real *topdata = getOutputValue()->getData();
   // so far used paddle's format, transpose.
   // TODO(TJ): use dnn format to save time in future!
-  MatrixPtr myWgt = Matrix::create(oc_, ic_[0], false, false);
+  MatrixPtr myWgt = Matrix::create(oc_, inputSizeByBS_[0], false, false);
   weights_[0]->getW()->transpose(myWgt, false);
   real *wgtdata = myWgt->getData();  // weights_[0]->getW()->getData();
   std::vector<primitive> fwd;
