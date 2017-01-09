@@ -62,12 +62,12 @@ public:
   ~MkldnnConvLayer() {}
 
   bool initDnn(const LayerMap& layerMap, const ParameterMap& parameterMap);
-
+/* // disable 
   void initDnnflags() {
     setDnnTopDataFmt_ = false;
     setDnnBotDiffFmt_.push_back(false);
   }
-
+*/
   size_t getOneBatchSize();
 
   void clearAllCvtFlags() {

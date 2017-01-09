@@ -108,18 +108,19 @@ public:
    * each layer can have its own implements.
    */
   virtual void initDnnflags() {
-    // do not use this function so far, so set false
-    // TODO(TJ): enable it when all mkldnn layers done
-    setDnnTopDataFmt_ = false;  // isNextLayerDnn();
+    setDnnTopDataFmt_ = isNextLayerDnn();
     for (size_t i = 0; i != inputLayers_.size(); ++i) {
-      setDnnBotDiffFmt_.push_back(false);  // (isPrevLayerDnn(i));
+      setDnnBotDiffFmt_.push_back(isPrevLayerDnn(i));
     }
   }
 
   bool isNextLayerDnn() {
     if (hasActivation()) {
-      // if has activation, no matter if mkldnn activation, only support nchw
-      return false;
+      // if has activation, return false no matter if mkldnn type
+      // since: they do not support many types like nChw8c
+      // relu: only support nchw
+      // softmax: support nchw and nc
+      return false;  // hasMkldnnAct();
     }
     const std::string dnn("mkldnn");
     if (!isNextLayerTypeEmpty()  // not empty
@@ -135,8 +136,10 @@ public:
     if (getPrev(idx) == NULL)
       return false;
     if (getPrev(idx)->hasActivation()) {
-      // if has activation, no matter if mkldnn activation, only support nchw
-      return false;
+      // if has activation, return false no matter if mkldnn type
+      // since: they do not support many types like nChw8c
+      // relu: only support nchw
+      return false;  // getPrev(idx)->hasMkldnnAct();
     }
     const std::string dnn("mkldnn");
     if (getPrev(idx)->getType().compare(0, dnn.length(), dnn) == 0) {
@@ -148,7 +151,7 @@ public:
   }
 
   // for conv only support caffe mode by now
-  // TODO(TJ): figure out why pool use false caffe mode
+  // TODO(TJ): figure out why paddle pool use false caffe mode
   /**
    * Calculate output size based on caffeMode_.
    * - input(+padding): 0123456789

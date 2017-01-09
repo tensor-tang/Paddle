@@ -50,17 +50,20 @@ public:
    * each dnn layer should have function
    * to init or reset dnn forward
    */
-  virtual void resetDnnFwd(const Argument& arg) = 0;
+  virtual void resetDnnFwd(const Argument& arg,
+    std::shared_ptr<void> topDataMD) = 0;
   /** 
    * each dnn layer should have function
    * to init or reset dnn backward
    */
-  virtual void resetDnnBwd(const Argument& arg) = 0;
+  virtual void resetDnnBwd(const Argument& arg,
+    std::shared_ptr<void> topDiffMD) = 0;
 
   /**
    * call in resetDnnFwd
    */
-  void reshapeDnnFwd(const Argument& arg) {
+  void reshapeDnnFwd(const Argument& arg,
+    std::shared_ptr<void> topDataMD) {
     int batchsize = arg.getBatchSize();
 
     if (bs_ == batchsize) {
@@ -82,11 +85,21 @@ public:
     } else {
       CHECK(oh_ != 0 && ow_ != 0) << "neither should be zero";
       oc_ = arg.value->getElementCnt()/(bs_*oh_*ow_);
-      mkldnn::memory::dims dm = {bs_, oc_, oh_, ow_};
-      srcMD_.reset(new mkldnn::memory::desc(dm, mkldnn::memory::data_type::f32,
-        mkldnn::memory::format::nchw));
-      dstMD_.reset(new mkldnn::memory::desc(dm, mkldnn::memory::data_type::f32,
-        mkldnn::memory::format::nchw));
+
+      std::shared_ptr<mkldnn::memory::desc> md =
+        std::static_pointer_cast<mkldnn::memory::desc> (topDataMD);
+
+      if (md) {
+        srcMD_ = md;
+        dstMD_ = md;
+        LOG(INFO) << "use prev format";
+      } else {
+        mkldnn::memory::dims dm = {bs_, oc_, oh_, ow_};
+        mkldnn::memory::data_type type = mkldnn::memory::data_type::f32;
+        mkldnn::memory::format fmt = mkldnn::memory::format::nchw;
+        srcMD_.reset(new mkldnn::memory::desc(dm, type, fmt));
+        dstMD_.reset(new mkldnn::memory::desc(dm, type, fmt));
+      }
     }
   }
 };

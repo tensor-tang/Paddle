@@ -267,6 +267,22 @@ public:
     return topDataMD_;
   }
 
+/*  // return format if has, otherwise return 0
+  int getTopDataFmt() const {
+    if (topDataMD_)
+      return topDataMD_->data.format;
+    else
+      return 0;
+  }
+
+  int getTopDiffFmt() const {
+    if (topDiffMD_)
+      return topDiffMD_->data.format;
+    else
+      return 0;
+  }
+*/
+
   const std::shared_ptr<mkldnn::memory::desc> getTopDiffMD() {
     return topDiffMD_;
   }

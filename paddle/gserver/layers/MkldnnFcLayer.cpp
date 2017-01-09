@@ -161,7 +161,7 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   const std::shared_ptr<memory::desc> prvMD = getPrev(0)->getTopDataMD();
   if (prvMD) {
     dataBot_->initUser(botData, *prvMD, *engine_);
-    LOG(FATAL) << "should not be here";
+    LOG(INFO) << "use prev format: " << DNN_FORMAT[dataBot_->getUserFmt()];
   } else {
     dataBot_->initUser(botData, botDims, botFmt, *engine_);
   }
@@ -209,7 +209,7 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   if (setDnnTopDataFmt_) {
     dataTop_->initUser(topData, fwdPD_->dst_primitive_desc());
     setTopDataMD(dataTop_->getUserMD());
-    LOG(FATAL) << "should not be here";
+    LOG(INFO) << "set next format: " << DNN_FORMAT[dataTop_->getUserFmt()];
   } else {
     dataTop_->initUser(topData, topDims, topFmt, *engine_);
   }

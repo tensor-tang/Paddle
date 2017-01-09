@@ -156,6 +156,7 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
     const std::shared_ptr<memory::desc> prvMD = getPrev(i)->getTopDataMD();
     if (prvMD) {
       dataBot_->initUser(botData, *prvMD, *engine_);
+      LOG(INFO) << "use prev format: " << DNN_FORMAT[dataBot_->getUserFmt()];
     } else {
       dataBot_->initUser(botData, botDims, memory::format::nchw, *engine_);
     }
@@ -217,6 +218,7 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
     if (setDnnTopDataFmt_) {
       dataTop_->initUser(topData, fwdPD_->dst_primitive_desc());
       setTopDataMD(dataTop_->getUserMD());
+      LOG(INFO) << "set next format: " << DNN_FORMAT[dataTop_->getUserFmt()];
     } else {
       dataTop_->initUser(topData, topDims, memory::format::nchw, *engine_);
     }

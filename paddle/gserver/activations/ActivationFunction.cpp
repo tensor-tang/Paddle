@@ -213,12 +213,11 @@ public:
 
   float negative_slope;
 
-  void resetDnnFwd(const Argument& arg) {
+  void resetDnnFwd(const Argument& arg, std::shared_ptr<void> topDataMD) {
     if (bs_ == arg.getBatchSize()) {
       return;
     }
-
-    MkldnnActivation::reshapeDnnFwd(arg);
+    MkldnnActivation::reshapeDnnFwd(arg, topDataMD);
     LOG(INFO) << this->getName() << " reshape batchsize: "
           << bs_ << ", " << oc_ << ", " << oh_ << ", " << ow_;
 
@@ -246,7 +245,7 @@ public:
    * each dnn layer should have function
    * to init or reset dnn backward
    */
-  void resetDnnBwd(const Argument& arg) {
+  void resetDnnBwd(const Argument& arg, std::shared_ptr<void> topDiffMD) {
     if (!needResetBwd_)
       return;
 
@@ -301,12 +300,12 @@ private:
 public:
   const std::string& getName() const { return name; }
 
-  void resetDnnFwd(const Argument& arg) {
+  void resetDnnFwd(const Argument& arg, std::shared_ptr<void> topDataMD) {
     if (bs_ == arg.getBatchSize()) {
       return;
     }
 
-    MkldnnActivation::reshapeDnnFwd(arg);
+    MkldnnActivation::reshapeDnnFwd(arg, topDataMD);
     LOG(INFO) << this->getName() << " reshape batchsize: "
           << bs_ << ", " << oc_ << ", " << oh_ << ", " << ow_;
 
@@ -335,7 +334,7 @@ public:
    * each dnn layer should have function
    * to init or reset dnn backward
    */
-  void resetDnnBwd(const Argument& arg) {
+  void resetDnnBwd(const Argument& arg, std::shared_ptr<void> topDiffFmt) {
     if (!needResetBwd_)
       return;
 

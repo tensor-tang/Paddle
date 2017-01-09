@@ -16,6 +16,7 @@ limitations under the License. */
 #pragma once
 #include <string>
 #include <vector>
+#include <memory>
 
 namespace paddle {
 
@@ -65,12 +66,14 @@ public:
    * each dnn layer should have function
    * to init or reset dnn forward
    */
-  virtual void resetDnnFwd(const Argument& arg) {}
+  virtual void resetDnnFwd(const Argument& arg,
+    std::shared_ptr<void> topDataMD) {}
   /** 
    * each dnn layer should have function
    * to init or reset dnn backward
    */
-  virtual void resetDnnBwd(const Argument& arg) {}
+  virtual void resetDnnBwd(const Argument& arg,
+    std::shared_ptr<void> topDiffMD) {}
 #endif
 
   virtual const std::string& getName() const = 0;
