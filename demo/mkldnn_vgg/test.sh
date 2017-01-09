@@ -15,7 +15,7 @@
 set -e
 config=vgg_19.py
 log=log_test.log
-model=models_vgg_19/pass-00001/
+model=models_vgg_19/pass-00000/
 
 paddle train \
 --config=$config \

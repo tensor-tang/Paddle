@@ -33,7 +33,7 @@ with open(train_list, 'w') as ftrain:
         lines = [line.strip() for line in ftmp]
         img_idx = 0
         part_idx = 1
-        part_path = train_part_prefix + part_idx
+        part_path = train_part_prefix + str(part_idx)
         print(part_path)
         fpart = open(part_path, 'w')
         ftrain.write(part_path + '\n')
@@ -42,7 +42,7 @@ with open(train_list, 'w') as ftrain:
             if img_idx > steps:
                 img_idx = 0
                 part_idx = part_idx + 1
-                part_path = train_part_prefix + part_idx
+                part_path = train_part_prefix + str(part_idx)
                 print(part_path)
                 fpart.close()
                 fpart = open(part_path, 'w')

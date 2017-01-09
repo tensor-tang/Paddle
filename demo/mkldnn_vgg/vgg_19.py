@@ -20,7 +20,7 @@ data_provider = get_config_arg("data_provider", bool, True)
 ####################Data Configuration ##################
 img_size = 224
 crop_size = 224
-data_size = 3 * img_size * img_size
+data_size = 3 * crop_size * crop_size
 num_classes = 1000
 if not is_predict and data_provider:
     train_list = 'data/train.list' if not is_test else None
@@ -31,9 +31,8 @@ if not is_predict and data_provider:
         'img_size': img_size,
         'crop_size': crop_size,
         'num_classes': num_classes,
-        'use_jpeg': 1,
-        'color': True,
-        'swap_channel': [2, 1, 0]
+        'use_jpeg': True,
+        'color': True
     }
 
     define_py_data_sources2(
@@ -44,11 +43,12 @@ if not is_predict and data_provider:
         args=args)
 
 ######################Algorithm Configuration #############
+batch_size = 32
 settings(
-    batch_size=32,
-    learning_rate=0.1 / 128.0,
+    batch_size=batch_size,
+    learning_rate=0.001 / batch_size,
     learning_method=MomentumOptimizer(0.9),
-    regularization=L2Regularization(0.0005 * 128))
+    regularization=L2Regularization(0.0005 * batch_size))
 
 #######################Network Configuration #############
 

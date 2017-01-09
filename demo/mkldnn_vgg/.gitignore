@@ -1,5 +1,4 @@
-data/cifar-10-batches-py
-data/cifar-out
+data/*
 models_vgg_19/*
 plot.png
 log*

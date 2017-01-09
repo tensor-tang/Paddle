@@ -27,10 +27,9 @@ def hook(settings, img_size, crop_size, num_classes, color, file_list, use_jpeg,
     settings.use_jpeg = use_jpeg
     settings.file_list = file_list
 
-    settings.is_swap_channel = kwargs.get('swap_channel', None)
-    if settings.is_swap_channel is not None:
-        settings.swap_channel = settings.is_swap_channel
-        settings.is_swap_channel = True
+    if settings.use_jpeg:
+        # swap channel BGR -> RGB
+        settings.swap_channel = [2, 1, 0]  
 
     if settings.color:
         settings.img_input_size = settings.crop_size * settings.crop_size * 3
@@ -60,18 +59,18 @@ def hook(settings, img_size, crop_size, num_classes, color, file_list, use_jpeg,
     ]
     settings.logger.info('Image short side: %s', settings.img_size)
     settings.logger.info('Crop size: %s', settings.crop_size)
-    if settings.is_swap_channel:
-        settings.logger.info('swap channel: %s', settings.swap_channel)
+    if settings.use_jpeg:
+        settings.logger.info('use jpeg and swap channel: %s', settings.swap_channel)
     settings.logger.info('DataProvider Initialization finished')
 
-@provider(init_hook=hook, min_pool_size=1, pool_size=20)  # , should_shuffle=False) 
+@provider(init_hook=hook, min_pool_size=1, pool_size=128)  # , should_shuffle=False) 
 def processData(settings, file_list):
     """
     The main function for loading data.
     Load the batch, iterate all the images and labels in this batch.
     file_list: the batch file list.
     """
-    print("-----------------", file_list)
+#    print("-----------------", file_list)
     with open(file_list, 'r') as fpart:
         lines = [line.strip() for line in fpart]
         if settings.is_train:
@@ -83,14 +82,9 @@ def processData(settings, file_list):
             img.load()
             img = img.resize((settings.img_size, settings.img_size), Image.ANTIALIAS)
             img = np.array(img).astype(np.float32)
-        #    print(len(img.shape), img.size)
             if len(img.shape) == 3:
-        #        print("before------", img.shape[0], img.shape[1], img.shape[2])
-                img = np.swapaxes(img, 1, 2)
-                img = np.swapaxes(img, 1, 0)
-        #        print("after-------", img.shape[0], img.shape[1], img.shape[2])
-            # swap channel
-                if settings.is_swap_channel:
+                if settings.use_jpeg:
+                    img = np.transpose(img, (2, 0, 1))
                     img = img[settings.swap_channel, :, :]
                 img_feat = preprocess_img(
                          img, settings.img_mean, settings.crop_size,

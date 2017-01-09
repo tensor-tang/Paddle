@@ -21,7 +21,7 @@ paddle train \
 --config=$config \
 --dot_period=1 \
 --log_period=1 \
---test_all_data_in_one_period=1 \
+--test_all_data_in_one_period=0 \
 --use_gpu=0 \
 --trainer_count=1 \
 --num_passes=2 \
