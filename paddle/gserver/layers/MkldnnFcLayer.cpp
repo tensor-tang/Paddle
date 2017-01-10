@@ -36,6 +36,8 @@ bool MkldnnFcLayer::initDnn(const LayerMap &layerMap,
   bs_ = 0;
   oc_ = getSize();
   has_spatial_ = false;
+  // TODO(TJ): should get this flag from layer proto , default true
+  usePaddleFmt_ = true;
   for (size_t i = 0; i < inputLayers_.size(); i++) {
     // Option the parameters
     ic_.push_back(0);
@@ -45,16 +47,26 @@ bool MkldnnFcLayer::initDnn(const LayerMap &layerMap,
     oh_.push_back(0);
     inputSizeByBS_.push_back(inputLayers_[i]->getSize());  // == ic*ih*iw
     // create a new weight
+    size_t height, width;
     if (parameters_[i]->isSparse()) {
       CHECK_LE(parameters_[i]->getSize(), oc_ * inputSizeByBS_[i]);
     } else {
       CHECK_EQ(parameters_[i]->getSize(), oc_ * inputSizeByBS_[i]);
     }
-    // TODO(TJ): when backward done
-    // maybe we donot need reley on weight format of paddle
-    Weight* w = new Weight(inputSizeByBS_[i], oc_, parameters_[i]);
-
-    // append the new weight to the list
+    selfWgtData_.push_back(nullptr);
+    selfWgtDiff_.push_back(nullptr);
+    if (usePaddleFmt_) {
+      height = inputSizeByBS_[i];
+      width = oc_;
+      selfWgtData_[i] = Matrix::create(width, height, false, false);
+      selfWgtDiff_[i] = Matrix::create(width, height, false, false);
+      selfWgtData_[i]->zeroMem();
+      selfWgtDiff_[i]->zeroMem();
+    } else {  // TODO(TJ): never tested this case
+      height = oc_;
+      width = inputSizeByBS_[i];
+    }
+    Weight* w = new Weight(height, width, parameters_[i]);
     weights_.emplace_back(w);
   }
 
@@ -157,7 +169,6 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   // init user memory of bottom, weights and bias
   real *botData = getPrev(0)->getOutputValue()->getData();
   real *topData = getOutputValue()->getData();
-  real *wgtData = weights_[0]->getW()->getData();
   const std::shared_ptr<memory::desc> prvMD = getPrev(0)->getTopDataMD();
   if (prvMD) {
     dataBot_->initUser(botData, *prvMD, *engine_);
@@ -165,7 +176,7 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   } else {
     dataBot_->initUser(botData, botDims, botFmt, *engine_);
   }
-  dataWgt_->initUser(wgtData, wgtDims, wgtFmt, *engine_);
+  
 
   // create fc desc from internal desc
   std::shared_ptr<inner_product_forward::desc> fwdDesc;
@@ -189,12 +200,27 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
       << " >>>>> "
       << DNN_FORMAT[dataBot_->getIntlFmt()];
   }
-  if (dataWgt_->initCvt(
-    fwdPD_->weights_primitive_desc(), dnnCvtUser2Internal)) {
-    LOG(INFO) << "need reorder --- weight data: "
-      << DNN_FORMAT[dataWgt_->getUserFmt()]
-      << " >>>>> "
-      << DNN_FORMAT[dataWgt_->getIntlFmt()];
+  if (usePaddleFmt_) {
+    weights_[0]->getW()->transpose(selfWgtData_[0], false);
+    real *wgtData = selfWgtData_[0]->getData();
+    dataWgt_->initUser(wgtData, wgtDims, wgtFmt, *engine_);
+    if (dataWgt_->initCvt(
+      fwdPD_->weights_primitive_desc(), dnnCvtUser2Internal)) {
+      LOG(INFO) << "need reorder --- weight data: "
+        << DNN_FORMAT[dataWgt_->getUserFmt()]
+        << " >>>>> "
+        << DNN_FORMAT[dataWgt_->getIntlFmt()];
+    }
+    if (passType == PASS_TEST) {
+      std::vector<primitive> cvtWgt;
+      dataWgt_->submitCvt(cvtWgt, wgtData);
+      stream(stream::kind::eager).submit(cvtWgt).wait();
+    }
+  } else {
+    // TODO(TJ): initial wgt data with input format
+    real *wgtData = weights_[0]->getW()->getData();
+    dataWgt_->initUser(wgtData, fwdPD_->weights_primitive_desc());
+    dataWgt_->initCvt(dataWgt_->getUserPD(), dnnCvtUser2Internal);
   }
   if (hasBias_) {
     if (dataBias_->initCvt(
@@ -238,14 +264,15 @@ void MkldnnFcLayer::myFwd(PassType passType) {
   CHECK(getInput(0).value) << "The input of 'fc' layer must be matrix";
   real *botdata = getPrev(0)->getOutputValue()->getData();
   real *topdata = getOutputValue()->getData();
-  // so far used paddle's format, transpose.
-  // TODO(TJ): use dnn format to save time in future!
-  MatrixPtr myWgt = Matrix::create(oc_, inputSizeByBS_[0], false, false);
-  weights_[0]->getW()->transpose(myWgt, false);
-  real *wgtdata = myWgt->getData();  // weights_[0]->getW()->getData();
   std::vector<primitive> fwd;
   dataBot_->submitCvt(fwd, botdata);
-  dataWgt_->submitCvt(fwd, wgtdata);
+
+  if (usePaddleFmt_ && passType == PASS_TRAIN) {
+    weights_[0]->getW()->transpose(selfWgtData_[0], false);
+    real *wgtdata = selfWgtData_[0]->getData();
+    dataWgt_->submitCvt(fwd, wgtdata);
+  }  // else do not need cvt wgt
+
   if (hasBias_) {
     real *biasdata = biases_->getW()->getData();
     dataBias_->submitCvt(fwd, biasdata);

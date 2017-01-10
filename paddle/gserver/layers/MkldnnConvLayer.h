@@ -37,6 +37,10 @@ protected:
   // group
   std::vector<int> gp_;
 
+  // dnn self wgt, only create if use paddle fmt
+  std::vector<MatrixPtr> selfWgtData_;
+  std::vector<MatrixPtr> selfWgtDiff_;
+
   // use paddle weight format
   bool usePaddleFmt_;
 
@@ -85,8 +89,8 @@ public:
    * input: botdata, wgtdata, biasdata
    * output topdata
    */
-  void submitFwdOnce(
-    int inputIdx, const MatrixPtr& botVal, const MatrixPtr& topVal);
+  void submitFwdOnce(PassType passType, int inputIdx, 
+    const MatrixPtr& botVal, const MatrixPtr& topVal);
 
   /* backward data
    * input: topdiff, wgtdata

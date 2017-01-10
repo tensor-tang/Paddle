@@ -36,6 +36,13 @@ protected:
   WeightList weights_;
   std::unique_ptr<Weight> biases_;
 
+  // dnn self wgt, only create if use paddle fmt
+  std::vector<MatrixPtr> selfWgtData_;
+  std::vector<MatrixPtr> selfWgtDiff_;
+
+  // use paddle weight format
+  bool usePaddleFmt_;
+
   // input size (== ic*ih*iw) by batch size 
   std::vector<size_t> inputSizeByBS_;
 

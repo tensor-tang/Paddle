@@ -57,17 +57,23 @@ bool MkldnnConvLayer::initDnn(const LayerMap &layerMap,
     }
   }
 
-  // should add this flag to layer proto and get from it
+  // TODO(TJ): should get this flag from layer proto , default true
   usePaddleFmt_ = true;
 
   /* initialize the weightList */
   CHECK(inputLayers_.size() == parameters_.size());
   for (size_t i = 0; i < inputLayers_.size(); i++) {
     size_t height, width;
+    selfWgtData_.push_back(nullptr);
+    selfWgtDiff_.push_back(nullptr);
     if (usePaddleFmt_) {
       height = ic_[i] * fh_[i] * fw_[i] / gp_[i];
       width = oc_;
-    } else {
+      selfWgtData_[i] = Matrix::create(width, height, false, false);
+      selfWgtDiff_[i] = Matrix::create(width, height, false, false);
+      selfWgtData_[i]->zeroMem();
+      selfWgtDiff_[i]->zeroMem();
+    } else {  // TODO(TJ): never tested this case
       height = oc_;
       width = ic_[i] * fh_[i] * fw_[i] / gp_[i];
     }
@@ -151,7 +157,6 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
     }
     // init user memory of bottom, weights and bias
     real *botData = getPrev(i)->getOutputValue()->getData();
-    real *wgtData = weights_[i]->getW()->getData();
     real *topData = getOutputValue()->getData();
     const std::shared_ptr<memory::desc> prvMD = getPrev(i)->getTopDataMD();
     if (prvMD) {
@@ -160,8 +165,6 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
     } else {
       dataBot_->initUser(botData, botDims, memory::format::nchw, *engine_);
     }
-    dataWgt_->initUser(wgtData, wgtDims, (gp_[i] == 1) ?
-                 memory::format::oihw : memory::format::goihw, *engine_);
     if (hasBias) {
       real *biasData = biases_->getW()->getData();
       dataBias_->initUser(biasData, dataBias_->getDefaultDims(),
@@ -195,13 +198,32 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
         << " >>>>> "
         << DNN_FORMAT[dataBot_->getIntlFmt()];
     }
-    if (dataWgt_->initCvt(
-      fwdPD_->weights_primitive_desc(), dnnCvtUser2Internal)) {
-      LOG(INFO) << "need reorder --- weight data: "
-        << DNN_FORMAT[dataWgt_->getUserFmt()]
-        << " >>>>> "
-        << DNN_FORMAT[dataWgt_->getIntlFmt()];
+
+    if (usePaddleFmt_) {
+      // TODO(TJ): never tested g!=1
+      weights_[i]->getW()->transpose(selfWgtData_[i], false);
+      real *wgtData = selfWgtData_[i]->getData();
+      dataWgt_->initUser(wgtData, wgtDims, (gp_[i] == 1) ?
+                   memory::format::oihw : memory::format::goihw, *engine_);
+      if (dataWgt_->initCvt(
+        fwdPD_->weights_primitive_desc(), dnnCvtUser2Internal)) {
+        LOG(INFO) << "need reorder --- weight data: "
+          << DNN_FORMAT[dataWgt_->getUserFmt()]
+          << " >>>>> "
+          << DNN_FORMAT[dataWgt_->getIntlFmt()];
+      }
+      if (passType == PASS_TEST) {
+        std::vector<primitive> cvtWgt;
+        dataWgt_->submitCvt(cvtWgt, wgtData);
+        stream(stream::kind::eager).submit(cvtWgt).wait();
+      }
+    } else {
+      // TODO(TJ): initial wgt data with input format
+      real *wgtData = weights_[i]->getW()->getData();
+      dataWgt_->initUser(wgtData, fwdPD_->weights_primitive_desc());
+      dataWgt_->initCvt(dataWgt_->getUserPD(), dnnCvtUser2Internal);
     }
+
     if (hasBias) {
       real *biasData = biases_->getW()->getData();
       dataBias_->initUser(
@@ -392,22 +414,20 @@ void MkldnnConvLayer::resetDnnBwd() {
 */
 }
 
-void MkldnnConvLayer::submitFwdOnce(
-  int inputIdx, const MatrixPtr& botVal, const MatrixPtr& topVal) {
+void MkldnnConvLayer::submitFwdOnce(PassType passType, int inputIdx,
+  const MatrixPtr& botVal, const MatrixPtr& topVal) {
   real* botdata = botVal->getData();
   real* topdata = topVal->getData();
-  real* wgtdata = weights_[inputIdx]->getW()->getData();
-  MatrixPtr myWgt;
-  if (usePaddleFmt_) {
-    myWgt = Matrix::create(oc_,
-      ic_[inputIdx]*fh_[inputIdx]*fw_[inputIdx]/gp_[inputIdx], false, false);
-    weights_[inputIdx]->getW()->transpose(myWgt, false);
-    wgtdata = myWgt->getData();
+  std::vector<primitive> convFwd;
+
+  dataBot_->submitCvt(convFwd, botdata);
+
+  if (usePaddleFmt_ && passType == PASS_TRAIN) {
+    weights_[inputIdx]->getW()->transpose(selfWgtData_[inputIdx], false);
+    real* wgtdata = selfWgtData_[inputIdx]->getData();
+    dataWgt_->submitCvt(convFwd, wgtdata);
   }
 
-  std::vector<primitive> convFwd;
-  dataBot_->submitCvt(convFwd, botdata);
-  dataWgt_->submitCvt(convFwd, wgtdata);
   if (biases_ && biases_->getW()) {
     // only for shared bias
     // TODO(TJ): enable unshared bias
@@ -500,7 +520,7 @@ void MkldnnConvLayer::submitDnnFwd(PassType passType) {
   clearAllCvtFlags();
 
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
-    submitFwdOnce(i, getPrev(i)->getOutputValue(), getOutputValue());
+    submitFwdOnce(passType, i, getPrev(i)->getOutputValue(), getOutputValue());
   }
 
   // forward activation
