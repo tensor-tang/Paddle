@@ -109,7 +109,7 @@ bool MkldnnConvLayer::reshapeOutput() {
   if (bs_ == getInput(0).getBatchSize()) {
     // can remove resetoutput
     // when confirm how multi inputs work and whether to clear diff
-    resetOutput(bs_, getOneBatchSize());
+    reserveOutput(bs_, getOneBatchSize());
     return false;
   }
   // reset image size
