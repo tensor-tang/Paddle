@@ -18,7 +18,7 @@ is_predict = get_config_arg("is_predict", bool, False)
 is_test = get_config_arg("is_test", bool, False)
 data_provider = get_config_arg("data_provider", bool, True)
 ####################Data Configuration ##################
-img_size = 224
+img_size = 256
 crop_size = 224
 data_size = 3 * crop_size * crop_size
 num_classes = 1000
@@ -43,7 +43,7 @@ if not is_predict and data_provider:
         args=args)
 
 ######################Algorithm Configuration #############
-batch_size = 32
+batch_size = 64
 settings(
     batch_size=batch_size,
     learning_rate=0.001 / batch_size,
