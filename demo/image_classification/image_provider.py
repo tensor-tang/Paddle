@@ -67,7 +67,8 @@ def processData(settings, file_list):
     """
     with open(file_list, 'r') as fdata:
         lines = [line.strip() for line in fdata]
-        random.shuffle(lines)
+        if settings.is_train:
+            random.shuffle(lines)
         for file_name in lines:
             with io.open(file_name.strip(), 'rb') as file:
                 data = cPickle.load(file)

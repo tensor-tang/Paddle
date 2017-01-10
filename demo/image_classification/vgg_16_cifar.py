@@ -14,13 +14,14 @@
 
 from paddle.trainer_config_helpers import *
 
+is_test = get_config_arg("is_test", bool, False)
 is_predict = get_config_arg("is_predict", bool, False)
 
 ####################Data Configuration ##################
 if not is_predict:
     data_dir = 'data/cifar-out/batches/'
     meta_path = data_dir + 'batches.meta'
-
+    train_list = "train.list" if not is_test else None
     args = {
         'meta': meta_path,
         'mean_img_size': 32,
@@ -31,7 +32,7 @@ if not is_predict:
     }
 
     define_py_data_sources2(
-        train_list="train.list",
+        train_list,
         test_list="train.list",
         module='image_provider',
         obj='processData',
