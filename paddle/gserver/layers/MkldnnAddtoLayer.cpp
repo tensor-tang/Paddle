@@ -13,33 +13,49 @@ REGISTER_LAYER(mkldnn_addto, MkldnnAddtoLayer);
 bool MkldnnAddtoLayer::initDnn(const LayerMap& layerMap,
                       const ParameterMap& parameterMap) {
   bs_ = 0;
-  oc_ = getSize();
+  oc_ = 0;
+  layerSize_ = getSize();
   for (size_t i = 0; i < inputLayers_.size(); i++) {
-    ic_.push_back(oc_);
-    MkldnnBufferPtr bot;
-    bot.reset(new MkldnnBuffer({bs_, oc_}));
-    dataBottoms_.push_back(bot);
-    // iw==ih==ow==oh==1, actually iw, ih, ow, oh not been used
-    ih_.push_back(1);
-    iw_.push_back(1);
-    oh_.push_back(1);
-    ow_.push_back(1);
+    ih_.push_back(0);
+    iw_.push_back(0);
+    oh_.push_back(0);
+    ow_.push_back(0);
+    ic_.push_back(0);
+    dataBottoms_.push_back(nullptr);
+    CHECK(layerSize_ == inputLayers_[i]->getSize());
   }
   if (biasParameter_.get() != NULL) {
-    biases_ = std::unique_ptr<Weight>(new Weight(1, oc_, biasParameter_));
+    biases_ = std::unique_ptr<Weight>(
+      new Weight(1, layerSize_, biasParameter_));
   }
   return true;
 }
 
 size_t MkldnnAddtoLayer::getOneBatchSize() {
   CHECK_NE(inputLayers_.size(), 0UL);
-  for (size_t i = 0; i < inputLayers_.size(); i++) {
-    ih_[i] = iw_[i] = 1;
-    oh_[i] = ow_[i] = 1;
-    ic_[i] = getSize();
+  size_t layerSize = 0;
+  for (size_t i = 0; i != inputLayers_.size(); ++i) {
+    int height = inputLayers_[i]->getOutput().getFrameHeight();
+    int width = inputLayers_[i]->getOutput().getFrameWidth();
+    if (height > 0 && width > 0) {
+      has_spatial_ = true;
+      ih_[i] = height;
+      iw_[i] = width;
+    } else {
+      has_spatial_ = false;
+      ih_[i] = 1;
+      iw_[i] = 1;
+    }
+    ic_[i] = inputLayers_[i]->getSize() / (iw_[i] * ih_[i]);
+    oh_[i] = ih_[i];
+    ow_[i] = iw_[i];
+    oc_ = ic_[i];
+    CHECK(ih_[i] * iw_[i]);
+    CHECK(layerSize == 0 || size_t(oh_[i] * ow_[i] * oc_) == layerSize);
+    layerSize = oh_[i] * ow_[i] * oc_;
   }
-  oc_ = ic_[0];
-  return oc_;
+  CHECK(layerSize == layerSize_);
+  return layerSize;
 }
 
 bool MkldnnAddtoLayer::reshapeOutput() {
@@ -53,6 +69,10 @@ bool MkldnnAddtoLayer::reshapeOutput() {
   bs_ = getInput(0).getBatchSize();
   LOG(INFO) << "reshape batch size: " << bs_;
   reserveOutput(bs_, getOneBatchSize());
+  if(has_spatial_) {
+    getOutput().setFrameHeight(oh_[0]);
+    getOutput().setFrameWidth(ow_[0]);
+  }
   printInfo();
   return true;
 }
@@ -61,26 +81,34 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
   LOG(INFO) << "reset mkldnn forward of addto layer: " << config_.name();
   memory::dims botDims, topDims;
   memory::format botFmt, topFmt;
-  botDims = {bs_, ic_[0]};
-  topDims = {bs_, oc_};
-  botFmt = memory::format::nc;
-  topFmt = memory::format::nc;
+  if (!has_spatial_) {
+    botDims = {bs_, ic_[0]};
+    topDims = {bs_, oc_};
+    botFmt = memory::format::nc;
+    topFmt = memory::format::nc;
+  } else {
+    botDims = {bs_, ic_[0], ih_[0], iw_[0]};
+    topDims = {bs_, oc_, oh_[0], ow_[0]};
+    botFmt = memory::format::nchw;
+    topFmt = memory::format::nchw;
+  }
 
   std::vector<memory::primitive_desc> botPDs;
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     CHECK(bs_ == getInput(i).getBatchSize())
       << "Assert batchsize of input layers are equal";
-    CHECK(oc_ == ic_[i]);
+    CHECK(oc_ == ic_[i] && iw_[i] == ow_[i] && ih_[i] == oh_[i]);
     dataBottoms_[i].reset(new MkldnnBuffer(botDims));
     MatrixPtr input = getInputValue(i);
     real *botData = input->getData();
     const std::shared_ptr<memory::desc> prvMD = getPrev(i)->getTopDataMD();
     if (prvMD) {
       dataBottoms_[i]->initUser(botData, *prvMD, *engine_);
-      LOG(FATAL) << "should not be here!";
+      LOG(INFO) << "use prev format: " << DNN_FORMAT[dataBottoms_[i]->getUserFmt()];
     } else {
       dataBottoms_[i]->initUser(botData, botDims, botFmt, *engine_);
     }
+
     botPDs.push_back(dataBottoms_[i]->getUserPD());
     scales_.push_back(1.0);  // no scale here
 
@@ -97,16 +125,15 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
   // top data
   dataTop_.reset(new MkldnnBuffer(topDims));
   real *topData = getOutputValue()->getData();
-  if (!setDnnTopDataFmt_) {
-    dataTop_->initUser(topData, topDims, topFmt, *engine_);
-  } else {
-    LOG(FATAL) << "should not be here so far!";
+  fwdPD_.reset(new sum::primitive_desc(dataTop_->getMDAny(), scales_, botPDs));
+  if (setDnnTopDataFmt_) {
     // fwdPD_ should be init with any type before, if in here.
     dataTop_->initUser(topData, fwdPD_->dst_primitive_desc());
     setTopDataMD(dataTop_->getUserMD());
+    LOG(INFO) << "set next format: " << DNN_FORMAT[dataTop_->getUserFmt()];
+  } else {
+    dataTop_->initUser(topData, topDims, topFmt, *engine_);
   }
-
-  fwdPD_.reset(new sum::primitive_desc(dataTop_->getUserMD(), scales_, botPDs));
 
   // init top cvt
   if (dataTop_->initCvt(fwdPD_->dst_primitive_desc(), dnnCvtInternal2User)) {
@@ -115,6 +142,11 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
       << " >>>>> "
       << DNN_FORMAT[dataTop_->getUserFmt()];
   }
+  LOG(INFO) << "data format flow --- "
+    << DNN_FORMAT[dataBottoms_[0]->getUserFmt()] << " >>> ("
+    << DNN_FORMAT[dataBottoms_[0]->getIntlFmt()] << " >>> "
+    << DNN_FORMAT[dataTop_->getIntlFmt()] << ") >>> "
+    << DNN_FORMAT[dataTop_->getUserFmt()];
 }
 
 void MkldnnAddtoLayer::myFwd(PassType passType) {

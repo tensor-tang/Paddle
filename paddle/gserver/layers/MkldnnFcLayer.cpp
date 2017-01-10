@@ -93,10 +93,11 @@ void MkldnnFcLayer::prefetch() {
 size_t MkldnnFcLayer::getOneBatchSize() {
   CHECK_NE(inputLayers_.size(), 0UL);
   size_t layerSize = 0;
+  oc_ = getSize();
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     int height = inputLayers_[i]->getOutput().getFrameHeight();
     int width = inputLayers_[i]->getOutput().getFrameWidth();
-    if (height > 1 || width > 1) {
+    if (height > 0 && width > 0) {
       has_spatial_ = true;
       ih_[i] = height;
       iw_[i] = width;
@@ -176,7 +177,6 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   } else {
     dataBot_->initUser(botData, botDims, botFmt, *engine_);
   }
-  
 
   // create fc desc from internal desc
   std::shared_ptr<inner_product_forward::desc> fwdDesc;

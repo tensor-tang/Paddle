@@ -30,6 +30,9 @@ protected:
 
   std::unique_ptr<Weight> biases_;
 
+  bool has_spatial_;
+  size_t layerSize_;  // layer size by batch == oh*ow*oc should also == ih*iw*ic 
+
 public:
   explicit MkldnnAddtoLayer(const LayerConfig& config)
     : MkldnnLayer(config),
@@ -72,14 +75,6 @@ public:
    * Backward propagation. 
    */
   void submitDnnBwd(const UpdateCallback& callback);
-
-  virtual void initDnnflags() {
-    // do not use this function so far, so set false
-    setDnnTopDataFmt_ = false;  // isNextLayerDnn();
-    for (size_t i = 0; i != inputLayers_.size(); ++i) {
-      setDnnBotDiffFmt_.push_back(false);  // (isPrevLayerDnn(i));
-    }
-  }
 
 private:
   void myFwd(PassType passType);
