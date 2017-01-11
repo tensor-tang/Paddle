@@ -15,16 +15,14 @@
 set -e
 config=vgg_19.py
 log=log_test.log
-model=models_vgg_19/pass-00000/
+model=models_vgg_19/pass-00001/
 
 paddle train \
 --config=$config \
---dot_period=1 \
---log_period=2 \
+--log_period=1 \
 --init_model_path=$model \
 --job=test \
 --use_gpu=0 \
---test_all_data_in_one_period=1 \
 --trainer_count=1 \
 2>&1 | tee $log
 
