@@ -312,7 +312,8 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
 
   std::shared_ptr<batch_normalization_forward::desc> fwdDesc;
   fwdDesc.reset(new batch_normalization_forward::desc(pk,
-    dataBot_->getUserMD(), EPS, flags));
+    prvMD ? dataBot_->getUserMD() : dataBot_->getMDAny(),
+    EPS, flags));
   fwdPD_.reset(new batch_normalization_forward::primitive_desc(
     *fwdDesc, *engine_));
 
@@ -327,7 +328,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   if (setDnnTopDataFmt_) {
     dataTop_->initUser(topData, fwdPD_->dst_primitive_desc());
     setTopDataMD(dataTop_->getUserMD());
-    LOG(FATAL) << "should not be here yet ...........";
+    LOG(INFO) << "set next format: " << DNN_FORMAT[dataTop_->getUserFmt()];
   } else {
     dataTop_->initUser(topData, topDims, memory::format::nchw, *engine_);
   }

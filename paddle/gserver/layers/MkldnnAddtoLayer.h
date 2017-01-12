@@ -77,6 +77,25 @@ public:
   void submitDnnBwd(const UpdateCallback& callback);
 
 private:
+  int getMDFmt(const mkldnn::memory::desc & md) {
+    return md.data.format;
+  }
+  int getMDDimSize(const mkldnn::memory::desc & md) {
+    return md.data.ndims;
+  }
+  // equal return true
+  bool compareMD(const mkldnn::memory::desc & md1,
+    const mkldnn::memory::desc & md2) {
+    // skip mkldnn_primitive_kind_t and mkldnn_blocking_desc_t comparasion
+    if (getMDFmt(md1) != getMDFmt(md2)) return false;
+    int ndims = getMDDimSize(md1);
+    if (ndims != getMDDimSize(md2)) return false;
+    bool res = true;
+    for (int i = 0; i < ndims; ++i) {
+      res = res && (md1.data.dims[i] == md2.data.dims[i]);
+    }
+    return res && (md1.data.data_type == md2.data.data_type);
+  }
   void myFwd(PassType passType);
   void exFwd(PassType passType);
   void exBwd(const UpdateCallback &callback);

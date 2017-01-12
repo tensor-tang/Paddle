@@ -94,6 +94,7 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
   }
 
   std::vector<memory::primitive_desc> botPDs;
+  std::vector<std::shared_ptr<memory::desc>> prvs;
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     CHECK(bs_ == getInput(i).getBatchSize())
       << "Assert batchsize of input layers are equal";
@@ -105,6 +106,7 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
     if (prvMD) {
       dataBottoms_[i]->initUser(botData, *prvMD, *engine_);
       LOG(INFO) << "use prev format: " << DNN_FORMAT[dataBottoms_[i]->getUserFmt()];
+      prvs.push_back(prvMD);
     } else {
       dataBottoms_[i]->initUser(botData, botDims, botFmt, *engine_);
     }
@@ -121,11 +123,23 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
         << DNN_FORMAT[dataBot_->getIntlFmt()];
     }
   }
+  // inputs format should be all the same
+  CHECK(prvs.size() == 0 || prvs.size() == inputLayers_.size())
+    << "input format size does not match: "
+    << prvs.size() << " vs " << inputLayers_.size();
+  if (prvs.size() > 1) {
+    for (size_t i = 1; i < prvs.size(); ++i) {
+      CHECK(compareMD(*(prvs[i-1]), *(prvs[i])))
+        << "all input formats should be the same";
+    }
+  }
 
   // top data
   dataTop_.reset(new MkldnnBuffer(topDims));
   real *topData = getOutputValue()->getData();
-  fwdPD_.reset(new sum::primitive_desc(dataTop_->getMDAny(), scales_, botPDs));
+  fwdPD_.reset(new sum::primitive_desc(
+    prvs.size() > 0 ? *(prvs[0]) : dataTop_->getMDAny(),
+    scales_, botPDs));
   if (setDnnTopDataFmt_) {
     // fwdPD_ should be init with any type before, if in here.
     dataTop_->initUser(topData, fwdPD_->dst_primitive_desc());

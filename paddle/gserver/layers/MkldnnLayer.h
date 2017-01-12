@@ -116,11 +116,11 @@ public:
 
   bool isNextLayerDnn() {
     if (hasActivation()) {
-      // if has activation, return false no matter if mkldnn type
-      // since: they do not support many types like nChw8c
-      // relu: only support nchw
+      // so far has mkldnn relu and softmax activations
+      // activation mkldnn format: input == output
+      // relu: support nchw, nc, nChw8c and so on
       // softmax: support nchw and nc
-      return false;  // hasMkldnnAct();
+      return hasMkldnnAct();
     }
     const std::string dnn("mkldnn");
     if (!isNextLayerTypeEmpty()  // not empty
@@ -136,10 +136,7 @@ public:
     if (getPrev(idx) == NULL)
       return false;
     if (getPrev(idx)->hasActivation()) {
-      // if has activation, return false no matter if mkldnn type
-      // since: they do not support many types like nChw8c
-      // relu: only support nchw
-      return false;  // getPrev(idx)->hasMkldnnAct();
+      return getPrev(idx)->hasMkldnnAct();
     }
     const std::string dnn("mkldnn");
     if (getPrev(idx)->getType().compare(0, dnn.length(), dnn) == 0) {

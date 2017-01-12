@@ -37,13 +37,17 @@ protected:
   bool hasCvted_;  // to avoid re-cvt
 
 public:
-  explicit MkldnnBuffer(mkldnn::memory::dims dm) :
+  explicit MkldnnBuffer(mkldnn::memory::dims dm,
+      mkldnn::memory::data_type tp = mkldnn::memory::data_type::f32) :
     dims_(dm),
     pUser_(NULL),
     pIntl_(NULL),
     pCvt_(NULL),
     type_(dnnCvtNone),
-    hasCvted_(false) {}
+    hasCvted_(false) {
+    if (tp != mkldnn::memory::data_type::f32)
+      LOG(FATAL) << "only support float 32 so far";
+  }
 
   ~MkldnnBuffer() {}
 

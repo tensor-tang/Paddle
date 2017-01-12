@@ -184,11 +184,13 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
     real *biasData = biases_->getW()->getData();
     dataBias_->initUser(biasData, biasDims, biasFmt, *engine_);
     fwdDesc.reset(new inner_product_forward::desc(
-        prop_kind::forward_training, dataBot_->getMDAny(),
+        prop_kind::forward_training,
+        prvMD ? dataBot_->getUserMD() : dataBot_->getMDAny(),
         dataWgt_->getMDAny(), dataBias_->getMDAny(), dataTop_->getMDAny()));
   } else {
     fwdDesc.reset(new inner_product_forward::desc(
-        prop_kind::forward_training, dataBot_->getMDAny(),
+        prop_kind::forward_training,
+        prvMD ? dataBot_->getUserMD() : dataBot_->getMDAny(),
         dataWgt_->getMDAny(), dataTop_->getMDAny()));
   }
   fwdPD_.reset(new inner_product_forward::primitive_desc(*fwdDesc, *engine_));

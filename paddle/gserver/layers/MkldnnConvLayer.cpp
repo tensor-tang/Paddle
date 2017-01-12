@@ -175,7 +175,7 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
     if (hasBias) {
       fwdDesc.reset(new convolution_forward::desc(prop_kind::forward_training,
                           algorithm::convolution_direct,
-                          dataBot_->getMDAny(),
+                          prvMD ? dataBot_->getUserMD() : dataBot_->getMDAny(),
                           dataWgt_->getMDAny(),
                           dataBias_->getMDAny(),
                           dataTop_->getMDAny(),
@@ -184,7 +184,7 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
     } else {
       fwdDesc.reset(new convolution_forward::desc(prop_kind::forward_training,
                           algorithm::convolution_direct,
-                          dataBot_->getMDAny(),
+                          prvMD ? dataBot_->getUserMD() : dataBot_->getMDAny(),
                           dataWgt_->getMDAny(),
                           dataTop_->getMDAny(),
                           strides, padding, padding,

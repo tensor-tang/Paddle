@@ -353,7 +353,10 @@ void Layer::forwardActivation() {
     forwardDropOut();
     CHECK_NE(activation_->getName(), "softmax")
         << "Softmax activation cannot be used with Dropout";
+    CHECK_NE(activation_->getName(), "mkldnn_softmax")
+        << "Softmax activation cannot be used with Dropout";
   }
+  // TODO(TJ): check format, if dropout's input is not nchw or nc, should work?
 
   if (FLAGS_show_layer_stat) {
     showOutputStats();

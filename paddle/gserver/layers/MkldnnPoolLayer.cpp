@@ -126,7 +126,8 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
     prop_kind::forward_training;
 
   fwdDesc.reset(new pooling_forward::desc(pk, poolAlgo_,
-                    dataBot_->getMDAny(), dataTop_->getMDAny(),
+                    prvMD ? dataBot_->getUserMD() : dataBot_->getMDAny(),
+                    dataTop_->getMDAny(),
                     strides, kernel, padding, padding,
                     padding_kind::zero));
   // init cvt
