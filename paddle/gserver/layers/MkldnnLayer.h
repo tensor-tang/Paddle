@@ -139,12 +139,9 @@ public:
       return getPrev(idx)->hasMkldnnAct();
     }
     const std::string dnn("mkldnn");
-    if (getPrev(idx)->getType().compare(0, dnn.length(), dnn) == 0) {
-      // type started with "mkldnn"
-      return true;
-    } else {
-      return false;
-    }
+    // type started with "mkldnn"
+    return getPrev(idx)->getType().compare(0, dnn.length(), dnn) == 0 ?
+      true : false;
   }
 
   // for conv only support caffe mode by now

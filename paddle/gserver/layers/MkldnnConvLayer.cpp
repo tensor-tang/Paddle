@@ -88,6 +88,11 @@ bool MkldnnConvLayer::initDnn(const LayerMap &layerMap,
     CHECK_EQ((size_t)oc_, biasParameter_->getSize());
     biases_ = std::unique_ptr<Weight>(new Weight(oc_, 1, biasParameter_));
   }
+  hasRelu_ = hasMkldnnRelu();
+  if (hasRelu_) {
+    // TODO(TJ): get from proto setting
+    negativeSlope_ = -0.0;
+  }
   return true;
 }
 
@@ -138,6 +143,10 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
   // TODO(TJ): only care about i==0 by now
   memory::dims biasDims = {oc_};
   bool hasBias = (biases_ && biases_->getW()) ? true : false;
+  prop_kind pk = passType == PASS_TEST ?
+    prop_kind::forward_scoring : prop_kind::forward_training;
+  // conv_relu only support scoring yet
+  useConvRelu_ = (hasRelu_ && passType == PASS_TEST);
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     CHECK(bs_ == getInput(i).getBatchSize())
       << "Assert batchsize of input layers are equal";
@@ -173,7 +182,7 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
     // create conv desc from internal desc
     std::shared_ptr<convolution_forward::desc> fwdDesc;
     if (hasBias) {
-      fwdDesc.reset(new convolution_forward::desc(prop_kind::forward_training,
+      fwdDesc.reset(new convolution_forward::desc(pk,
                           algorithm::convolution_direct,
                           prvMD ? dataBot_->getUserMD() : dataBot_->getMDAny(),
                           dataWgt_->getMDAny(),
@@ -182,7 +191,7 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
                           strides, padding, padding,
                           padding_kind::zero));
     } else {
-      fwdDesc.reset(new convolution_forward::desc(prop_kind::forward_training,
+      fwdDesc.reset(new convolution_forward::desc(pk,
                           algorithm::convolution_direct,
                           prvMD ? dataBot_->getUserMD() : dataBot_->getMDAny(),
                           dataWgt_->getMDAny(),
@@ -190,9 +199,17 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
                           strides, padding, padding,
                           padding_kind::zero));
     }
-    fwdPD_.reset(new convolution_forward::primitive_desc(*fwdDesc, *engine_));
+    std::shared_ptr<mkldnn::convolution_forward::primitive_desc> convPD;
+    convPD.reset(new convolution_forward::primitive_desc(*fwdDesc, *engine_));
+    // conv relu
+    std::shared_ptr<convolution_relu_forward::primitive_desc> convReluPD;
+    if(useConvRelu_) {
+      std::shared_ptr<convolution_relu_forward::desc> convReluDesc;
+      convReluDesc.reset(new convolution_relu_forward::desc(*fwdDesc, negativeSlope_));
+      convReluPD.reset(new convolution_relu_forward::primitive_desc(*convReluDesc, *engine_));
+    }
     // init cvt
-    if (dataBot_->initCvt(fwdPD_->src_primitive_desc(), dnnCvtUser2Internal)) {
+    if (dataBot_->initCvt(convPD->src_primitive_desc(), dnnCvtUser2Internal)) {
       LOG(INFO) << "need reorder --- bottom data: "
         << DNN_FORMAT[dataBot_->getUserFmt()]
         << " >>>>> "
@@ -206,7 +223,7 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
       dataWgt_->initUser(wgtData, wgtDims, (gp_[i] == 1) ?
                    memory::format::oihw : memory::format::goihw, *engine_);
       if (dataWgt_->initCvt(
-        fwdPD_->weights_primitive_desc(), dnnCvtUser2Internal)) {
+        convPD->weights_primitive_desc(), dnnCvtUser2Internal)) {
         LOG(INFO) << "need reorder --- weight data: "
           << DNN_FORMAT[dataWgt_->getUserFmt()]
           << " >>>>> "
@@ -220,7 +237,7 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
     } else {
       // TODO(TJ): initial wgt data with input format
       real *wgtData = weights_[i]->getW()->getData();
-      dataWgt_->initUser(wgtData, fwdPD_->weights_primitive_desc());
+      dataWgt_->initUser(wgtData, convPD->weights_primitive_desc());
       dataWgt_->initCvt(dataWgt_->getUserPD(), dnnCvtUser2Internal);
     }
 
@@ -228,7 +245,7 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
       real *biasData = biases_->getW()->getData();
       dataBias_->initUser(
         biasData, dataBias_->getDefaultDims(), memory::format::x, *engine_);
-      if (dataBias_->initCvt(fwdPD_->bias_primitive_desc(),
+      if (dataBias_->initCvt(convPD->bias_primitive_desc(),
         dnnCvtUser2Internal)) {
         LOG(INFO) << "need reorder --- bias data: "
           << DNN_FORMAT[dataBias_->getUserFmt()]
@@ -238,13 +255,13 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
     }
     // init top user memory and cvt
     if (setDnnTopDataFmt_) {
-      dataTop_->initUser(topData, fwdPD_->dst_primitive_desc());
+      dataTop_->initUser(topData, convPD->dst_primitive_desc());
       setTopDataMD(dataTop_->getUserMD());
       LOG(INFO) << "set next format: " << DNN_FORMAT[dataTop_->getUserFmt()];
     } else {
       dataTop_->initUser(topData, topDims, memory::format::nchw, *engine_);
     }
-    if (dataTop_->initCvt(fwdPD_->dst_primitive_desc(), dnnCvtInternal2User)) {
+    if (dataTop_->initCvt(convPD->dst_primitive_desc(), dnnCvtInternal2User)) {
       LOG(INFO) << "need reorder --- top data: "
         << DNN_FORMAT[dataTop_->getIntlFmt()]
         << " >>>>> "
@@ -255,6 +272,30 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
       << DNN_FORMAT[dataBot_->getIntlFmt()] << " >>> "
       << DNN_FORMAT[dataTop_->getIntlFmt()] << ") >>> "
       << DNN_FORMAT[dataTop_->getUserFmt()];
+
+    if (biases_ && biases_->getW()) {
+      // only for shared bias
+      // TODO(TJ): enable unshared bias
+      if(useConvRelu_) {
+        fwd_.reset(new convolution_relu_forward(*convReluPD,
+              *(dataBot_->getIntlMem()), *(dataWgt_->getIntlMem()),
+              *(dataBias_->getIntlMem()), *(dataTop_->getIntlMem())));
+      } else {
+        fwd_.reset(new convolution_forward(*convPD,
+              *(dataBot_->getIntlMem()), *(dataWgt_->getIntlMem()),
+              *(dataBias_->getIntlMem()), *(dataTop_->getIntlMem())));
+      }
+    } else {
+      if(useConvRelu_) {
+        fwd_.reset(new convolution_relu_forward(*convReluPD,
+              *(dataBot_->getIntlMem()), *(dataWgt_->getIntlMem()),
+              *(dataTop_->getIntlMem())));
+      } else {
+        fwd_.reset(new convolution_forward(*convPD,
+              *(dataBot_->getIntlMem()), *(dataWgt_->getIntlMem()),
+              *(dataTop_->getIntlMem())));
+      }
+    }
   }
 }
 
@@ -427,20 +468,8 @@ void MkldnnConvLayer::submitFwdOnce(PassType passType, int inputIdx,
     real* wgtdata = selfWgtData_[inputIdx]->getData();
     dataWgt_->submitCvt(convFwd, wgtdata);
   }
+  convFwd.push_back(*fwd_);
 
-  if (biases_ && biases_->getW()) {
-    // only for shared bias
-    // TODO(TJ): enable unshared bias
-    real* biasdata = biases_->getW()->getData();
-    dataBias_->submitCvt(convFwd, biasdata);
-    convFwd.push_back(convolution_forward(*fwdPD_,
-                *(dataBot_->getIntlMem()), *(dataWgt_->getIntlMem()),
-                *(dataBias_->getIntlMem()), *(dataTop_->getIntlMem())));
-  } else {
-    convFwd.push_back(convolution_forward(*fwdPD_, *(dataBot_->getIntlMem()),
-                *(dataWgt_->getIntlMem()),
-                *(dataTop_->getIntlMem())));
-  }
   dataTop_->submitCvt(convFwd, topdata);
 
   // start forward
@@ -524,7 +553,23 @@ void MkldnnConvLayer::submitDnnFwd(PassType passType) {
   }
 
   // forward activation
-  forwardActivation();
+  if (useConvRelu_) {
+    /* dropout */
+    if (config_.drop_rate() > 0) {
+      // TODO(TJ): check if other dnn format feasible for dropout
+      // if not, add if when set datatop user format when has dropout
+      CHECK(dataTop_->getUserFmt() == memory::format::nchw)
+        << "format should only be nchw when dropout";
+      forwardDropOut();
+      CHECK_NE(activation_->getName(), "mkldnn_softmax")
+          << "Softmax activation cannot be used with Dropout";
+    }
+    if (FLAGS_show_layer_stat) {
+      showOutputStats();
+    }
+  } else {
+    forwardActivation();
+  }
 }
 
 void MkldnnConvLayer::exBwdBias(MatrixPtr topDiff) {

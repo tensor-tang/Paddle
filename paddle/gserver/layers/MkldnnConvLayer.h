@@ -17,8 +17,8 @@ namespace paddle {
  */
 class MkldnnConvLayer : public MkldnnLayer {
 protected:
+  std::shared_ptr<mkldnn::convolution_forward::primitive> fwd_;
   /// For dnn convolution. Primitive Desc
-  std::shared_ptr<mkldnn::convolution_forward::primitive_desc> fwdPD_;
   std::shared_ptr<mkldnn::convolution_backward_data::primitive_desc> bwdDataPD_;
   std::shared_ptr<
     mkldnn::convolution_backward_weights::primitive_desc> bwdWgtPD_;
@@ -50,29 +50,39 @@ protected:
   /// If shared_biases is ture shape of bias:
   /// (oc * outputX * outputY, 1)
   std::unique_ptr<Weight> biases_;
+  bool hasRelu_;
+  bool useConvRelu_;
+  double negativeSlope_;
 
 public:
   explicit MkldnnConvLayer(const LayerConfig& config)
     : MkldnnLayer(config),
-      fwdPD_(NULL),
+      fwd_(nullptr),
       bwdDataPD_(NULL),
       bwdWgtPD_(NULL),
       dataWgt_(NULL),
       dataBias_(NULL),
       diffWgt_(NULL),
-      diffBias_(NULL)
+      diffBias_(NULL),
+      hasRelu_(false),
+      useConvRelu_(false),
+      negativeSlope_(-0.0)
     {}
 
   ~MkldnnConvLayer() {}
 
   bool initDnn(const LayerMap& layerMap, const ParameterMap& parameterMap);
-/* // disable 
-  void initDnnflags() {
-    setDnnTopDataFmt_ = false;
-    setDnnBotDiffFmt_.push_back(false);
-  }
-*/
+
   size_t getOneBatchSize();
+
+  bool hasMkldnnRelu() {
+    if (!hasActivation()) {
+      return false;
+    }
+    const std::string dnn("mkldnn_relu");
+    const std::string& type = activation_->getName();
+    return type.compare(0, dnn.length(), dnn) == 0 ? true : false;
+  }
 
   void clearAllCvtFlags() {
     if (dataBot_) dataBot_->clearCvtFlag();
