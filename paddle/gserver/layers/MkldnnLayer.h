@@ -54,6 +54,11 @@ public:
 
   ~MkldnnLayer() {}
 
+  mkldnn::memory::desc getAnyMD(mkldnn::memory::dims & dm,
+    mkldnn::memory::data_type tp = mkldnn::memory::data_type::f32) {
+    return mkldnn::memory::desc({dm}, tp, mkldnn::memory::format::any);
+  }
+
   bool init(const LayerMap& layerMap, const ParameterMap& parameterMap) {
     /* Initialize the basic parent class */
     if (!Layer::init(layerMap, parameterMap)) return false;

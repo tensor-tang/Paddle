@@ -100,7 +100,7 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
     CHECK(bs_ == getInput(i).getBatchSize())
       << "Assert batchsize of input layers are equal";
     CHECK(oc_ == ic_[i] && iw_[i] == ow_[i] && ih_[i] == oh_[i]);
-    dataBottoms_[i].reset(new MkldnnBuffer(botDims));
+    dataBottoms_[i].reset(new MkldnnBuffer());
     MatrixPtr input = getInputValue(i);
     real *botData = input->getData();
     const std::shared_ptr<memory::desc> prvMD = getPrev(i)->getTopDataMD();
@@ -136,11 +136,10 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
   }
 
   // top data
-  dataTop_.reset(new MkldnnBuffer(topDims));
+  dataTop_.reset(new MkldnnBuffer());
   real *topData = getOutputValue()->getData();
   fwdPD_.reset(new sum::primitive_desc(
-    prvs.size() > 0 ? *(prvs[0]) : dataTop_->getMDAny(),
-    scales_, botPDs));
+    prvs.size() > 0 ? *(prvs[0]) : getAnyMD(topDims), scales_, botPDs));
   if (setDnnTopDataFmt_) {
     // fwdPD_ should be init with any type before, if in here.
     dataTop_->initUser(topData, fwdPD_->dst_primitive_desc());

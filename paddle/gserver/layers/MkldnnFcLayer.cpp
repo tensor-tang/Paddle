@@ -161,11 +161,11 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   biasDims = {oc_};
   biasFmt = memory::format::x;
 
-  dataBot_.reset(new MkldnnBuffer(botDims));
-  dataTop_.reset(new MkldnnBuffer(topDims));
-  dataWgt_.reset(new MkldnnBuffer(wgtDims));
+  dataBot_.reset(new MkldnnBuffer());
+  dataTop_.reset(new MkldnnBuffer());
+  dataWgt_.reset(new MkldnnBuffer());
   if (hasBias_) {
-    dataBias_.reset(new MkldnnBuffer(biasDims));
+    dataBias_.reset(new MkldnnBuffer());
   }
 
   // init user memory of bottom, weights and bias
@@ -186,13 +186,13 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
     dataBias_->initUser(biasData, biasDims, biasFmt, eg);
     fwdDesc.reset(new inner_product_forward::desc(
         prop_kind::forward_training,
-        prvMD ? dataBot_->getUserMD() : dataBot_->getMDAny(),
-        dataWgt_->getMDAny(), dataBias_->getMDAny(), dataTop_->getMDAny()));
+        prvMD ? dataBot_->getUserMD() : getAnyMD(botDims),
+        getAnyMD(wgtDims), getAnyMD(biasDims), getAnyMD(topDims)));
   } else {
     fwdDesc.reset(new inner_product_forward::desc(
         prop_kind::forward_training,
-        prvMD ? dataBot_->getUserMD() : dataBot_->getMDAny(),
-        dataWgt_->getMDAny(), dataTop_->getMDAny()));
+        prvMD ? dataBot_->getUserMD() : getAnyMD(botDims),
+        getAnyMD(wgtDims), getAnyMD(topDims)));
   }
   std::shared_ptr<mkldnn::inner_product_forward::primitive_desc> fwdPD;
   fwdPD.reset(new inner_product_forward::primitive_desc(*fwdDesc, eg));

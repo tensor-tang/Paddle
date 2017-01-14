@@ -299,8 +299,8 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   memory::dims botDims, wgtDims, topDims;
   botDims = {bs_, ic_[0], ih_[0], iw_[0]};
   topDims = {bs_, oc_, oh_[0], ow_[0]};  // == botDims
-  dataBot_.reset(new MkldnnBuffer(botDims));
-  dataTop_.reset(new MkldnnBuffer(topDims));
+  dataBot_.reset(new MkldnnBuffer());
+  dataTop_.reset(new MkldnnBuffer());
   real *botData = getPrev(0)->getOutputValue()->getData();
   real *topData = getOutputValue()->getData();
   const std::shared_ptr<memory::desc> prvMD = getPrev(0)->getTopDataMD();
@@ -313,8 +313,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
 
   std::shared_ptr<batch_normalization_forward::desc> fwdDesc;
   fwdDesc.reset(new batch_normalization_forward::desc(pk,
-    prvMD ? dataBot_->getUserMD() : dataBot_->getMDAny(),
-    EPS, flags));
+    prvMD ? dataBot_->getUserMD() : getAnyMD(botDims), EPS, flags));
   fwdPD_.reset(new batch_normalization_forward::primitive_desc(
     *fwdDesc, eg));
 
@@ -350,7 +349,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
     }
     real *wgtData = myScaleShift_->getData();
     wgtDims = {2, oc_};
-    wgtScaleShift_.reset(new MkldnnBuffer(wgtDims));
+    wgtScaleShift_.reset(new MkldnnBuffer());
     wgtScaleShift_->initUser(wgtData, wgtDims, memory::format::nc, eg);
     if (wgtScaleShift_->initCvt(
       fwdPD_->weights_primitive_desc(), dnnCvtUser2Internal)) {
@@ -363,8 +362,8 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   }
 
   if (passType == PASS_TRAIN || useGlobalStats_) {
-    mean_.reset(new MkldnnBuffer({oc_}));
-    var_.reset(new MkldnnBuffer({oc_}));
+    mean_.reset(new MkldnnBuffer());
+    var_.reset(new MkldnnBuffer());
     // TODO(TJ): if input is userPD, maybe need accept dnnCvtNoNeed
     mean_->initUser(localMean_->getData(), {oc_}, memory::format::x, eg);
     var_->initUser(localVar_->getData(), {oc_}, memory::format::x, eg);

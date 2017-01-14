@@ -159,11 +159,11 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
     memory::dims strides = {sh_[i], sw_[i]};
     memory::dims padding = {ph_[i], pw_[i]};
     memory::dims topDims = {bs_, oc_, oh_[i], ow_[i]};
-    dataBot_.reset(new MkldnnBuffer(botDims));
-    dataWgt_.reset(new MkldnnBuffer(wgtDims));
-    dataTop_.reset(new MkldnnBuffer(topDims));
+    dataBot_.reset(new MkldnnBuffer());
+    dataWgt_.reset(new MkldnnBuffer());
+    dataTop_.reset(new MkldnnBuffer());
     if (hasBias) {
-      dataBias_.reset(new MkldnnBuffer(biasDims));
+      dataBias_.reset(new MkldnnBuffer());
     }
     // init user memory of bottom, weights and bias
     real *botData = getPrev(i)->getOutputValue()->getData();
@@ -177,26 +177,25 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
     }
     if (hasBias) {
       real *biasData = biases_->getW()->getData();
-      dataBias_->initUser(biasData, dataBias_->getDefaultDims(),
-        memory::format::x, eg);
+      dataBias_->initUser(biasData, biasDims, memory::format::x, eg);
     }
     // create conv desc from internal desc
     std::shared_ptr<convolution_forward::desc> fwdDesc;
     if (hasBias) {
       fwdDesc.reset(new convolution_forward::desc(pk,
                           algorithm::convolution_direct,
-                          prvMD ? dataBot_->getUserMD() : dataBot_->getMDAny(),
-                          dataWgt_->getMDAny(),
-                          dataBias_->getMDAny(),
-                          dataTop_->getMDAny(),
+                          prvMD ? dataBot_->getUserMD() : getAnyMD(botDims),
+                          getAnyMD(wgtDims),
+                          getAnyMD(biasDims),
+                          getAnyMD(topDims),
                           strides, padding, padding,
                           padding_kind::zero));
     } else {
       fwdDesc.reset(new convolution_forward::desc(pk,
                           algorithm::convolution_direct,
-                          prvMD ? dataBot_->getUserMD() : dataBot_->getMDAny(),
-                          dataWgt_->getMDAny(),
-                          dataTop_->getMDAny(),
+                          prvMD ? dataBot_->getUserMD() : getAnyMD(botDims),
+                          getAnyMD(wgtDims),
+                          getAnyMD(topDims),
                           strides, padding, padding,
                           padding_kind::zero));
     }
@@ -245,7 +244,7 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
     if (hasBias) {
       real *biasData = biases_->getW()->getData();
       dataBias_->initUser(
-        biasData, dataBias_->getDefaultDims(), memory::format::x, eg);
+        biasData, biasDims, memory::format::x, eg);
       if (dataBias_->initCvt(convPD->bias_primitive_desc(),
         dnnCvtUser2Internal)) {
         LOG(INFO) << "need reorder --- bias data: "

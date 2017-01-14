@@ -23,9 +23,6 @@ namespace paddle {
 
 class MkldnnBuffer {
 protected:
-  /// dims of user memory
-  mkldnn::memory::dims dims_;
-
   /// user and internal layout
   std::shared_ptr<mkldnn::memory> pUser_;
   std::shared_ptr<mkldnn::memory> pIntl_;
@@ -37,9 +34,8 @@ protected:
   bool hasCvted_;  // to avoid re-cvt
 
 public:
-  explicit MkldnnBuffer(mkldnn::memory::dims dm,
-      mkldnn::memory::data_type tp = mkldnn::memory::data_type::f32) :
-    dims_(dm),
+  explicit MkldnnBuffer(
+    mkldnn::memory::data_type tp = mkldnn::memory::data_type::f32) :
     pUser_(NULL),
     pIntl_(NULL),
     pCvt_(NULL),
@@ -50,10 +46,6 @@ public:
   }
 
   ~MkldnnBuffer() {}
-
-  const mkldnn::memory::dims& getDefaultDims() {
-    return dims_;
-  }
 
   void initUser(void *pd,
     mkldnn::memory::dims dm, mkldnn::memory::format fmt, mkldnn::engine eg,
@@ -68,11 +60,6 @@ public:
 
   void initUser(void *pdata, mkldnn::memory::primitive_desc pd) {
     pUser_.reset(new mkldnn::memory(pd, pdata));
-  }
-
-  mkldnn::memory::desc getMDAny(
-    mkldnn::memory::data_type tp = mkldnn::memory::data_type::f32) {
-    return mkldnn::memory::desc({dims_}, tp, mkldnn::memory::format::any);
   }
 
   std::shared_ptr<mkldnn::memory> getIntlMem() {

@@ -106,8 +106,8 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
   memory::dims padding = {ph_, pw_};
   memory::dims topDims = {bs_, oc_, oh_[0], ow_[0]};
 
-  dataBot_.reset(new MkldnnBuffer(botDims));
-  dataTop_.reset(new MkldnnBuffer(topDims));
+  dataBot_.reset(new MkldnnBuffer());
+  dataTop_.reset(new MkldnnBuffer());
 
   // init user memory of bottom, weights and bias
   real *botData = getPrev(0)->getOutputValue()->getData();
@@ -126,8 +126,8 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
     prop_kind::forward_training;
 
   fwdDesc.reset(new pooling_forward::desc(pk, poolAlgo_,
-                    prvMD ? dataBot_->getUserMD() : dataBot_->getMDAny(),
-                    dataTop_->getMDAny(),
+                    prvMD ? dataBot_->getUserMD() : getAnyMD(botDims),
+                    getAnyMD(topDims),
                     strides, kernel, padding, padding,
                     padding_kind::zero));
   // init cvt
