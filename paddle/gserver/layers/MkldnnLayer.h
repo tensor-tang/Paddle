@@ -6,17 +6,10 @@
 #include "paddle/math/Matrix.h"
 #include <vector>
 #include "mkldnn.hpp"
+#include "MkldnnBase.h"
 #include "MkldnnMemory.h"
 
 namespace paddle {
-
-static const std::string DNN_FORMAT[] = {
-  "undef", "any", "blocked", "x", "nc", "nchw", "nhwc", "chwn", "nChw8c",
-  "nChw16c", "oi", "io", "oihw", "ihwo", "OIhw8i8o", "OIhw16i16o", "OIhw8o8i",
-  "Ohwi8o", "Ohwi16o", "goihw", "gOIhw8i8o", "gOIhw16i16o",
-  "gOIhw8o8i", "gOIhw16o16i"};
-  // mkldnn_oIhw8i = mkldnn_nChw8c
-  // mkldnn_oIhw16i = mkldnn_nChw16c
 
 /**
  * @brief Base class of Dnnlayer.
@@ -24,9 +17,6 @@ static const std::string DNN_FORMAT[] = {
  */
 class MkldnnLayer : public Layer {
 public:
-  /// For dnn engine
-  std::shared_ptr<mkldnn::engine> engine_;
-
   /// data buffers
   MkldnnBufferPtr dataBot_;
   MkldnnBufferPtr dataTop_;
@@ -54,7 +44,6 @@ public:
 public:
   explicit MkldnnLayer(const LayerConfig& config)
     : Layer(config),
-      engine_(new mkldnn::engine(mkldnn::engine::cpu, 0)),
       dataBot_(NULL),
       dataTop_(NULL),
       diffBot_(NULL),

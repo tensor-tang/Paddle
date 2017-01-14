@@ -137,6 +137,7 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   LOG(INFO) << "reset mkldnn forward of fc layer: " << config_.name();
   CHECK(bs_ == getInput(0).getBatchSize())
     << "Assert batchsize of input layers are equal";
+  mkldnn::engine eg = CpuEngine::Instance().getEngine();
   hasBias_ = (biases_ && biases_->getW()) ? true : false;
   // create dim structure that describes user data.
   memory::dims botDims, wgtDims, biasDims, topDims;
@@ -172,17 +173,17 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   real *topData = getOutputValue()->getData();
   const std::shared_ptr<memory::desc> prvMD = getPrev(0)->getTopDataMD();
   if (prvMD) {
-    dataBot_->initUser(botData, *prvMD, *engine_);
+    dataBot_->initUser(botData, *prvMD, eg);
     LOG(INFO) << "use prev format: " << DNN_FORMAT[dataBot_->getUserFmt()];
   } else {
-    dataBot_->initUser(botData, botDims, botFmt, *engine_);
+    dataBot_->initUser(botData, botDims, botFmt, eg);
   }
 
   // create fc desc from internal desc
   std::shared_ptr<inner_product_forward::desc> fwdDesc;
   if (hasBias_) {
     real *biasData = biases_->getW()->getData();
-    dataBias_->initUser(biasData, biasDims, biasFmt, *engine_);
+    dataBias_->initUser(biasData, biasDims, biasFmt, eg);
     fwdDesc.reset(new inner_product_forward::desc(
         prop_kind::forward_training,
         prvMD ? dataBot_->getUserMD() : dataBot_->getMDAny(),
@@ -193,7 +194,7 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
         prvMD ? dataBot_->getUserMD() : dataBot_->getMDAny(),
         dataWgt_->getMDAny(), dataTop_->getMDAny()));
   }
-  fwdPD_.reset(new inner_product_forward::primitive_desc(*fwdDesc, *engine_));
+  fwdPD_.reset(new inner_product_forward::primitive_desc(*fwdDesc, eg));
   // init cvt
   if (dataBot_->initCvt(
     fwdPD_->src_primitive_desc(), dnnCvtUser2Internal)) {
@@ -205,7 +206,7 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   if (usePaddleFmt_) {
     weights_[0]->getW()->transpose(selfWgtData_[0], false);
     real *wgtData = selfWgtData_[0]->getData();
-    dataWgt_->initUser(wgtData, wgtDims, wgtFmt, *engine_);
+    dataWgt_->initUser(wgtData, wgtDims, wgtFmt, eg);
     if (dataWgt_->initCvt(
       fwdPD_->weights_primitive_desc(), dnnCvtUser2Internal)) {
       LOG(INFO) << "need reorder --- weight data: "
@@ -239,7 +240,7 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
     setTopDataMD(dataTop_->getUserMD());
     LOG(INFO) << "set next format: " << DNN_FORMAT[dataTop_->getUserFmt()];
   } else {
-    dataTop_->initUser(topData, topDims, topFmt, *engine_);
+    dataTop_->initUser(topData, topDims, topFmt, eg);
   }
   if (dataTop_->initCvt
     (fwdPD_->dst_primitive_desc(), dnnCvtInternal2User)) {

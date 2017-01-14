@@ -261,6 +261,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   LOG(INFO) << "reset mkldnn forward of batch_norm layer: " << config_.name();
   CHECK(bs_ == getInput(0).getBatchSize())
     << "Assert batchsize of input layers are equal";
+  mkldnn::engine eg = CpuEngine::Instance().getEngine();
   if (ih_[0] == iw_[0] && ih_[0] == 1) {
     // mkldnn has some issue with this case, so use paddle code instead
     useEx_ = true;
@@ -304,10 +305,10 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   real *topData = getOutputValue()->getData();
   const std::shared_ptr<memory::desc> prvMD = getPrev(0)->getTopDataMD();
   if (prvMD) {
-    dataBot_->initUser(botData, *prvMD, *engine_);
+    dataBot_->initUser(botData, *prvMD, eg);
     LOG(INFO) << "use prev format: " << DNN_FORMAT[dataBot_->getUserFmt()];
   } else {
-    dataBot_->initUser(botData, botDims, memory::format::nchw, *engine_);
+    dataBot_->initUser(botData, botDims, memory::format::nchw, eg);
   }
 
   std::shared_ptr<batch_normalization_forward::desc> fwdDesc;
@@ -315,7 +316,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
     prvMD ? dataBot_->getUserMD() : dataBot_->getMDAny(),
     EPS, flags));
   fwdPD_.reset(new batch_normalization_forward::primitive_desc(
-    *fwdDesc, *engine_));
+    *fwdDesc, eg));
 
   // init bottom cvt
   if (dataBot_->initCvt(dataBot_->getUserPD(), dnnCvtUser2Internal)) {
@@ -330,7 +331,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
     setTopDataMD(dataTop_->getUserMD());
     LOG(INFO) << "set next format: " << DNN_FORMAT[dataTop_->getUserFmt()];
   } else {
-    dataTop_->initUser(topData, topDims, memory::format::nchw, *engine_);
+    dataTop_->initUser(topData, topDims, memory::format::nchw, eg);
   }
   if (dataTop_->initCvt(fwdPD_->dst_primitive_desc(), dnnCvtInternal2User)) {
     LOG(INFO) << "need reorder --- top data: "
@@ -350,7 +351,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
     real *wgtData = myScaleShift_->getData();
     wgtDims = {2, oc_};
     wgtScaleShift_.reset(new MkldnnBuffer(wgtDims));
-    wgtScaleShift_->initUser(wgtData, wgtDims, memory::format::nc, *engine_);
+    wgtScaleShift_->initUser(wgtData, wgtDims, memory::format::nc, eg);
     if (wgtScaleShift_->initCvt(
       fwdPD_->weights_primitive_desc(), dnnCvtUser2Internal)) {
       LOG(FATAL) << "should donot need cvt!!! user vs intl format:"
@@ -365,8 +366,8 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
     mean_.reset(new MkldnnBuffer({oc_}));
     var_.reset(new MkldnnBuffer({oc_}));
     // TODO(TJ): if input is userPD, maybe need accept dnnCvtNoNeed
-    mean_->initUser(localMean_->getData(), {oc_}, memory::format::x, *engine_);
-    var_->initUser(localVar_->getData(), {oc_}, memory::format::x, *engine_);
+    mean_->initUser(localMean_->getData(), {oc_}, memory::format::x, eg);
+    var_->initUser(localVar_->getData(), {oc_}, memory::format::x, eg);
     if (useGlobalStats_) {
       if (mean_->initCvt(fwdPD_->mean_primitive_desc(), dnnCvtUser2Internal)) {
         LOG(FATAL) << "should donot need cvt!!! format-- user vs intl:"

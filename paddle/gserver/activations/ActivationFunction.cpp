@@ -220,10 +220,12 @@ public:
     MkldnnActivation::reshapeDnnFwd(arg, topDataMD);
     LOG(INFO) << this->getName() << " reshape batchsize: "
           << bs_ << ", " << oc_ << ", " << oh_ << ", " << ow_;
+    
+    mkldnn::engine eg = CpuEngine::Instance().getEngine();
 
     real* pdata = arg.value->getData();
-    dataBot_.reset(new mkldnn::memory({*srcMD_, *engine_}, pdata));
-    dataTop_.reset(new mkldnn::memory({*dstMD_, *engine_}, pdata));
+    dataBot_.reset(new mkldnn::memory({*srcMD_, eg}, pdata));
+    dataTop_.reset(new mkldnn::memory({*dstMD_, eg}, pdata));
     // TODO(TJ): check if OK use same pdata?
     // in forward src and dst memory can be the same,
     // but in backward not sure it's OK if they are the same, need double check
@@ -235,7 +237,7 @@ public:
 
     auto reluMD = mkldnn::relu_forward::desc(
       mkldnn::prop_kind::forward_training, *srcMD_, negative_slope);
-    auto reluPD = mkldnn::relu_forward::primitive_desc(reluMD, *engine_);
+    auto reluPD = mkldnn::relu_forward::primitive_desc(reluMD, eg);
     reluFwd_.reset(new mkldnn::relu_forward(reluPD, *dataBot_, *dataTop_));
 
     needResetBwd_ = true;
@@ -308,10 +310,11 @@ public:
     MkldnnActivation::reshapeDnnFwd(arg, topDataMD);
     LOG(INFO) << this->getName() << " reshape batchsize: "
           << bs_ << ", " << oc_ << ", " << oh_ << ", " << ow_;
+    mkldnn::engine eg = CpuEngine::Instance().getEngine();
 
     real* pdata = arg.value->getData();
-    dataBot_.reset(new mkldnn::memory({*srcMD_, *engine_}, pdata));
-    dataTop_.reset(new mkldnn::memory({*dstMD_, *engine_}, pdata));
+    dataBot_.reset(new mkldnn::memory({*srcMD_, eg}, pdata));
+    dataTop_.reset(new mkldnn::memory({*dstMD_, eg}, pdata));
     // TODO(TJ): check if OK use same pdata?
     // in forward src and dst memory can be the same,
     // but in backward not sure it's OK if they are the same, need double check
@@ -323,7 +326,7 @@ public:
     auto softmaxMD = mkldnn::softmax_forward::desc(
       mkldnn::prop_kind::forward_scoring, *srcMD_, axis);
     auto softmaxPD = mkldnn::softmax_forward::primitive_desc(
-      softmaxMD, *engine_);
+      softmaxMD, eg);
     softmaxFwd_.reset(new mkldnn::softmax_forward(
       softmaxPD, *dataBot_, *dataTop_));
 

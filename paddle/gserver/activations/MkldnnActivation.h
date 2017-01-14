@@ -5,7 +5,7 @@
 #include "ActivationFunction.h"
 #include "paddle/parameter/Argument.h"
 
-#include "mkldnn.hpp"
+#include "paddle/gserver/layers/MkldnnBase.h"
 // #include "paddle/gserver/layers/MkldnnMemory.h"
 
 namespace paddle {
@@ -16,9 +16,6 @@ namespace paddle {
  */
 class MkldnnActivation {
 public:
-  /// For dnn engine
-  std::shared_ptr<mkldnn::engine> engine_;
-
   // dims
   int bs_, oc_, oh_, ow_;
 
@@ -31,8 +28,7 @@ public:
 
 public:
   MkldnnActivation()
-    : engine_(new mkldnn::engine(mkldnn::engine::cpu, 0)),
-      bs_(0),
+    : bs_(0),
       oc_(0),
       oh_(0),
       ow_(0),

@@ -79,6 +79,7 @@ bool MkldnnAddtoLayer::reshapeOutput() {
 
 void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
   LOG(INFO) << "reset mkldnn forward of addto layer: " << config_.name();
+  mkldnn::engine eg = CpuEngine::Instance().getEngine();
   memory::dims botDims, topDims;
   memory::format botFmt, topFmt;
   if (!has_spatial_) {
@@ -104,11 +105,11 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
     real *botData = input->getData();
     const std::shared_ptr<memory::desc> prvMD = getPrev(i)->getTopDataMD();
     if (prvMD) {
-      dataBottoms_[i]->initUser(botData, *prvMD, *engine_);
+      dataBottoms_[i]->initUser(botData, *prvMD, eg);
       LOG(INFO) << "use prev format: " << DNN_FORMAT[dataBottoms_[i]->getUserFmt()];
       prvs.push_back(prvMD);
     } else {
-      dataBottoms_[i]->initUser(botData, botDims, botFmt, *engine_);
+      dataBottoms_[i]->initUser(botData, botDims, botFmt, eg);
     }
 
     botPDs.push_back(dataBottoms_[i]->getUserPD());
@@ -146,7 +147,7 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
     setTopDataMD(dataTop_->getUserMD());
     LOG(INFO) << "set next format: " << DNN_FORMAT[dataTop_->getUserFmt()];
   } else {
-    dataTop_->initUser(topData, topDims, topFmt, *engine_);
+    dataTop_->initUser(topData, topDims, topFmt, eg);
   }
 
   // init top cvt

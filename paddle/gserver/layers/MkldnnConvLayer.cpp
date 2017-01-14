@@ -140,6 +140,7 @@ bool MkldnnConvLayer::reshapeOutput() {
 
 void MkldnnConvLayer::resetDnnFwd(PassType passType) {
   LOG(INFO) << "reset mkldnn conv forward of layer: " << config_.name();
+  mkldnn::engine eg = CpuEngine::Instance().getEngine();
   // TODO(TJ): only care about i==0 by now
   memory::dims biasDims = {oc_};
   bool hasBias = (biases_ && biases_->getW()) ? true : false;
@@ -169,15 +170,15 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
     real *topData = getOutputValue()->getData();
     const std::shared_ptr<memory::desc> prvMD = getPrev(i)->getTopDataMD();
     if (prvMD) {
-      dataBot_->initUser(botData, *prvMD, *engine_);
+      dataBot_->initUser(botData, *prvMD, eg);
       LOG(INFO) << "use prev format: " << DNN_FORMAT[dataBot_->getUserFmt()];
     } else {
-      dataBot_->initUser(botData, botDims, memory::format::nchw, *engine_);
+      dataBot_->initUser(botData, botDims, memory::format::nchw, eg);
     }
     if (hasBias) {
       real *biasData = biases_->getW()->getData();
       dataBias_->initUser(biasData, dataBias_->getDefaultDims(),
-        memory::format::x, *engine_);
+        memory::format::x, eg);
     }
     // create conv desc from internal desc
     std::shared_ptr<convolution_forward::desc> fwdDesc;
@@ -200,13 +201,13 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
                           padding_kind::zero));
     }
     std::shared_ptr<mkldnn::convolution_forward::primitive_desc> convPD;
-    convPD.reset(new convolution_forward::primitive_desc(*fwdDesc, *engine_));
+    convPD.reset(new convolution_forward::primitive_desc(*fwdDesc, eg));
     // conv relu
     std::shared_ptr<convolution_relu_forward::primitive_desc> convReluPD;
     if(useConvRelu_) {
       std::shared_ptr<convolution_relu_forward::desc> convReluDesc;
       convReluDesc.reset(new convolution_relu_forward::desc(*fwdDesc, negativeSlope_));
-      convReluPD.reset(new convolution_relu_forward::primitive_desc(*convReluDesc, *engine_));
+      convReluPD.reset(new convolution_relu_forward::primitive_desc(*convReluDesc, eg));
     }
     // init cvt
     if (dataBot_->initCvt(convPD->src_primitive_desc(), dnnCvtUser2Internal)) {
@@ -221,7 +222,7 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
       weights_[i]->getW()->transpose(selfWgtData_[i], false);
       real *wgtData = selfWgtData_[i]->getData();
       dataWgt_->initUser(wgtData, wgtDims, (gp_[i] == 1) ?
-                   memory::format::oihw : memory::format::goihw, *engine_);
+                   memory::format::oihw : memory::format::goihw, eg);
       if (dataWgt_->initCvt(
         convPD->weights_primitive_desc(), dnnCvtUser2Internal)) {
         LOG(INFO) << "need reorder --- weight data: "
@@ -244,7 +245,7 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
     if (hasBias) {
       real *biasData = biases_->getW()->getData();
       dataBias_->initUser(
-        biasData, dataBias_->getDefaultDims(), memory::format::x, *engine_);
+        biasData, dataBias_->getDefaultDims(), memory::format::x, eg);
       if (dataBias_->initCvt(convPD->bias_primitive_desc(),
         dnnCvtUser2Internal)) {
         LOG(INFO) << "need reorder --- bias data: "
@@ -259,7 +260,7 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
       setTopDataMD(dataTop_->getUserMD());
       LOG(INFO) << "set next format: " << DNN_FORMAT[dataTop_->getUserFmt()];
     } else {
-      dataTop_->initUser(topData, topDims, memory::format::nchw, *engine_);
+      dataTop_->initUser(topData, topDims, memory::format::nchw, eg);
     }
     if (dataTop_->initCvt(convPD->dst_primitive_desc(), dnnCvtInternal2User)) {
       LOG(INFO) << "need reorder --- top data: "
@@ -309,10 +310,10 @@ void MkldnnConvLayer::resetDnnBwd() {
   
   const std::shared_ptr<mkldnn::memory::desc> inputDiffMD = getTopDiffMD();
   if (inputDiffMD) {
-    diffTop_->initUser(topdiff, *inputDiffMD, *engine_);
+    diffTop_->initUser(topdiff, *inputDiffMD, eg);
   } else {
     diffTop_->initUser(topdiff, diffTop_->getDefaultDims(),
-      memory::format::nchw, *engine_);
+      memory::format::nchw, eg);
   }
   
   if (hasBias) {
@@ -320,7 +321,7 @@ void MkldnnConvLayer::resetDnnBwd() {
     //only can execute with filter bakcward
     real* biasdiff = biases_->getWGrad()->getData();
     diffBias_.reset(new MkldnnBuffer(dataBias_->getDefaultDims()));
-    diffBias_->initUser(biasdiff, diffBias_->getDefaultDims(), memory::format::x, *engine_);
+    diffBias_->initUser(biasdiff, diffBias_->getDefaultDims(), memory::format::x, eg);
   }
   
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
@@ -337,7 +338,7 @@ void MkldnnConvLayer::resetDnnBwd() {
       // init weight diff user
       diffWgt_.reset(new MkldnnBuffer(dataWgt_->getDefaultDims()));
       diffWgt_->initUser(wgtdiff, diffWgt_->getDefaultDims(), 
-        memory::format(dataWgt_->getUserFmt()), *engine_);
+        memory::format(dataWgt_->getUserFmt()), eg);
     } else {
       LOG(FATAL) << "should have weight";
     //  continue;
@@ -375,9 +376,9 @@ void MkldnnConvLayer::resetDnnBwd() {
     }
     std::shared_ptr<convolution_forward::primitive_desc> bwdWgtFwdPD;
     bwdWgtFwdPD.reset(new convolution_forward::primitive_desc(
-      *bwdWgtFwdDesc, *engine_));
+      *bwdWgtFwdDesc, eg));
     bwdWgtPD_.reset(new convolution_backward_weights::primitive_desc(
-      *bwdWgtDesc, *engine_, *bwdWgtFwdPD));
+      *bwdWgtDesc, eg, *bwdWgtFwdPD));
     if (hasBias && diffBias_ != NULL) {
       if (diffBias_->initCvt(bwdWgtPD_->diff_bias_primitive_desc(),
         dnnCvtInternal2User)) {
@@ -425,16 +426,16 @@ void MkldnnConvLayer::resetDnnBwd() {
       diffTop_->getIntlMD(),
       strides, padding, padding, padding_kind::zero));
     std::shared_ptr<convolution_forward::primitive_desc> bwdDataFwdPD;
-    bwdDataFwdPD.reset(new convolution_forward::primitive_desc(*bwdDataFwdDesc, *engine_));
+    bwdDataFwdPD.reset(new convolution_forward::primitive_desc(*bwdDataFwdDesc, eg));
     bwdDataPD_.reset(new convolution_backward_data::primitive_desc(*bwdDataDesc,
-                        *engine_, *bwdDataFwdPD));
+                        eg, *bwdDataFwdPD));
     // init user memory and cvt
     real* botdiff = prevLayer->getOutputGrad()->getData();
     if (setDnnBotDiffFmt_[i]) {
       diffBot_->initUser(botdiff, bwdDataPD_->diff_src_primitive_desc());
       getPrev(i)->setTopDiffMD(diffBot_->getUserMD());
     } else {
-      diffBot_->initUser(botdiff, diffBot_->getDefaultDims(), memory::format::nchw, *engine_);
+      diffBot_->initUser(botdiff, diffBot_->getDefaultDims(), memory::format::nchw, eg);
     }
     if (diffBot_->initCvt(bwdDataPD_->diff_src_primitive_desc(), 
       dnnCvtInternal2User)) {
