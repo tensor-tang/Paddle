@@ -49,13 +49,13 @@ protected:
 public:
   explicit MkldnnFcLayer(const LayerConfig& config)
     : MkldnnLayer(config),
-      fwd_(NULL),
+      fwd_(nullptr),
       has_spatial_(false),
-      dataWgt_(NULL),
-      dataBias_(NULL),
-//      diffWgt_(NULL),
-//      diffBias_(NULL),
-//      bwdWgtPD_(NULL)
+      dataWgt_(nullptr),
+      dataBias_(nullptr),
+//      diffWgt_(nullptr),
+//      diffBias_(nullptr),
+//      bwdWgtPD_(nullptr)
       hasBias_(false)
     {}
 

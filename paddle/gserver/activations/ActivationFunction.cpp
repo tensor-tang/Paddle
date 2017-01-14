@@ -224,8 +224,8 @@ public:
     mkldnn::engine eg = CpuEngine::Instance().getEngine();
 
     real* pdata = arg.value->getData();
-    dataBot_.reset(new mkldnn::memory({*srcMD_, eg}, pdata));
-    dataTop_.reset(new mkldnn::memory({*dstMD_, eg}, pdata));
+    dataBot_.reset(new mkldnn::memory({*md_, eg}, pdata));
+    dataTop_.reset(new mkldnn::memory({*md_, eg}, pdata));
     // TODO(TJ): check if OK use same pdata?
     // in forward src and dst memory can be the same,
     // but in backward not sure it's OK if they are the same, need double check
@@ -236,7 +236,7 @@ public:
     negative_slope = -0.f;
 
     auto reluMD = mkldnn::relu_forward::desc(
-      mkldnn::prop_kind::forward_training, *srcMD_, negative_slope);
+      mkldnn::prop_kind::forward_training, *md_, negative_slope);
     auto reluPD = mkldnn::relu_forward::primitive_desc(reluMD, eg);
     reluFwd_.reset(new mkldnn::relu_forward(reluPD, *dataBot_, *dataTop_));
 
@@ -313,8 +313,8 @@ public:
     mkldnn::engine eg = CpuEngine::Instance().getEngine();
 
     real* pdata = arg.value->getData();
-    dataBot_.reset(new mkldnn::memory({*srcMD_, eg}, pdata));
-    dataTop_.reset(new mkldnn::memory({*dstMD_, eg}, pdata));
+    dataBot_.reset(new mkldnn::memory({*md_, eg}, pdata));
+    dataTop_.reset(new mkldnn::memory({*md_, eg}, pdata));
     // TODO(TJ): check if OK use same pdata?
     // in forward src and dst memory can be the same,
     // but in backward not sure it's OK if they are the same, need double check
@@ -324,7 +324,7 @@ public:
     axis = 1;  // 1 means bs*nc, 0 means nc*bs
     // only support forward_scoring by now
     auto softmaxMD = mkldnn::softmax_forward::desc(
-      mkldnn::prop_kind::forward_scoring, *srcMD_, axis);
+      mkldnn::prop_kind::forward_scoring, *md_, axis);
     auto softmaxPD = mkldnn::softmax_forward::primitive_desc(
       softmaxMD, eg);
     softmaxFwd_.reset(new mkldnn::softmax_forward(

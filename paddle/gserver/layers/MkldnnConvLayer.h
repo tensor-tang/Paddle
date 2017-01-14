@@ -58,12 +58,12 @@ public:
   explicit MkldnnConvLayer(const LayerConfig& config)
     : MkldnnLayer(config),
       fwd_(nullptr),
-      bwdDataPD_(NULL),
-      bwdWgtPD_(NULL),
-      dataWgt_(NULL),
-      dataBias_(NULL),
-      diffWgt_(NULL),
-      diffBias_(NULL),
+      bwdDataPD_(nullptr),
+      bwdWgtPD_(nullptr),
+      dataWgt_(nullptr),
+      dataBias_(nullptr),
+      diffWgt_(nullptr),
+      diffBias_(nullptr),
       hasRelu_(false),
       useConvRelu_(false),
       negativeSlope_(-0.0)

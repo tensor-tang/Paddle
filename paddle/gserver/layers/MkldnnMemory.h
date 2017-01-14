@@ -36,9 +36,9 @@ protected:
 public:
   explicit MkldnnBuffer(
     mkldnn::memory::data_type tp = mkldnn::memory::data_type::f32) :
-    pUser_(NULL),
-    pIntl_(NULL),
-    pCvt_(NULL),
+    pUser_(nullptr),
+    pIntl_(nullptr),
+    pCvt_(nullptr),
     type_(dnnCvtNone),
     hasCvted_(false) {
     if (tp != mkldnn::memory::data_type::f32)

@@ -36,7 +36,7 @@ protected:
 public:
   explicit MkldnnAddtoLayer(const LayerConfig& config)
     : MkldnnLayer(config),
-      fwdPD_(NULL)
+      fwdPD_(nullptr)
     {}
 
   ~MkldnnAddtoLayer() {}

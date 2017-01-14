@@ -44,10 +44,10 @@ public:
 public:
   explicit MkldnnLayer(const LayerConfig& config)
     : Layer(config),
-      dataBot_(NULL),
-      dataTop_(NULL),
-      diffBot_(NULL),
-      diffTop_(NULL),
+      dataBot_(nullptr),
+      dataTop_(nullptr),
+      diffBot_(nullptr),
+      diffTop_(nullptr),
       needResetBwd_(true),
       setDnnTopDataFmt_(false)
     {}

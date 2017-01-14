@@ -33,9 +33,9 @@ protected:
 public:
   explicit MkldnnPoolLayer(const LayerConfig& config)
     : MkldnnLayer(config),
-      fwd_(NULL),
-      workspace_(NULL)
-//      bwdWgtPD_(NULL)
+      fwd_(nullptr),
+      workspace_(nullptr)
+//      bwdWgtPD_(nullptr)
     {}
 
   ~MkldnnPoolLayer() {}

@@ -20,8 +20,7 @@ public:
   int bs_, oc_, oh_, ow_;
 
   // mkldnn
-  std::shared_ptr<mkldnn::memory::desc> srcMD_;
-  std::shared_ptr<mkldnn::memory::desc> dstMD_;
+  std::shared_ptr<mkldnn::memory::desc> md_;
   std::shared_ptr<mkldnn::memory> dataBot_;
   std::shared_ptr<mkldnn::memory> dataTop_;
   bool needResetBwd_;
@@ -32,12 +31,11 @@ public:
       oc_(0),
       oh_(0),
       ow_(0),
-      srcMD_(NULL),
-      dstMD_(NULL),
-      dataBot_(NULL),
-      dataTop_(NULL),
-    //  diffBot_(NULL),
-    //  diffTop_(NULL),
+      md_(nullptr),
+      dataBot_(nullptr),
+      dataTop_(nullptr),
+    //  diffBot_(nullptr),
+    //  diffTop_(nullptr),
       needResetBwd_(true)
     {}
 
@@ -74,9 +72,7 @@ public:
       ow_ = 1;
       oc_ = arg.value->getElementCnt()/(bs_*oh_*ow_);
       mkldnn::memory::dims dm = {bs_, oc_};
-      srcMD_.reset(new mkldnn::memory::desc(dm, mkldnn::memory::data_type::f32,
-        mkldnn::memory::format::nc));
-      dstMD_.reset(new mkldnn::memory::desc(dm, mkldnn::memory::data_type::f32,
+      md_.reset(new mkldnn::memory::desc(dm, mkldnn::memory::data_type::f32,
         mkldnn::memory::format::nc));
     } else {
       CHECK(oh_ != 0 && ow_ != 0) << "neither should be zero";
@@ -86,15 +82,13 @@ public:
         std::static_pointer_cast<mkldnn::memory::desc> (topDataMD);
 
       if (md) {
-        srcMD_ = md;
-        dstMD_ = md;
+        md_ = md;
         LOG(INFO) << "use prev format";
       } else {
         mkldnn::memory::dims dm = {bs_, oc_, oh_, ow_};
         mkldnn::memory::data_type type = mkldnn::memory::data_type::f32;
         mkldnn::memory::format fmt = mkldnn::memory::format::nchw;
-        srcMD_.reset(new mkldnn::memory::desc(dm, type, fmt));
-        dstMD_.reset(new mkldnn::memory::desc(dm, type, fmt));
+        md_.reset(new mkldnn::memory::desc(dm, type, fmt));
       }
     }
   }

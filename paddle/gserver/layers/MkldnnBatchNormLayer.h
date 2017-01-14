@@ -107,14 +107,14 @@ protected:
 public:
   explicit MkldnnBatchNormLayer(const LayerConfig& config)
     : MkldnnLayer(config),
-      fwdPD_(NULL),
+      fwdPD_(nullptr),
       usePaddleFmt_(true),
-      wgtScaleShift_(NULL),
-      mean_(NULL),
-      var_(NULL),
-//      diffWgt_(NULL),
-//      diffBias_(NULL),
-//      bwdWgtPD_(NULL)
+      wgtScaleShift_(nullptr),
+      mean_(nullptr),
+      var_(nullptr),
+//      diffWgt_(nullptr),
+//      diffBias_(nullptr),
+//      bwdWgtPD_(nullptr)
       useScaleShift_(true),
       useEx_(false)
     {}
