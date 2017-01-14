@@ -414,11 +414,11 @@ void MkldnnBatchNormLayer::myFwd(PassType passType) {
   }
   /// all sumbit cvt should be clear
   clearAllCvtFlags();
-  std::vector<primitive> fwd;
+  std::vector<primitive> pipeline;
 
   // data bottom
   real *botdata = getPrev(0)->getOutputValue()->getData();
-  dataBot_->submitCvt(fwd, botdata);
+  dataBot_->submitCvt(pipeline, botdata);
 
   // data wgt
   if (useScaleShift_) {
@@ -436,7 +436,7 @@ void MkldnnBatchNormLayer::myFwd(PassType passType) {
       LOG(FATAL) << "should not come here so far!!!";
     }
     real *wgtdata = myScaleShift_->getData();
-    wgtScaleShift_->submitCvt(fwd, wgtdata);
+    wgtScaleShift_->submitCvt(pipeline, wgtdata);
   }
   if (useGlobalStats_) {
     if (firstTest_) {
@@ -451,9 +451,9 @@ void MkldnnBatchNormLayer::myFwd(PassType passType) {
   if (passType == PASS_TEST) {
     if (useGlobalStats_) {
       // mean and var are inputs, submit them before BN fwd
-      mean_->submitCvt(fwd, localMean_->getData());
-      var_->submitCvt(fwd, localVar_->getData());
-      fwd.push_back(useScaleShift_
+      mean_->submitCvt(pipeline, localMean_->getData());
+      var_->submitCvt(pipeline, localVar_->getData());
+      pipeline.push_back(useScaleShift_
           ? batch_normalization_forward(*fwdPD_, *dataBot_->getIntlMem(),
               (const primitive::at)(*mean_->getIntlMem()),
               (const primitive::at)(*var_->getIntlMem()),
@@ -464,7 +464,7 @@ void MkldnnBatchNormLayer::myFwd(PassType passType) {
               *dataTop_->getIntlMem()));
     } else {
       // LOG(INFO) << "testing and use local mean and var";
-      fwd.push_back(useScaleShift_
+      pipeline.push_back(useScaleShift_
         ? batch_normalization_forward(*fwdPD_, *dataBot_->getIntlMem(),
             *wgtScaleShift_->getIntlMem(),
             *dataTop_->getIntlMem())
@@ -474,7 +474,7 @@ void MkldnnBatchNormLayer::myFwd(PassType passType) {
   } else {
     CHECK(useGlobalStats_ == false)
       << "useGlobalStats shoud not happed in train";
-    fwd.push_back(useScaleShift_
+    pipeline.push_back(useScaleShift_
           ? batch_normalization_forward(*fwdPD_, *dataBot_->getIntlMem(),
               *wgtScaleShift_->getIntlMem(),
               *dataTop_->getIntlMem(),
@@ -483,8 +483,8 @@ void MkldnnBatchNormLayer::myFwd(PassType passType) {
               *dataTop_->getIntlMem(),
               *mean_->getIntlMem(), *var_->getIntlMem()));
     // mean and var are outputs, submit them after BN fwd
-    mean_->submitCvt(fwd, localMean_->getData());
-    var_->submitCvt(fwd, localVar_->getData());
+    mean_->submitCvt(pipeline, localMean_->getData());
+    var_->submitCvt(pipeline, localVar_->getData());
   }
   /*
   if (passType == PASS_TEST && !useGlobalStats_) {
@@ -526,12 +526,12 @@ void MkldnnBatchNormLayer::myFwd(PassType passType) {
 */
   // submit top after BN fwd
   real *topdata = getOutputValue()->getData();
-  dataTop_->submitCvt(fwd, topdata);
+  dataTop_->submitCvt(pipeline, topdata);
 // LOG(INFO) << botdata[1] << "," << localMean_->getData()[1] << "," <<
 // localVar_->getData()[1] << "," << myScaleShift_->getData()[1] << topdata[1];
   // start forward
   REGISTER_TIMER_INFO("mkldnn_BN_Fwd", getName().c_str());
-  stream(stream::kind::eager).submit(fwd).wait();
+  stream(stream::kind::eager).submit(pipeline).wait();
 
   if (passType == PASS_TRAIN && !useGlobalStats_) {
     // LOG(INFO) << "cal moving .............. should not in testing";

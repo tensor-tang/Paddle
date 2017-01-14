@@ -17,8 +17,8 @@ namespace paddle {
  */
 class MkldnnFcLayer : public MkldnnLayer {
 protected:
-  /// For dnn fc. Primitive Desc
-  std::shared_ptr<mkldnn::inner_product_forward::primitive_desc> fwdPD_;
+  std::shared_ptr<mkldnn::inner_product_forward::primitive> fwd_;
+  
   // std::shared_ptr<convolution_backward_data::primitive_desc> bwdDataPD_;
   // std::shared_ptr<convolution_backward_weights::primitive_desc> bwdWgtPD_;
 
@@ -49,7 +49,7 @@ protected:
 public:
   explicit MkldnnFcLayer(const LayerConfig& config)
     : MkldnnLayer(config),
-      fwdPD_(NULL),
+      fwd_(NULL),
       has_spatial_(false),
       dataWgt_(NULL),
       dataBias_(NULL),

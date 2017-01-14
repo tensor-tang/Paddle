@@ -194,10 +194,11 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
         prvMD ? dataBot_->getUserMD() : dataBot_->getMDAny(),
         dataWgt_->getMDAny(), dataTop_->getMDAny()));
   }
-  fwdPD_.reset(new inner_product_forward::primitive_desc(*fwdDesc, eg));
+  std::shared_ptr<mkldnn::inner_product_forward::primitive_desc> fwdPD;
+  fwdPD.reset(new inner_product_forward::primitive_desc(*fwdDesc, eg));
   // init cvt
   if (dataBot_->initCvt(
-    fwdPD_->src_primitive_desc(), dnnCvtUser2Internal)) {
+    fwdPD->src_primitive_desc(), dnnCvtUser2Internal)) {
     LOG(INFO) << "need reorder --- bottom data: "
       << DNN_FORMAT[dataBot_->getUserFmt()]
       << " >>>>> "
@@ -208,7 +209,7 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
     real *wgtData = selfWgtData_[0]->getData();
     dataWgt_->initUser(wgtData, wgtDims, wgtFmt, eg);
     if (dataWgt_->initCvt(
-      fwdPD_->weights_primitive_desc(), dnnCvtUser2Internal)) {
+      fwdPD->weights_primitive_desc(), dnnCvtUser2Internal)) {
       LOG(INFO) << "need reorder --- weight data: "
         << DNN_FORMAT[dataWgt_->getUserFmt()]
         << " >>>>> "
@@ -222,12 +223,12 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   } else {
     // TODO(TJ): initial wgt data with input format
     real *wgtData = weights_[0]->getW()->getData();
-    dataWgt_->initUser(wgtData, fwdPD_->weights_primitive_desc());
+    dataWgt_->initUser(wgtData, fwdPD->weights_primitive_desc());
     dataWgt_->initCvt(dataWgt_->getUserPD(), dnnCvtUser2Internal);
   }
   if (hasBias_) {
     if (dataBias_->initCvt(
-      fwdPD_->bias_primitive_desc(), dnnCvtUser2Internal)) {
+      fwdPD->bias_primitive_desc(), dnnCvtUser2Internal)) {
       LOG(INFO) << "need reorder --- bias data: "
         << DNN_FORMAT[dataBias_->getUserFmt()]
         << " >>>>> "
@@ -236,18 +237,27 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   }
   // init top user memory and cvt
   if (setDnnTopDataFmt_) {
-    dataTop_->initUser(topData, fwdPD_->dst_primitive_desc());
+    dataTop_->initUser(topData, fwdPD->dst_primitive_desc());
     setTopDataMD(dataTop_->getUserMD());
     LOG(INFO) << "set next format: " << DNN_FORMAT[dataTop_->getUserFmt()];
   } else {
     dataTop_->initUser(topData, topDims, topFmt, eg);
   }
   if (dataTop_->initCvt
-    (fwdPD_->dst_primitive_desc(), dnnCvtInternal2User)) {
+    (fwdPD->dst_primitive_desc(), dnnCvtInternal2User)) {
     LOG(INFO) << "need reorder --- top data: "
       << DNN_FORMAT[dataTop_->getIntlFmt()]
       << " >>>>> "
       << DNN_FORMAT[dataTop_->getUserFmt()];
+  }
+  if (hasBias_) {
+    fwd_.reset(new inner_product_forward(*fwdPD,
+      *(dataBot_->getIntlMem()), *(dataWgt_->getIntlMem()),
+      *(dataBias_->getIntlMem()), *(dataTop_->getIntlMem())));
+  } else {
+    fwd_.reset(new inner_product_forward(*fwdPD,
+      *(dataBot_->getIntlMem()), *(dataWgt_->getIntlMem()),
+      *(dataTop_->getIntlMem())));
   }
   LOG(INFO) << "data format flow --- "
     << DNN_FORMAT[dataBot_->getUserFmt()] << " >>> ("
@@ -267,31 +277,21 @@ void MkldnnFcLayer::myFwd(PassType passType) {
   CHECK(getInput(0).value) << "The input of 'fc' layer must be matrix";
   real *botdata = getPrev(0)->getOutputValue()->getData();
   real *topdata = getOutputValue()->getData();
-  std::vector<primitive> fwd;
-  dataBot_->submitCvt(fwd, botdata);
+  std::vector<primitive> pipeline;
+  dataBot_->submitCvt(pipeline, botdata);
 
   if (usePaddleFmt_ && passType == PASS_TRAIN) {
     weights_[0]->getW()->transpose(selfWgtData_[0], false);
     real *wgtdata = selfWgtData_[0]->getData();
-    dataWgt_->submitCvt(fwd, wgtdata);
+    dataWgt_->submitCvt(pipeline, wgtdata);
   }  // else do not need cvt wgt
+  pipeline.push_back(*fwd_);
 
-  if (hasBias_) {
-    real *biasdata = biases_->getW()->getData();
-    dataBias_->submitCvt(fwd, biasdata);
-    fwd.push_back(inner_product_forward(*fwdPD_,
-      *(dataBot_->getIntlMem()), *(dataWgt_->getIntlMem()),
-      *(dataBias_->getIntlMem()), *(dataTop_->getIntlMem())));
-  } else {
-    fwd.push_back(inner_product_forward(*fwdPD_,
-      *(dataBot_->getIntlMem()), *(dataWgt_->getIntlMem()),
-      *(dataTop_->getIntlMem())));
-  }
-  dataTop_->submitCvt(fwd, topdata);
+  dataTop_->submitCvt(pipeline, topdata);
 
   // start forward
   REGISTER_TIMER_INFO("mkldnn_FcFwd", getName().c_str());
-  stream(stream::kind::eager).submit(fwd).wait();
+  stream(stream::kind::eager).submit(pipeline).wait();
 //  LOG(INFO) << "my-" << topdata[0] << "," << topdata[1] << "," << topdata[2];
 
   // activation

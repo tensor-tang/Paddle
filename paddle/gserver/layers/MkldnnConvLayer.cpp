@@ -268,12 +268,6 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
         << " >>>>> "
         << DNN_FORMAT[dataTop_->getUserFmt()];
     }
-    LOG(INFO) << "data format flow --- "
-      << DNN_FORMAT[dataBot_->getUserFmt()] << " >>> ("
-      << DNN_FORMAT[dataBot_->getIntlFmt()] << " >>> "
-      << DNN_FORMAT[dataTop_->getIntlFmt()] << ") >>> "
-      << DNN_FORMAT[dataTop_->getUserFmt()];
-
     if (biases_ && biases_->getW()) {
       // only for shared bias
       // TODO(TJ): enable unshared bias
@@ -297,7 +291,12 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
               *(dataTop_->getIntlMem())));
       }
     }
-  }
+    LOG(INFO) << "data format flow --- "
+      << DNN_FORMAT[dataBot_->getUserFmt()] << " >>> ("
+      << DNN_FORMAT[dataBot_->getIntlFmt()] << " >>> "
+      << DNN_FORMAT[dataTop_->getIntlFmt()] << ") >>> "
+      << DNN_FORMAT[dataTop_->getUserFmt()];
+  } 
 }
 
 void MkldnnConvLayer::resetDnnBwd() {
@@ -460,22 +459,22 @@ void MkldnnConvLayer::submitFwdOnce(PassType passType, int inputIdx,
   const MatrixPtr& botVal, const MatrixPtr& topVal) {
   real* botdata = botVal->getData();
   real* topdata = topVal->getData();
-  std::vector<primitive> convFwd;
+  std::vector<primitive> pipeline;
 
-  dataBot_->submitCvt(convFwd, botdata);
+  dataBot_->submitCvt(pipeline, botdata);
 
   if (usePaddleFmt_ && passType == PASS_TRAIN) {
     weights_[inputIdx]->getW()->transpose(selfWgtData_[inputIdx], false);
     real* wgtdata = selfWgtData_[inputIdx]->getData();
-    dataWgt_->submitCvt(convFwd, wgtdata);
+    dataWgt_->submitCvt(pipeline, wgtdata);
   }
-  convFwd.push_back(*fwd_);
+  pipeline.push_back(*fwd_);
 
-  dataTop_->submitCvt(convFwd, topdata);
+  dataTop_->submitCvt(pipeline, topdata);
 
   // start forward
   REGISTER_TIMER_INFO("dnnFwd", getName().c_str());
-  stream(stream::kind::eager).submit(convFwd).wait();
+  stream(stream::kind::eager).submit(pipeline).wait();
 }
 
 void MkldnnConvLayer::submitBwdData(

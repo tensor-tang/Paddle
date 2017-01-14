@@ -168,21 +168,21 @@ void MkldnnAddtoLayer::myFwd(PassType passType) {
   /// all sumbit cvt should be clear
   clearAllCvtFlags();
 
-  std::vector<primitive> fwd;
+  std::vector<primitive> pipeline;
   std::vector<primitive::at> srcs;
 
   for (size_t i = 0; i < inputLayers_.size(); i++) {
     real *botdata = getPrev(i)->getOutputValue()->getData();
-    dataBottoms_[i]->submitCvt(fwd, botdata);
+    dataBottoms_[i]->submitCvt(pipeline, botdata);
     srcs.push_back(*(dataBottoms_[i]->getIntlMem()));
   }
-  fwd.push_back(mkldnn::sum(*fwdPD_, srcs, *(dataTop_->getIntlMem())));
+  pipeline.push_back(mkldnn::sum(*fwdPD_, srcs, *(dataTop_->getIntlMem())));
   real *topdata = getOutputValue()->getData();
-  dataTop_->submitCvt(fwd, topdata);
+  dataTop_->submitCvt(pipeline, topdata);
 
   // start forward
   REGISTER_TIMER_INFO("mkldnn_AddtoFwd", getName().c_str());
-  stream(stream::kind::eager).submit(fwd).wait();
+  stream(stream::kind::eager).submit(pipeline).wait();
 //  LOG(INFO) << "my-" << topdata[0] << "," << topdata[1] << "," << topdata[2];
 }
 

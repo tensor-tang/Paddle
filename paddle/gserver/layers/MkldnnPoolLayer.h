@@ -17,8 +17,7 @@ namespace paddle {
  */
 class MkldnnPoolLayer : public MkldnnLayer {
 protected:
-  /// For dnn pooling. Primitive Desc
-  std::shared_ptr<mkldnn::pooling_forward::primitive_desc> fwdPD_;
+  std::shared_ptr<mkldnn::pooling_forward::primitive> fwd_;
   // std::shared_ptr<convolution_backward_data::primitive_desc> bwdDataPD_;
   // std::shared_ptr<convolution_backward_weights::primitive_desc> bwdWgtPD_;
 
@@ -34,7 +33,7 @@ protected:
 public:
   explicit MkldnnPoolLayer(const LayerConfig& config)
     : MkldnnLayer(config),
-      fwdPD_(NULL),
+      fwd_(NULL),
       workspace_(NULL)
 //      bwdWgtPD_(NULL)
     {}

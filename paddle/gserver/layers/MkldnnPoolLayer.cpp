@@ -137,17 +137,18 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
       << " >>>>> "
       << DNN_FORMAT[dataBot_->getIntlFmt()];
   }
-  fwdPD_.reset(new pooling_forward::primitive_desc(*fwdDesc, eg));
+  std::shared_ptr<pooling_forward::primitive_desc> fwdPD;
+  fwdPD.reset(new pooling_forward::primitive_desc(*fwdDesc, eg));
 
   // init top user memory and cvt
   if (setDnnTopDataFmt_) {
-    dataTop_->initUser(topData, fwdPD_->dst_primitive_desc());
+    dataTop_->initUser(topData, fwdPD->dst_primitive_desc());
     setTopDataMD(dataTop_->getUserMD());
     LOG(INFO) << "set next format: " << DNN_FORMAT[dataTop_->getUserFmt()];
   } else {
     dataTop_->initUser(topData, topDims, memory::format::nchw, eg);
   }
-  if (dataTop_->initCvt(fwdPD_->dst_primitive_desc(), dnnCvtInternal2User)) {
+  if (dataTop_->initCvt(fwdPD->dst_primitive_desc(), dnnCvtInternal2User)) {
     LOG(INFO) << "need reorder --- top data: "
       << DNN_FORMAT[dataTop_->getIntlFmt()]
       << " >>>>> "
@@ -156,12 +157,20 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
 
   withWorkspace_ = passType != PASS_TEST && poolAlgo_ != algorithm::pooling_avg;
   if (withWorkspace_) {
-    workspace_.reset(new memory(fwdPD_->workspace_primitive_desc()));
+    workspace_.reset(new memory(fwdPD->workspace_primitive_desc()));
   } else {
     auto p_workspace_desc = memory::primitive_desc(
       {{}, memory::data_type::f32, memory::format(dataTop_->getIntlFmt())},
       eg);
     workspace_.reset(new memory(p_workspace_desc));
+  }
+  if (withWorkspace_) {
+    fwd_.reset(new pooling_forward(*fwdPD,
+      *(dataBot_->getIntlMem()), *(dataTop_->getIntlMem()),
+      *workspace_));
+  } else {
+    fwd_.reset(new pooling_forward(*fwdPD,
+      *(dataBot_->getIntlMem()), *(dataTop_->getIntlMem())));
   }
   LOG(INFO) << "data format flow --- "
     << DNN_FORMAT[dataBot_->getUserFmt()] << " >>> ("
@@ -333,22 +342,15 @@ void MkldnnPoolLayer::myFwd(PassType passType) {
   real *botdata = getPrev(0)->getOutputValue()->getData();
   real *topdata = getOutputValue()->getData();
 
-  std::vector<primitive> poolFwd;
-  dataBot_->submitCvt(poolFwd, botdata);
+  std::vector<primitive> pipeline;
+  dataBot_->submitCvt(pipeline, botdata);
 
-  if (withWorkspace_) {
-    poolFwd.push_back(pooling_forward(*fwdPD_,
-      *(dataBot_->getIntlMem()), *(dataTop_->getIntlMem()),
-      *workspace_));
-  } else {
-    poolFwd.push_back(pooling_forward(*fwdPD_,
-      *(dataBot_->getIntlMem()), *(dataTop_->getIntlMem())));
-  }
-  dataTop_->submitCvt(poolFwd, topdata);
+  pipeline.push_back(*fwd_);
+  dataTop_->submitCvt(pipeline, topdata);
 
   // start forward
   REGISTER_TIMER_INFO("mkldnnPoolFwd", getName().c_str());
-  stream(stream::kind::eager).submit(poolFwd).wait();
+  stream(stream::kind::eager).submit(pipeline).wait();
 //  LOG(INFO) << "------------" << topdata[0];
 // << "," << topdata[1] << "," << topdata[2];
 }
