@@ -15,12 +15,38 @@
 
 
 ## Find MKL First.
+# TODO(TJ): enable with MKL Lite library
+#           when figure out how to deal with mkl.h and mkl_lapacke.h within MKL Lite
 set(MKL_ROOT $ENV{MKL_ROOT} CACHE PATH "Folder contains MKL")
 
 find_path(MKL_INCLUDE_DIR mkl.h PATHS
   ${MKL_ROOT}/include)
 find_path(MKL_INCLUDE_DIR mkl_lapacke.h PATHS
   ${MKL_ROOT}/include)
+find_library(MKL_RT_LIB NAMES mkl_rt PATHS
+  ${MKL_ROOT}/lib
+  ${MKL_ROOT}/lib/intel64)
+
+if(MKL_INCLUDE_DIR AND MKL_RT_LIB)
+  set(CBLAS_PROVIDER MKL)
+  set(CBLAS_INC_DIR ${MKL_INCLUDE_DIR})
+  set(CBLAS_LIBS ${MKL_RT_LIB})
+  # If MKL and OpenMP is to be used then use Intel OpenMP
+  find_library(MKL_INTEL_OMP NAMES iomp5 PATHS
+    ${MKL_ROOT}/lib
+    ${MKL_ROOT}/lib/intel64)
+  if(WITH_OPENMP AND OPENMP_FOUND AND MKL_INTEL_OMP)
+    set(IOMP_LD_FLAGS "-Wl,--as-needed -liomp5")
+    set(IOMP_LIBS "${MKL_INTEL_OMP}")
+    list(APPEND CBLAS_LIBS ${MKL_INTEL_OMP})
+    set(WITH_IOMP TRUE)
+    message(STATUS "Found Intel OpenMP (${IOMP_LIBS})")
+  endif()
+  add_definitions(-DPADDLE_USE_MKL)
+  message(STATUS "Found MKL (include: ${CBLAS_INC_DIR}, library: ${CBLAS_LIBS})")
+  return() # return file.
+endif()
+
 find_library(MKL_CORE_LIB NAMES mkl_core PATHS
   ${MKL_ROOT}/lib
   ${MKL_ROOT}/lib/intel64)

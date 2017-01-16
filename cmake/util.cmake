@@ -114,7 +114,15 @@ function(link_paddle_exe TARGET_NAME)
         ${INTERAL_LIBS}
         ${CMAKE_DL_LIBS})
 
+    if(WITH_IOMP)
+        target_link_libraries(${TARGET_NAME}
+            ${IOMP_LD_FLAGS}
+#            ${IOMP_LIBS}
+            )
+    endif()
+
     if(WITH_MKLDNN)
+    # should keep after iomp
         target_link_libraries(${TARGET_NAME}
             ${MKLDNN_LIBS})
     endif()
