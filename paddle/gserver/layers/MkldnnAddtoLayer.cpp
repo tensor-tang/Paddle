@@ -116,13 +116,7 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
     scales_.push_back(1.0);  // no scale here
 
     // init bot cvt
-    if (dataBottoms_[i]->initCvt(
-      dataBottoms_[i]->getUserPD(), dnnCvtUser2Internal)) {
-      LOG(INFO) << "need reorder --- bottom data: "
-        << DNN_FORMAT[dataBot_->getUserFmt()]
-        << " >>>>> "
-        << DNN_FORMAT[dataBot_->getIntlFmt()];
-    }
+    dataBottoms_[i]->initIntlCvt(dataBottoms_[i]->getUserPD(), dnnCvtNoNeed);
   }
   // inputs format should be all the same
   CHECK(prvs.size() == 0 || prvs.size() == inputLayers_.size())
@@ -150,7 +144,7 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
   }
 
   // init top cvt
-  if (dataTop_->initCvt(fwdPD_->dst_primitive_desc(), dnnCvtInternal2User)) {
+  if (dataTop_->initIntlCvt(fwdPD_->dst_primitive_desc(), dnnCvtInternal2User)) {
     LOG(INFO) << "need reorder --- top data: "
       << DNN_FORMAT[dataTop_->getIntlFmt()]
       << " >>>>> "

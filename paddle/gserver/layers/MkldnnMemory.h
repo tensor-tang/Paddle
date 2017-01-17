@@ -78,7 +78,7 @@ public:
 
   // internal primitive desc
   mkldnn::memory::primitive_desc getIntlPD() {
-    CHECK(pIntl_) << "haven't init internal layout, call initCvt firstly";
+    CHECK(pIntl_) << "haven't init internal layout, call initIntlCvt firstly";
     return pIntl_->get_primitive_desc();
   }
 
@@ -101,7 +101,7 @@ public:
   }
 
   mkldnn::memory::desc getIntlMD() {
-    CHECK(pIntl_) << "haven't init internal layout, call initCvt firstly";
+    CHECK(pIntl_) << "haven't init internal layout, call initIntlCvt firstly";
     return pIntl_->get_primitive_desc().desc();
   }
 
@@ -109,21 +109,23 @@ public:
     hasCvted_ = false;
   }
 
-  // init conversion(reorder) return true if need cvt.
-  bool initCvt(mkldnn::memory::primitive_desc intlPD, int cvtType) {
-    CHECK(cvtType == dnnCvtUser2Internal || cvtType == dnnCvtInternal2User) <<
-      "please specify one type of conversion";
-
+  // init internal and conversion(reorder)
+  // return true if need cvt.
+  bool initIntlCvt(mkldnn::memory::primitive_desc intlPD, int cvtType) {
+    CHECK(cvtType == dnnCvtUser2Internal || cvtType == dnnCvtInternal2User
+      || cvtType == dnnCvtNoNeed) << "please specify one type of conversion";
     CHECK(pUser_)
-      << "need create user layout before init conversion, call initUser";
-    CHECK(pIntl_ == NULL) << "internal memory should be empty before initCvt";
+      << "call initUser before init internal layout and conversion";
+    CHECK(pIntl_ == NULL) << "internal memory should be empty before initIntlCvt";
     pIntl_ = pUser_;
     type_ = cvtType;
     clearCvtFlag();
-    if (intlPD != getUserPD()) {
+    if (cvtType == dnnCvtNoNeed || intlPD == getUserPD()) {
+      type_ = dnnCvtNoNeed;
+      return false;
+    } else {
       // allocate internal src memory from user
       this->pIntl_.reset(new mkldnn::memory(intlPD));
-
       // create a reorder
       if (cvtType == dnnCvtUser2Internal) {
         this->pCvt_.reset(new mkldnn::reorder(*pUser_, *pIntl_));
@@ -131,9 +133,6 @@ public:
         this->pCvt_.reset(new mkldnn::reorder(*pIntl_, *pUser_));
       }
       return true;
-    } else {
-      type_ = dnnCvtNoNeed;
-      return false;
     }
   }
 

@@ -131,12 +131,7 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
                     strides, kernel, padding, padding,
                     padding_kind::zero));
   // init cvt
-  if (dataBot_->initCvt(dataBot_->getUserPD(), dnnCvtUser2Internal)) {
-    LOG(INFO) << "need reorder --- bottom data: "
-      << DNN_FORMAT[dataBot_->getUserFmt()]
-      << " >>>>> "
-      << DNN_FORMAT[dataBot_->getIntlFmt()];
-  }
+  dataBot_->initIntlCvt(dataBot_->getUserPD(), dnnCvtNoNeed);
   std::shared_ptr<pooling_forward::primitive_desc> fwdPD;
   fwdPD.reset(new pooling_forward::primitive_desc(*fwdDesc, eg));
 
@@ -148,7 +143,7 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
   } else {
     dataTop_->initUser(topData, topDims, memory::format::nchw, eg);
   }
-  if (dataTop_->initCvt(fwdPD->dst_primitive_desc(), dnnCvtInternal2User)) {
+  if (dataTop_->initIntlCvt(fwdPD->dst_primitive_desc(), dnnCvtInternal2User)) {
     LOG(INFO) << "need reorder --- top data: "
       << DNN_FORMAT[dataTop_->getIntlFmt()]
       << " >>>>> "
@@ -259,7 +254,7 @@ void MkldnnPoolLayer::resetDnnBwd() {
     bwdWgtPD_.reset(new convolution_backward_weights::primitive_desc(
       *bwdWgtDesc, eg, *bwdWgtFwdPD));
     if (hasBias && diffBias_ != NULL) {
-      if (diffBias_->initCvt(bwdWgtPD_->diff_bias_primitive_desc(),
+      if (diffBias_->initIntlCvt(bwdWgtPD_->diff_bias_primitive_desc(),
         dnnCvtInternal2User)) {
         LOG(INFO) << "need reorder --- bias diff: "
           << DNN_FORMAT[diffBias_->getIntlFmt()]
@@ -267,14 +262,14 @@ void MkldnnPoolLayer::resetDnnBwd() {
           << DNN_FORMAT[diffBias_->getUserFmt()];
       }
     }
-    if (diffWgt_->initCvt(bwdWgtPD_->diff_weights_primitive_desc(),
+    if (diffWgt_->initIntlCvt(bwdWgtPD_->diff_weights_primitive_desc(),
       dnnCvtInternal2User)) {
       LOG(INFO) << "need reorder --- weight diff: "
         << DNN_FORMAT[diffWgt_->getIntlFmt()]
         << " >>>>> "
         << DNN_FORMAT[diffWgt_->getUserFmt()];
     }
-    if (diffTop_->initCvt(bwdWgtPD_->diff_dst_primitive_desc(), 
+    if (diffTop_->initIntlCvt(bwdWgtPD_->diff_dst_primitive_desc(), 
       dnnCvtUser2Internal)) {
       LOG(INFO) << "need reorder --- top diff: "
         << DNN_FORMAT[diffTop_->getUserFmt()]
@@ -316,7 +311,7 @@ void MkldnnPoolLayer::resetDnnBwd() {
     } else {
       diffBot_->initUser(botdiff, diffBot_->getDefaultDims(), memory::format::nchw, eg);
     }
-    if (diffBot_->initCvt(bwdDataPD_->diff_src_primitive_desc(), 
+    if (diffBot_->initIntlCvt(bwdDataPD_->diff_src_primitive_desc(), 
       dnnCvtInternal2User)) {
       LOG(INFO) << "need reorder --- bottom diff: "
         << DNN_FORMAT[diffBot_->getIntlFmt()]

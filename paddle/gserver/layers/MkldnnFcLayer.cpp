@@ -197,7 +197,7 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   std::shared_ptr<mkldnn::inner_product_forward::primitive_desc> fwdPD;
   fwdPD.reset(new inner_product_forward::primitive_desc(*fwdDesc, eg));
   // init cvt
-  if (dataBot_->initCvt(
+  if (dataBot_->initIntlCvt(
     fwdPD->src_primitive_desc(), dnnCvtUser2Internal)) {
     LOG(INFO) << "need reorder --- bottom data: "
       << DNN_FORMAT[dataBot_->getUserFmt()]
@@ -208,7 +208,7 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
     weights_[0]->getW()->transpose(selfWgtData_[0], false);
     real *wgtData = selfWgtData_[0]->getData();
     dataWgt_->initUser(wgtData, wgtDims, wgtFmt, eg);
-    if (dataWgt_->initCvt(
+    if (dataWgt_->initIntlCvt(
       fwdPD->weights_primitive_desc(), dnnCvtUser2Internal)) {
       LOG(INFO) << "need reorder --- weight data: "
         << DNN_FORMAT[dataWgt_->getUserFmt()]
@@ -224,10 +224,10 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
     // TODO(TJ): initial wgt data with input format
     real *wgtData = weights_[0]->getW()->getData();
     dataWgt_->initUser(wgtData, fwdPD->weights_primitive_desc());
-    dataWgt_->initCvt(dataWgt_->getUserPD(), dnnCvtUser2Internal);
+    dataWgt_->initIntlCvt(dataWgt_->getUserPD(), dnnCvtNoNeed);
   }
   if (hasBias_) {
-    if (dataBias_->initCvt(
+    if (dataBias_->initIntlCvt(
       fwdPD->bias_primitive_desc(), dnnCvtUser2Internal)) {
       LOG(INFO) << "need reorder --- bias data: "
         << DNN_FORMAT[dataBias_->getUserFmt()]
@@ -243,7 +243,7 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   } else {
     dataTop_->initUser(topData, topDims, topFmt, eg);
   }
-  if (dataTop_->initCvt
+  if (dataTop_->initIntlCvt
     (fwdPD->dst_primitive_desc(), dnnCvtInternal2User)) {
     LOG(INFO) << "need reorder --- top data: "
       << DNN_FORMAT[dataTop_->getIntlFmt()]

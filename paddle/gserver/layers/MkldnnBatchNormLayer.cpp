@@ -318,12 +318,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
     *fwdDesc, eg));
 
   // init bottom cvt
-  if (dataBot_->initCvt(dataBot_->getUserPD(), dnnCvtUser2Internal)) {
-    LOG(INFO) << "need reorder --- bottom data: "
-      << DNN_FORMAT[dataBot_->getUserFmt()]
-      << " >>>>> "
-      << DNN_FORMAT[dataBot_->getIntlFmt()];
-  }
+  dataBot_->initIntlCvt(dataBot_->getUserPD(), dnnCvtNoNeed);
   // init top user memory and cvt
   if (setDnnTopDataFmt_) {
     dataTop_->initUser(topData, fwdPD_->dst_primitive_desc());
@@ -332,7 +327,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   } else {
     dataTop_->initUser(topData, topDims, memory::format::nchw, eg);
   }
-  if (dataTop_->initCvt(fwdPD_->dst_primitive_desc(), dnnCvtInternal2User)) {
+  if (dataTop_->initIntlCvt(fwdPD_->dst_primitive_desc(), dnnCvtInternal2User)) {
     LOG(INFO) << "need reorder --- top data: "
       << DNN_FORMAT[dataTop_->getIntlFmt()]
       << " >>>>> "
@@ -351,7 +346,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
     wgtDims = {2, oc_};
     wgtScaleShift_.reset(new MkldnnBuffer());
     wgtScaleShift_->initUser(wgtData, wgtDims, memory::format::nc, eg);
-    if (wgtScaleShift_->initCvt(
+    if (wgtScaleShift_->initIntlCvt(
       fwdPD_->weights_primitive_desc(), dnnCvtUser2Internal)) {
       LOG(FATAL) << "should donot need cvt!!! user vs intl format:"
       << DNN_FORMAT[wgtScaleShift_->getUserFmt()] << " vs "
@@ -368,25 +363,25 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
     mean_->initUser(localMean_->getData(), {oc_}, memory::format::x, eg);
     var_->initUser(localVar_->getData(), {oc_}, memory::format::x, eg);
     if (useGlobalStats_) {
-      if (mean_->initCvt(fwdPD_->mean_primitive_desc(), dnnCvtUser2Internal)) {
+      if (mean_->initIntlCvt(fwdPD_->mean_primitive_desc(), dnnCvtUser2Internal)) {
         LOG(FATAL) << "should donot need cvt!!! format-- user vs intl:"
           << DNN_FORMAT[mean_->getUserFmt()] << " vs "
           << DNN_FORMAT[mean_->getIntlFmt()];
       }
-      if (var_->initCvt(
+      if (var_->initIntlCvt(
         fwdPD_->variance_primitive_desc(), dnnCvtUser2Internal)) {
         LOG(FATAL) << "should donot need cvt!!! format-- user vs intl:"
           << DNN_FORMAT[var_->getUserFmt()] << " vs "
           << DNN_FORMAT[var_->getIntlFmt()];
       }
     } else {
-      if (mean_->initCvt(
+      if (mean_->initIntlCvt(
         fwdPD_->mean_primitive_desc(), dnnCvtInternal2User)) {
         LOG(FATAL) << "should donot need cvt!!! format-- user vs intl:"
           << DNN_FORMAT[mean_->getUserFmt()] << " vs "
           << DNN_FORMAT[mean_->getIntlFmt()];
       }
-      if (var_->initCvt(
+      if (var_->initIntlCvt(
         fwdPD_->variance_primitive_desc(), dnnCvtInternal2User)) {
         LOG(FATAL) << "should donot need cvt!!! format-- user vs intl:"
           << DNN_FORMAT[var_->getUserFmt()] << " vs "

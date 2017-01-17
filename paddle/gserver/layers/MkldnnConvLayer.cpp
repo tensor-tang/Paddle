@@ -209,7 +209,7 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
       convReluPD.reset(new convolution_relu_forward::primitive_desc(*convReluDesc, eg));
     }
     // init cvt
-    if (dataBot_->initCvt(convPD->src_primitive_desc(), dnnCvtUser2Internal)) {
+    if (dataBot_->initIntlCvt(convPD->src_primitive_desc(), dnnCvtUser2Internal)) {
       LOG(INFO) << "need reorder --- bottom data: "
         << DNN_FORMAT[dataBot_->getUserFmt()]
         << " >>>>> "
@@ -222,7 +222,7 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
       real *wgtData = selfWgtData_[i]->getData();
       dataWgt_->initUser(wgtData, wgtDims, (gp_[i] == 1) ?
                    memory::format::oihw : memory::format::goihw, eg);
-      if (dataWgt_->initCvt(
+      if (dataWgt_->initIntlCvt(
         convPD->weights_primitive_desc(), dnnCvtUser2Internal)) {
         LOG(INFO) << "need reorder --- weight data: "
           << DNN_FORMAT[dataWgt_->getUserFmt()]
@@ -238,14 +238,14 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
       // TODO(TJ): initial wgt data with input format
       real *wgtData = weights_[i]->getW()->getData();
       dataWgt_->initUser(wgtData, convPD->weights_primitive_desc());
-      dataWgt_->initCvt(dataWgt_->getUserPD(), dnnCvtUser2Internal);
+      dataWgt_->initIntlCvt(dataWgt_->getUserPD(), dnnCvtNoNeed);
     }
 
     if (hasBias) {
       real *biasData = biases_->getW()->getData();
       dataBias_->initUser(
         biasData, biasDims, memory::format::x, eg);
-      if (dataBias_->initCvt(convPD->bias_primitive_desc(),
+      if (dataBias_->initIntlCvt(convPD->bias_primitive_desc(),
         dnnCvtUser2Internal)) {
         LOG(INFO) << "need reorder --- bias data: "
           << DNN_FORMAT[dataBias_->getUserFmt()]
@@ -261,7 +261,7 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
     } else {
       dataTop_->initUser(topData, topDims, memory::format::nchw, eg);
     }
-    if (dataTop_->initCvt(convPD->dst_primitive_desc(), dnnCvtInternal2User)) {
+    if (dataTop_->initIntlCvt(convPD->dst_primitive_desc(), dnnCvtInternal2User)) {
       LOG(INFO) << "need reorder --- top data: "
         << DNN_FORMAT[dataTop_->getIntlFmt()]
         << " >>>>> "
@@ -378,7 +378,7 @@ void MkldnnConvLayer::resetDnnBwd() {
     bwdWgtPD_.reset(new convolution_backward_weights::primitive_desc(
       *bwdWgtDesc, eg, *bwdWgtFwdPD));
     if (hasBias && diffBias_ != NULL) {
-      if (diffBias_->initCvt(bwdWgtPD_->diff_bias_primitive_desc(),
+      if (diffBias_->initIntlCvt(bwdWgtPD_->diff_bias_primitive_desc(),
         dnnCvtInternal2User)) {
         LOG(INFO) << "need reorder --- bias diff: "
           << DNN_FORMAT[diffBias_->getIntlFmt()]
@@ -386,14 +386,14 @@ void MkldnnConvLayer::resetDnnBwd() {
           << DNN_FORMAT[diffBias_->getUserFmt()];
       }
     }
-    if (diffWgt_->initCvt(bwdWgtPD_->diff_weights_primitive_desc(),
+    if (diffWgt_->initIntlCvt(bwdWgtPD_->diff_weights_primitive_desc(),
       dnnCvtInternal2User)) {
       LOG(INFO) << "need reorder --- weight diff: "
         << DNN_FORMAT[diffWgt_->getIntlFmt()]
         << " >>>>> "
         << DNN_FORMAT[diffWgt_->getUserFmt()];
     }
-    if (diffTop_->initCvt(bwdWgtPD_->diff_dst_primitive_desc(), 
+    if (diffTop_->initIntlCvt(bwdWgtPD_->diff_dst_primitive_desc(), 
       dnnCvtUser2Internal)) {
       LOG(INFO) << "need reorder --- top diff: "
         << DNN_FORMAT[diffTop_->getUserFmt()]
@@ -435,7 +435,7 @@ void MkldnnConvLayer::resetDnnBwd() {
     } else {
       diffBot_->initUser(botdiff, diffBot_->getDefaultDims(), memory::format::nchw, eg);
     }
-    if (diffBot_->initCvt(bwdDataPD_->diff_src_primitive_desc(), 
+    if (diffBot_->initIntlCvt(bwdDataPD_->diff_src_primitive_desc(), 
       dnnCvtInternal2User)) {
       LOG(INFO) << "need reorder --- bottom diff: "
         << DNN_FORMAT[diffBot_->getIntlFmt()]
