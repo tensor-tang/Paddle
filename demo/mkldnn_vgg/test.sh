@@ -12,6 +12,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+unset OMP_NUM_THREADS MKL_NUM_THREADS
+num=$((`nproc`-2))
+use_num=$(($num>0?$num:1))
+export OMP_NUM_THREADS=$use_num
+export MKL_NUM_THREADS=$use_num
+
 set -e
 config=vgg_19.py
 log=log_test.log
