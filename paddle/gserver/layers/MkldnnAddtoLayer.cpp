@@ -69,7 +69,7 @@ bool MkldnnAddtoLayer::reshapeOutput() {
   bs_ = getInput(0).getBatchSize();
   LOG(INFO) << "reshape batch size: " << bs_;
   reserveOutput(bs_, getOneBatchSize());
-  if(has_spatial_) {
+  if (has_spatial_) {
     getOutput().setFrameHeight(oh_[0]);
     getOutput().setFrameWidth(ow_[0]);
   }
@@ -106,7 +106,8 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
     const std::shared_ptr<memory::desc> prvMD = getPrev(i)->getTopDataMD();
     if (prvMD) {
       dataBottoms_[i]->initUser(botData, *prvMD, eg);
-      LOG(INFO) << "use prev format: " << DNN_FORMAT[dataBottoms_[i]->getUserFmt()];
+      LOG(INFO) << "use prev format: "
+        << DNN_FORMAT[dataBottoms_[i]->getUserFmt()];
       prvs.push_back(prvMD);
     } else {
       dataBottoms_[i]->initUser(botData, botDims, botFmt, eg);
@@ -144,7 +145,8 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
   }
 
   // init top cvt
-  if (dataTop_->initIntlCvt(fwdPD_->dst_primitive_desc(), dnnCvtInternal2User)) {
+  if (dataTop_->initIntlCvt(
+    fwdPD_->dst_primitive_desc(), dnnCvtInternal2User)) {
     LOG(INFO) << "need reorder --- top data: "
       << DNN_FORMAT[dataTop_->getIntlFmt()]
       << " >>>>> "

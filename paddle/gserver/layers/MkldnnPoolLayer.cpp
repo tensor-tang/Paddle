@@ -64,7 +64,6 @@ size_t MkldnnPoolLayer::getOneBatchSize() {
   int width = inputLayers_[0]->getOutput().getFrameWidth();
   if (height != 0) ih_[0] = height;
   if (width != 0) iw_[0] = width;
-  // TODO(TJ): why use false caffe mode??
   oh_[0] = outputSize(ih_[0], fh_, ph_, sh_, false);
   ow_[0] = outputSize(iw_[0], fw_, pw_, sw_, false);
   return oh_[0] * ow_[0] * oc_;
@@ -73,7 +72,7 @@ size_t MkldnnPoolLayer::getOneBatchSize() {
 // whether reset batchsize and image size of input and output
 bool MkldnnPoolLayer::reshapeOutput() {
   if (bs_ == getInput(0).getBatchSize()) {
-    // can remove resetoutput
+    // TODO(TJ): can remove
     // when confirm how multi inputs work and whether to clear diff
     reserveOutput(bs_, getOneBatchSize());
     return false;

@@ -99,7 +99,7 @@ public:
    * input: botdata, wgtdata, biasdata
    * output topdata
    */
-  void submitFwdOnce(PassType passType, int inputIdx, 
+  void submitFwdOnce(PassType passType, int inputIdx,
     const MatrixPtr& botVal, const MatrixPtr& topVal);
 
   /* backward data

@@ -116,7 +116,8 @@ public:
       || cvtType == dnnCvtNoNeed) << "please specify one type of conversion";
     CHECK(pUser_)
       << "call initUser before init internal layout and conversion";
-    CHECK(pIntl_ == NULL) << "internal memory should be empty before initIntlCvt";
+    CHECK(pIntl_ == NULL)
+      << "internal memory should be empty before initIntlCvt";
     pIntl_ = pUser_;
     type_ = cvtType;
     clearCvtFlag();

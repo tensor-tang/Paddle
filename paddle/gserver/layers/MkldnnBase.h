@@ -15,27 +15,25 @@ static const std::string DNN_FORMAT[] = {
   // mkldnn_oIhw16i = mkldnn_nChw16c
 
 /// For dnn engine
-class CpuEngine
-{
+class CpuEngine {
 public:
-    static CpuEngine & Instance()
-    {
-        // I's thread-safe in C++11.
-        static CpuEngine myInstance;
-        return myInstance;
-    }
-    CpuEngine(CpuEngine const&) = delete;             // Copy construct
-    CpuEngine(CpuEngine&&) = delete;                  // Move construct
-    CpuEngine& operator=(CpuEngine const&) = delete;  // Copy assign
-    CpuEngine& operator=(CpuEngine &&) = delete;      // Move assign
+  static CpuEngine & Instance() {
+    // I's thread-safe in C++11.
+    static CpuEngine myInstance;
+    return myInstance;
+  }
+  CpuEngine(CpuEngine const&) = delete;             // Copy construct
+  CpuEngine(CpuEngine&&) = delete;                  // Move construct
+  CpuEngine& operator=(CpuEngine const&) = delete;  // Copy assign
+  CpuEngine& operator=(CpuEngine &&) = delete;      // Move assign
 
-    mkldnn::engine & getEngine() { return cpuEngine_; }
+  mkldnn::engine & getEngine() { return cpuEngine_; }
 protected:
-    CpuEngine() : cpuEngine_(mkldnn::engine::cpu, 0) {}
+  CpuEngine() : cpuEngine_(mkldnn::engine::cpu, 0) {}
 //    CpuEngine() : _cpu_engine(engine::cpu_lazy, 0) {}
-    ~CpuEngine() {}
+  ~CpuEngine() {}
 private:
-    mkldnn::engine cpuEngine_;
+  mkldnn::engine cpuEngine_;
 };
 
 }  // namespace paddle

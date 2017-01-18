@@ -31,7 +31,7 @@ protected:
   std::unique_ptr<Weight> biases_;
 
   bool has_spatial_;
-  size_t layerSize_;  // layer size by batch == oh*ow*oc should also == ih*iw*ic 
+  size_t layerSize_;  // layer size by batch == oh*ow*oc should also == ih*iw*ic
 
 public:
   explicit MkldnnAddtoLayer(const LayerConfig& config)

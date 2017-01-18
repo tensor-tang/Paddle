@@ -220,7 +220,7 @@ public:
     MkldnnActivation::reshapeDnnFwd(arg, topDataMD);
     LOG(INFO) << this->getName() << " reshape batchsize: "
           << bs_ << ", " << oc_ << ", " << oh_ << ", " << ow_;
-    
+
     mkldnn::engine eg = CpuEngine::Instance().getEngine();
 
     real* pdata = arg.value->getData();

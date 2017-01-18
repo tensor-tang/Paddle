@@ -327,7 +327,8 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   } else {
     dataTop_->initUser(topData, topDims, memory::format::nchw, eg);
   }
-  if (dataTop_->initIntlCvt(fwdPD_->dst_primitive_desc(), dnnCvtInternal2User)) {
+  if (dataTop_->initIntlCvt(
+    fwdPD_->dst_primitive_desc(), dnnCvtInternal2User)) {
     LOG(INFO) << "need reorder --- top data: "
       << DNN_FORMAT[dataTop_->getIntlFmt()]
       << " >>>>> "
@@ -363,7 +364,8 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
     mean_->initUser(localMean_->getData(), {oc_}, memory::format::x, eg);
     var_->initUser(localVar_->getData(), {oc_}, memory::format::x, eg);
     if (useGlobalStats_) {
-      if (mean_->initIntlCvt(fwdPD_->mean_primitive_desc(), dnnCvtUser2Internal)) {
+      if (mean_->initIntlCvt(
+        fwdPD_->mean_primitive_desc(), dnnCvtUser2Internal)) {
         LOG(FATAL) << "should donot need cvt!!! format-- user vs intl:"
           << DNN_FORMAT[mean_->getUserFmt()] << " vs "
           << DNN_FORMAT[mean_->getIntlFmt()];

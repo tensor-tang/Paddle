@@ -18,7 +18,7 @@ namespace paddle {
 class MkldnnFcLayer : public MkldnnLayer {
 protected:
   std::shared_ptr<mkldnn::inner_product_forward::primitive> fwd_;
-  
+
   // std::shared_ptr<convolution_backward_data::primitive_desc> bwdDataPD_;
   // std::shared_ptr<convolution_backward_weights::primitive_desc> bwdWgtPD_;
 
@@ -43,7 +43,7 @@ protected:
   // use paddle weight format
   bool usePaddleFmt_;
 
-  // input size (== ic*ih*iw) by batch size 
+  // input size (== ic*ih*iw) by batch size
   std::vector<size_t> inputSizeByBS_;
 
 public:
