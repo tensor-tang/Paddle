@@ -139,7 +139,6 @@ bool MkldnnConvLayer::reshapeOutput() {
 }
 
 void MkldnnConvLayer::resetDnnFwd(PassType passType) {
-  LOG(INFO) << "reset mkldnn conv forward of layer: " << config_.name();
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
   // TODO(TJ): only care about i==0 by now
   memory::dims biasDims = {oc_};
@@ -303,43 +302,48 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
 }
 
 void MkldnnConvLayer::resetDnnBwd() {
-/*  LOG(INFO) << "init or reset conv backward of layer: " << config_.name();
+/*
   bool hasBias = (biases_ && biases_->getWGrad()) ? true : false;
-  // TODO: only care about i==0 by now
-  real *topdiff = getOutputGrad()->getData();
+  mkldnn::engine eg = CpuEngine::Instance().getEngine();
+  prop_kind pk = prop_kind::forward_training;
+  algorithm algo = algorithm::convolution_direct;
+  // TODO(TJ): only care about i==0 yet
+  
   // init top diff user
-  diffTop_.reset(new MkldnnBuffer(dataTop_->getDefaultDims()));
+  real *topdiff = getOutputGrad()->getData();
+  diffTop_.reset(new MkldnnBuffer());
+  diffBot_.reset(new MkldnnBuffer());
   
   const std::shared_ptr<mkldnn::memory::desc> inputDiffMD = getTopDiffMD();
   if (inputDiffMD) {
     diffTop_->initUser(topdiff, *inputDiffMD, eg);
   } else {
-    diffTop_->initUser(topdiff, diffTop_->getDefaultDims(),
+    diffTop_->initUser(topdiff, dataTop_->getUserDims(),
       memory::format::nchw, eg);
   }
   
   if (hasBias) {
     // bias backward can not be execute seperately, 
-    //only can execute with filter bakcward
+    // only can execute with weight bakcward
     real* biasdiff = biases_->getWGrad()->getData();
-    diffBias_.reset(new MkldnnBuffer(dataBias_->getDefaultDims()));
-    diffBias_->initUser(biasdiff, diffBias_->getDefaultDims(), memory::format::x, eg);
+    diffBias_.reset(new MkldnnBuffer());
+    diffBias_->initUser(biasdiff, dataBias_->getUserDims(),
+      memory::format::x, eg);
   }
   
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     CHECK(bs_ == getInput(i).getBatchSize())
       << "Assert batchsize of input layers are equal";
-
     // create dim structure that describes user data.
     memory::dims strides = {sh_[i], sw_[i]};
     memory::dims padding = {ph_[i], pw_[i]};
 
-    // backward weight and bias before data*****************************
+    // backward weight and bias before data
     if (weights_[i]->getWGrad()) {
       real* wgtdiff = weights_[i]->getWGrad()->getData();
       // init weight diff user
-      diffWgt_.reset(new MkldnnBuffer(dataWgt_->getDefaultDims()));
-      diffWgt_->initUser(wgtdiff, diffWgt_->getDefaultDims(), 
+      diffWgt_.reset(new MkldnnBuffer());
+      diffWgt_->initUser(wgtdiff, dataWgt_->getUserDims(), 
         memory::format(dataWgt_->getUserFmt()), eg);
     } else {
       LOG(FATAL) << "should have weight";
@@ -349,7 +353,7 @@ void MkldnnConvLayer::resetDnnBwd() {
     std::shared_ptr<convolution_backward_weights::desc> bwdWgtDesc;
     if (hasBias && diffBias_ != NULL) {
       bwdWgtFwdDesc.reset(new convolution_forward::desc(
-        prop_kind::forward_training, algorithm::convolution_direct, 
+        pk, algo, 
         dataBot_->getIntlMD(),
         diffWgt_->getMDAny(),
         diffBias_->getMDAny(),
@@ -708,7 +712,7 @@ void MkldnnConvLayer::submitDnnBwd(const UpdateCallback &callback) {
   exBackward(callback);
 
   // dnn backward
-  /*
+
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     // backward weights before data, since may have not botdiff in some layer
     if (weights_[i]->getWGrad()) {
@@ -722,7 +726,7 @@ void MkldnnConvLayer::submitDnnBwd(const UpdateCallback &callback) {
     // Increasing the number of gradient 
     biases_->getParameterPtr()->incUpdate(callback);
   }
-  */
+
 }
 
 }  // namespace paddle

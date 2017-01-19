@@ -77,6 +77,7 @@ public:
     // reshape if batchsize changes
     if (reshapeOutput()) {
       // dnn fwd init or reset
+      LOG(INFO) << "reset mkldnn forward of layer: " << config_.name();
       resetDnnFwd(passType);
       needResetBwd_ = true;
     }
@@ -88,6 +89,7 @@ public:
   void backward(const UpdateCallback& callback) {
     if (needResetBwd_) {
       // dnn fwd init or reset
+      LOG(INFO) << "reset mkldnn backward of layer: " << config_.name();
       resetDnnBwd();
       needResetBwd_ = false;
     }
@@ -139,7 +141,7 @@ public:
   }
 
   // for conv only support caffe mode by now
-  // TODO(TJ): figure out why paddle pool use false caffe mode
+  // TODO(TJ): figure out why pool use false caffe mode
   /**
    * Calculate output size based on caffeMode_.
    * - input(+padding): 0123456789
