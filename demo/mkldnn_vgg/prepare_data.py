@@ -5,9 +5,10 @@ from PIL import Image
 
 my_dir = '/home/tangjian/imagedata_val/'
 file_list = 'data/val.txt'
-tmp = 'data/tmp.txt'
+train_list = 'data/train.list'
+train_list_actual = 'data/train.list.txt'
 total_imgs = 0
-with open(tmp, 'w') as ftrain:
+with open(train_list_actual, 'w') as ftrain:
     with open(file_list, 'r') as fdata:
         lines = [line.strip() for line in fdata]
         for file_name in lines:
@@ -24,31 +25,8 @@ with open(tmp, 'w') as ftrain:
 
 print(total_imgs)
 
-train_list = 'data/train.list'
-train_part_prefix = 'data/train_list.part'
-steps = 1000  # every 1000 images save in one part
-
 with open(train_list, 'w') as ftrain:
-    with open(tmp, 'r') as ftmp:
-        lines = [line.strip() for line in ftmp]
-        img_idx = 0
-        part_idx = 1
-        part_path = train_part_prefix + str(part_idx)
-        print(part_path)
-        fpart = open(part_path, 'w')
-        ftrain.write(part_path + '\n')
-        for file_name in lines:
-            img_idx = img_idx + 1
-            if img_idx > steps:
-                img_idx = 0
-                part_idx = part_idx + 1
-                part_path = train_part_prefix + str(part_idx)
-                print(part_path)
-                fpart.close()
-                fpart = open(part_path, 'w')
-                ftrain.write(part_path + '\n')
-            fpart.write(file_name + '\n')
-        fpart.close()
+    ftrain.write(train_list_actual + '\n')
 
             
             

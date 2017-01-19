@@ -63,7 +63,7 @@ def hook(settings, img_size, crop_size, num_classes, color, file_list, use_jpeg,
         settings.logger.info('use jpeg and swap channel: %s', settings.swap_channel)
     settings.logger.info('DataProvider Initialization finished')
 
-@provider(init_hook=hook, min_pool_size=-1) #, pool_size=128)  # , should_shuffle=False) 
+@provider(init_hook=hook, min_pool_size=1, pool_size=1000)  # , should_shuffle=False) 
 def processData(settings, file_list):
     """
     The main function for loading data.
