@@ -712,7 +712,7 @@ void MkldnnConvLayer::submitDnnBwd(const UpdateCallback &callback) {
   exBackward(callback);
 
   // dnn backward
-
+/*
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     // backward weights before data, since may have not botdiff in some layer
     if (weights_[i]->getWGrad()) {
@@ -726,7 +726,7 @@ void MkldnnConvLayer::submitDnnBwd(const UpdateCallback &callback) {
     // Increasing the number of gradient 
     biases_->getParameterPtr()->incUpdate(callback);
   }
-
+*/
 }
 
 }  // namespace paddle
