@@ -17,24 +17,19 @@ namespace paddle {
  */
 class MkldnnConcatLayer : public MkldnnLayer {
 protected:
-  std::shared_ptr<mkldnn::pooling_forward::primitive> fwd_;
+  std::shared_ptr<mkldnn::concat::primitive> fwd_;
   // std::shared_ptr<convolution_backward_data::primitive_desc> bwdDataPD_;
   // std::shared_ptr<convolution_backward_weights::primitive_desc> bwdWgtPD_;
+  std::vector<MkldnnBufferPtr> dataBottoms_;
 
-  std::shared_ptr<mkldnn::memory> workspace_;
-  bool withWorkspace_;
-  // padding, stride and filter size
-  int ph_, pw_;
-  int sh_, sw_;
-  int fh_, fw_;
+  int num_concats_;
 
-  mkldnn::algorithm poolAlgo_;
 
 public:
   explicit MkldnnConcatLayer(const LayerConfig& config)
     : MkldnnLayer(config),
       fwd_(nullptr),
-      workspace_(nullptr)
+      num_concats_(0)
 //      bwdWgtPD_(nullptr)
     {}
 
@@ -42,9 +37,13 @@ public:
 
   bool initDnn(const LayerMap& layerMap, const ParameterMap& parameterMap);
 
-  size_t getOneBatchSize();
+  void reshapeSize();
 
   void clearAllCvtFlags() {
+    for (size_t i = 0; i < dataBottoms_.size(); ++i) {
+      if (dataBottoms_[i])
+        dataBottoms_[i]->clearCvtFlag();
+    }
     if (dataBot_) dataBot_->clearCvtFlag();
     if (dataTop_) dataTop_->clearCvtFlag();
     if (diffBot_) diffBot_->clearCvtFlag();
@@ -68,14 +67,12 @@ private:
   void exBwd(const UpdateCallback &callback);
 
   void printInfo() {
+    LOG(INFO) << "concats number: " << num_concats_;
     for (size_t i = 0; i < iw_.size(); ++i) {
       LOG(INFO)
         << "ih: " << ih_[i] << ", iw: " << iw_[i]
         << ", ic: " << ic_[i]
         << ", oh: " << oh_[i] << ", ow: " << ow_[i]
-        << ", fh: " << fh_ << ", fw: " << fw_
-        << ", ph: " << ph_ << ", pw: " << pw_
-        << ", sh: " << sh_ << ", sw: " << sw_
         << ", oc: " << oc_;
     }
   }

@@ -28,51 +28,48 @@ bool MkldnnConcatLayer::initDnn(const LayerMap &layerMap,
   
   bs_ = 0;
   oc_ = getSize();
+  num_concats_ = inputLayers_.size();
   for (size_t i = 0; i < inputLayers_.size(); i++) {
     ic_.push_back(0);
     iw_.push_back(0);
     ih_.push_back(0);
     ow_.push_back(0);
     oh_.push_back(0);
+    dataBottoms_.push_back(nullptr);
   }
-
   return true;
 }
 
-size_t MkldnnConcatLayer::getOneBatchSize() {
-  CHECK_NE(inputLayers_.size(), 0UL);
-  int height = inputLayers_[0]->getOutput().getFrameHeight();
-  int width = inputLayers_[0]->getOutput().getFrameWidth();
-  if (height != 0) ih_[0] = height;
-  if (width != 0) iw_[0] = width;
-  oh_[0] = outputSize(ih_[0], fh_, ph_, sh_, false);
-  ow_[0] = outputSize(iw_[0], fw_, pw_, sw_, false);
-
-
-
+void MkldnnConcatLayer::reshapeSize() {
+  CHECK(inputLayers_.size() == size_t(num_concats_));
+  int chls = 0;
   for (size_t i = 0; i < inputLayers_.size(); i++) {
-    ic_.push_back(0);
-    iw_.push_back(0);
-    ih_.push_back(0);
-    ow_.push_back(0);
-    oh_.push_back(0);
+    int height = inputLayers_[i]->getOutput().getFrameHeight();
+    int width = inputLayers_[i]->getOutput().getFrameWidth();
+    CHECK(height * width != 0);
+    ih_[i] = height;
+    iw_[i] = width;
+    oh_[i] = ih_[i];
+    ow_[i] = iw_[i];
+    CHECK(i == 0 || (ih_[i-1] == ih_[i] && iw_[i-1] == iw_[i]));
+    ic_[i] = inputLayers_[i]->getSize() / ih_[i] / iw_[i];
+    chls += ic_[i];
   }
-  return oh_[0] * ow_[0] * oc_;
+  oc_ = getSize() / oh_[0] / ow_[0];
+  CHECK(oc_ == chls);
 }
 
 // whether reset batchsize and image size of input and output
 bool MkldnnConcatLayer::reshapeOutput() {
-  return false;
-/*
   if (bs_ == getInput(0).getBatchSize()) {
     // TODO(TJ): can remove
     // when confirm how multi inputs work and whether to clear diff
-    reserveOutput(bs_, getOneBatchSize());
+    reserveOutput(bs_, getSize());
     return false;
   }
 
   // reset image size
-  size_t layersize = getOneBatchSize();
+  reshapeSize();
   getOutput().setFrameHeight(oh_[0]);
   getOutput().setFrameWidth(ow_[0]);
 
@@ -80,88 +77,84 @@ bool MkldnnConcatLayer::reshapeOutput() {
   bs_ = getInput(0).getBatchSize();
   LOG(INFO) << "layer name: " << getName();
   LOG(INFO) << "reshape batch size: " << bs_;
-  resetOutput(bs_, layersize);
+  resetOutput(bs_, getSize());
   printInfo();
-  return true;*/
+  return true;
 }
 
 void MkldnnConcatLayer::resetDnnFwd(PassType passType) {
-  /*
 
   CHECK(bs_ == getInput(0).getBatchSize())
     << "Assert batchsize of input layers are equal";
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
-  // create dim structure that describes user data.
-  memory::dims botDims = {bs_, ic_[0], ih_[0], iw_[0]};
-  memory::dims topDims = {bs_, oc_, oh_[0], ow_[0]};
 
-  dataBot_.reset(new MkldnnBuffer());
-  dataTop_.reset(new MkldnnBuffer());
+  std::vector<memory::primitive_desc> botPDs;
+  std::vector<std::shared_ptr<memory::desc>> prvs;
+  std::vector<primitive::at> srcs;
+  memory::format botFmt = memory::format::nchw;
+  for (int i = 0; i < num_concats_; ++i) {
+    CHECK(bs_ == getInput(i).getBatchSize())
+      << "Assert batchsize of input layers are equal";
+    CHECK(iw_[i] == ow_[i] && ih_[i] == oh_[i]);
+    memory::dims botDims = {bs_, ic_[i], ih_[i], iw_[i]};
+    dataBottoms_[i].reset(new MkldnnBuffer());
+    real *botData = getInputValue(i)->getData();
+    const std::shared_ptr<memory::desc> prvMD = getPrev(i)->getTopDataMD();
+    if (prvMD) {
+      dataBottoms_[i]->initUser(botData, *prvMD, eg);
+      LOG(INFO) << "use prev format: "
+        << DNN_FORMAT[dataBottoms_[i]->getUserFmt()];
+      prvs.push_back(prvMD);
+    } else {
+      dataBottoms_[i]->initUser(botData, botDims, botFmt, eg);
+    }
+    botPDs.push_back(dataBottoms_[i]->getUserPD());
 
-  // init user memory of bottom, weights and bias
-  real *botData = getPrev(0)->getOutputValue()->getData();
-  real *topData = getOutputValue()->getData();
-  const std::shared_ptr<memory::desc> prvMD = getPrev(0)->getTopDataMD();
-  if (prvMD) {
-    dataBot_->initUser(botData, *prvMD, eg);
-    LOG(INFO) << "use prev format: " << DNN_FORMAT[dataBot_->getUserFmt()];
-  } else {
-    dataBot_->initUser(botData, botDims, memory::format::nchw, eg);
+    // init bot cvt
+    dataBottoms_[i]->initIntlCvt(dataBottoms_[i]->getUserPD(), dnnCvtNoNeed);
+    srcs.push_back(*(dataBottoms_[i]->getIntlMem()));
   }
+  
+  // inputs format should be all the same
+  CHECK(prvs.size() == 0 || prvs.size() == inputLayers_.size())
+    << "intl input format size does not match: "
+    << prvs.size() << " vs " << inputLayers_.size();
 
-  // create pool desc from internal desc
-  std::shared_ptr<pooling_forward::desc> fwdDesc;
-  prop_kind pk = (passType == PASS_TEST) ? prop_kind::forward_scoring :
-    prop_kind::forward_training;
+  // top data
+  dataTop_.reset(new MkldnnBuffer());
+  memory::format topFmt = memory::format::nchw;
+  memory::dims topDims = {bs_, oc_, oh_[0], ow_[0]};
+  real *topData = getOutputValue()->getData();
+  std::shared_ptr<concat::primitive_desc> fwdPD;
 
-  fwdDesc.reset(new pooling_forward::desc(pk, poolAlgo_,
-                    prvMD ? dataBot_->getUserMD() : getAnyMD(botDims),
-                    getAnyMD(topDims),
-                    strides, kernel, padding, padding,
-                    padding_kind::zero));
-  // init cvt
-  dataBot_->initIntlCvt(dataBot_->getUserPD(), dnnCvtNoNeed);
-  std::shared_ptr<pooling_forward::primitive_desc> fwdPD;
-  fwdPD.reset(new pooling_forward::primitive_desc(*fwdDesc, eg));
-
-  // init top user memory and cvt
   if (setDnnTopDataFmt_) {
-    dataTop_->initUser(topData, fwdPD->dst_primitive_desc());
+    // fwdPD_ should be init with any type before, if in here.
+    dataTop_->initUser(topData, topDims, 
+      memory::format(dataBottoms_[0]->getUserFmt()), eg);
     setTopDataMD(dataTop_->getUserMD());
     LOG(INFO) << "set next format: " << DNN_FORMAT[dataTop_->getUserFmt()];
   } else {
-    dataTop_->initUser(topData, topDims, memory::format::nchw, eg);
+    dataTop_->initUser(topData, topDims, topFmt, eg);
   }
-  if (dataTop_->initIntlCvt(fwdPD->dst_primitive_desc(), dnnCvtInternal2User)) {
+  auto concat_dimension = 1;  // TODO(TJ): FIXME: concat dimension
+  fwdPD.reset(new concat::primitive_desc(
+    dataTop_->getUserMD(), concat_dimension, botPDs));
+
+  // init top cvt
+  if (dataTop_->initIntlCvt(
+    fwdPD->dst_primitive_desc(), dnnCvtInternal2User)) {
     LOG(INFO) << "need reorder --- top data: "
       << DNN_FORMAT[dataTop_->getIntlFmt()]
       << " >>>>> "
       << DNN_FORMAT[dataTop_->getUserFmt()];
   }
-
-  withWorkspace_ = passType != PASS_TEST && poolAlgo_ != algorithm::pooling_avg;
-  if (withWorkspace_) {
-    workspace_.reset(new memory(fwdPD->workspace_primitive_desc()));
-  } else {
-    auto p_workspace_desc = memory::primitive_desc(
-      {{}, memory::data_type::f32, memory::format(dataTop_->getIntlFmt())},
-      eg);
-    workspace_.reset(new memory(p_workspace_desc));
-  }
-  if (withWorkspace_) {
-    fwd_.reset(new pooling_forward(*fwdPD,
-      *(dataBot_->getIntlMem()), *(dataTop_->getIntlMem()),
-      *workspace_));
-  } else {
-    fwd_.reset(new pooling_forward(*fwdPD,
-      *(dataBot_->getIntlMem()), *(dataTop_->getIntlMem())));
-  }
+  fwd_.reset(new concat(*fwdPD, srcs, *(dataTop_->getIntlMem())));
   LOG(INFO) << "data format flow --- "
-    << DNN_FORMAT[dataBot_->getUserFmt()] << " >>> ("
-    << DNN_FORMAT[dataBot_->getIntlFmt()] << " >>> "
+    << DNN_FORMAT[dataBottoms_[0]->getUserFmt()] << " >>> ("
+    << DNN_FORMAT[dataBottoms_[0]->getIntlFmt()] << " >>> "
     << DNN_FORMAT[dataTop_->getIntlFmt()] << ") >>> "
     << DNN_FORMAT[dataTop_->getUserFmt()];
-  */
+
 }
 
 void MkldnnConcatLayer::resetDnnBwd() {
@@ -172,11 +165,13 @@ void MkldnnConcatLayer::myFwd(PassType passType) {
   /// all sumbit cvt should be clear
   clearAllCvtFlags();
 
-  real *botdata = getPrev(0)->getOutputValue()->getData();
   real *topdata = getOutputValue()->getData();
 
   std::vector<primitive> pipeline;
-  dataBot_->submitCvt(pipeline, botdata);
+  for (int i = 0; i < num_concats_; ++i) {
+    real *botdata = getPrev(i)->getOutputValue()->getData();
+    dataBottoms_[i]->submitCvt(pipeline, botdata);
+  }
 
   pipeline.push_back(*fwd_);
   dataTop_->submitCvt(pipeline, topdata);
@@ -184,15 +179,15 @@ void MkldnnConcatLayer::myFwd(PassType passType) {
   // start forward
   REGISTER_TIMER_INFO("mkldnnPoolFwd", getName().c_str());
   stream(stream::kind::eager).submit(pipeline).wait();
-//  LOG(INFO) << "------------" << topdata[0];
-// << "," << topdata[1] << "," << topdata[2];
+//  LOG(INFO) << "------------my" << topdata[0]
+//    << "," << topdata[1] << "," << topdata[2];
 }
 
 void MkldnnConcatLayer::exFwd(PassType passType) {
 
   int batchSize = getInput(0).getBatchSize();
   int size = getSize();
-  reserveOutput(batchSize, size);
+  resetOutput(batchSize, size);
 
   const MatrixPtr& out = getOutputValue();
   int offset = 0;
@@ -205,16 +200,14 @@ void MkldnnConcatLayer::exFwd(PassType passType) {
   }
   CHECK_EQ(size, offset);
 
-
 //  real *topdata = getOutputValue()->getData();
-//  LOG(INFO) << "------------" << topdata[0];
-// << "," << topdata[1] << "," << topdata[2];
+//  LOG(INFO) << "------------ex" << topdata[0]
+//    << "," << topdata[1] << "," << topdata[2];
 }
 
 void MkldnnConcatLayer::submitDnnFwd(PassType passType) {
-  exFwd(passType);
-//  myFwd(passType);
-
+  myFwd(passType);
+//  exFwd(passType);
 
   REGISTER_TIMER_INFO("FwAtvTimer", getName().c_str());
   forwardActivation();
