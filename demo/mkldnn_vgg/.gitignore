@@ -1,4 +1,6 @@
+data
 data/*
+models_vgg_19/
 models_vgg_19/*
 plot.png
 log*
