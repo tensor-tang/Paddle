@@ -3,17 +3,15 @@ output=./models_googlenet
 model=models_googlenetv1/pass-00019/
 function train() {
   cfg=$1
-  thread=$2
-  bz=$3
-  args="batch_size=$3"
-  prefix=$4
+  bs=$2
+  args="batch_size=$2"
+  prefix=$3
   task="test"
-  log="log_${task}_$prefix-${thread}cpu-$bz.log"
+  log="log_${task}_${prefix}_bs${bs}.log"
   rm -f $log
   paddle train --job=$task \
     --config=$cfg \
     --use_gpu=False \
-    --trainer_count=$thread \
     --log_period=1 \
     --init_model_path=$model \
     --test_period=100 \
@@ -21,28 +19,6 @@ function train() {
     2>&1 | tee -a $log 2>&1 
 }
 
-#========single-gpu=========#
-# alexnet
-#train alexnet.py 1 64 alexnet
-#train alexnet.py 1 128 alexnet
-#train alexnet.py 1 256 alexnet
-#train alexnet.py 1 512 alexnet
-#
-
 # googlenet
-train googlenetv1.py 1 64 googlenet
+train googlenetv1.py 64 googlenetv1
 
-# smallnet
-#train smallnet_mnist_cifar.py 1 64 smallnet
-#train smallnet_mnist_cifar.py 1 128 smallnet
-#train smallnet_mnist_cifar.py 1 256 smallnet
-#train smallnet_mnist_cifar.py 1 512 smallnet
-
-
-############################
-#========multi-gpus=========#
-#train alexnet.py 4 512 alexnet
-#train alexnet.py 4 1024 alexnet
-
-#train googlenet.py 4 512 googlenet 
-#train googlenet.py 4 1024 googlenet
