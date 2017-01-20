@@ -58,7 +58,12 @@ bool MkldnnPoolLayer::initDnn(const LayerMap &layerMap,
   return true;
 }
 
-size_t MkldnnPoolLayer::getOneBatchSize() {
+void MkldnnPoolLayer::clearDataDiff() {
+  reserveOutput(bs_, getSize());
+}
+
+void MkldnnPoolLayer::reshape() {
+  // reshape input and output size
   CHECK_NE(inputLayers_.size(), 0UL);
   int height = inputLayers_[0]->getOutput().getFrameHeight();
   int width = inputLayers_[0]->getOutput().getFrameWidth();
@@ -66,30 +71,12 @@ size_t MkldnnPoolLayer::getOneBatchSize() {
   if (width != 0) iw_[0] = width;
   oh_[0] = outputSize(ih_[0], fh_, ph_, sh_, false);
   ow_[0] = outputSize(iw_[0], fw_, pw_, sw_, false);
-  return oh_[0] * ow_[0] * oc_;
-}
 
-// whether reset batchsize and image size of input and output
-bool MkldnnPoolLayer::reshapeOutput() {
-  if (bs_ == getInput(0).getBatchSize()) {
-    // TODO(TJ): can remove
-    // when confirm how multi inputs work and whether to clear diff
-    reserveOutput(bs_, getOneBatchSize());
-    return false;
-  }
-
-  // reset image size
-  size_t layersize = getOneBatchSize();
+  // reset output image size
   getOutput().setFrameHeight(oh_[0]);
   getOutput().setFrameWidth(ow_[0]);
 
-  // reset data
-  bs_ = getInput(0).getBatchSize();
-  LOG(INFO) << "layer name: " << getName();
-  LOG(INFO) << "reshape batch size: " << bs_;
-  resetOutput(bs_, layersize);
   printInfo();
-  return true;
 }
 
 void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
@@ -355,7 +342,7 @@ void MkldnnPoolLayer::myFwd(PassType passType) {
 void MkldnnPoolLayer::exFwd(PassType passType) {
   const Argument& in = getInput(0);
   const Argument& out = output_;
-  CHECK_EQ(getOneBatchSize(), out.value->getWidth());
+  CHECK_EQ(getSize(), out.value->getWidth());
   MatrixPtr inputV = in.value;
   MatrixPtr outV = out.value;
   outV->maxPoolForward(*inputV, ih_[0], iw_[0], ic_[0], fw_, fh_,

@@ -31,7 +31,13 @@ bool MkldnnAddtoLayer::initDnn(const LayerMap& layerMap,
   return true;
 }
 
-size_t MkldnnAddtoLayer::getOneBatchSize() {
+void MkldnnAddtoLayer::clearDataDiff() {
+  reserveOutput(bs_, getSize());
+}
+
+void MkldnnAddtoLayer::reshape() {
+  // reshape input and output size
+  bs_ = getInput(0).getBatchSize();
   CHECK_NE(inputLayers_.size(), 0UL);
   size_t layerSize = 0;
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
@@ -55,26 +61,13 @@ size_t MkldnnAddtoLayer::getOneBatchSize() {
     layerSize = oh_[i] * ow_[i] * oc_;
   }
   CHECK(layerSize == layerSize_);
-  return layerSize;
-}
 
-bool MkldnnAddtoLayer::reshapeOutput() {
-  if (bs_ == getInput(0).getBatchSize()) {
-    // can remove reserveOutput when confirm how multi inputs work
-    // and whether to clear diff
-    reserveOutput(bs_, getOneBatchSize());
-    return false;
-  }
-  // reset data
-  bs_ = getInput(0).getBatchSize();
-  LOG(INFO) << "reshape batch size: " << bs_;
-  reserveOutput(bs_, getOneBatchSize());
+  // reset output image size
   if (has_spatial_) {
     getOutput().setFrameHeight(oh_[0]);
     getOutput().setFrameWidth(ow_[0]);
   }
   printInfo();
-  return true;
 }
 
 void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {

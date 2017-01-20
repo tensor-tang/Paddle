@@ -219,7 +219,12 @@ void MkldnnBatchNormLayer::shrinkMat(const MatrixPtr& in, MatrixPtr& out) {
   }
 }
 
-size_t MkldnnBatchNormLayer::getOneBatchSize() {
+void MkldnnBatchNormLayer::clearDataDiff() {
+  resetOutput(bs_, getSize());
+}
+
+void MkldnnBatchNormLayer::reshape() {
+  // reshape input and output size
   CHECK_NE(inputLayers_.size(), 0UL);
   const ImageConfig& conf = config_.inputs(0).image_conf();
   int height = inputLayers_[0]->getOutput().getFrameHeight();
@@ -234,27 +239,10 @@ size_t MkldnnBatchNormLayer::getOneBatchSize() {
   oh_[0] = ih_[0];
   ow_[0] = iw_[0];
 
-  return oc_ * oh_[0] * ow_[0];
-}
-
-// whether reset batchsize and image size of input and output
-bool MkldnnBatchNormLayer::reshapeOutput() {
-  if (bs_ == getInput(0).getBatchSize()) {
-    // can remove reserveOutput when confirm how multi inputs work
-    // and whether to clear diff
-    resetOutput(bs_, getOneBatchSize());
-    return false;
-  }
-  // reset data
-  bs_ = getInput(0).getBatchSize();
-
+  // reset output image size
   getOutput().setFrameHeight(oh_[0]);
   getOutput().setFrameWidth(ow_[0]);
-
-  LOG(INFO) << "reshape batch size: " << bs_;
-  resetOutput(bs_, getOneBatchSize());
   printInfo();
-  return true;
 }
 
 void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {

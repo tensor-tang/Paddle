@@ -25,7 +25,7 @@ REGISTER_LAYER(mkldnn_concat, MkldnnConcatLayer);
 bool MkldnnConcatLayer::initDnn(const LayerMap &layerMap,
                            const ParameterMap &parameterMap) {
   CHECK(!biasParameter_);
-  
+
   bs_ = 0;
   oc_ = getSize();
   num_concats_ = inputLayers_.size();
@@ -40,13 +40,18 @@ bool MkldnnConcatLayer::initDnn(const LayerMap &layerMap,
   return true;
 }
 
-void MkldnnConcatLayer::reshapeSize() {
+void MkldnnConcatLayer::clearDataDiff() {
+  reserveOutput(bs_, getSize());
+}
+
+void MkldnnConcatLayer::reshape() {
+  // reshape input and output size
   CHECK(inputLayers_.size() == size_t(num_concats_));
   int chls = 0;
   for (size_t i = 0; i < inputLayers_.size(); i++) {
     int height = inputLayers_[i]->getOutput().getFrameHeight();
     int width = inputLayers_[i]->getOutput().getFrameWidth();
-    CHECK(height * width != 0);
+    CHECK_NE(height * width, 0);
     ih_[i] = height;
     iw_[i] = width;
     oh_[i] = ih_[i];
@@ -57,33 +62,14 @@ void MkldnnConcatLayer::reshapeSize() {
   }
   oc_ = getSize() / oh_[0] / ow_[0];
   CHECK(oc_ == chls);
-}
 
-// whether reset batchsize and image size of input and output
-bool MkldnnConcatLayer::reshapeOutput() {
-  if (bs_ == getInput(0).getBatchSize()) {
-    // TODO(TJ): can remove
-    // when confirm how multi inputs work and whether to clear diff
-    reserveOutput(bs_, getSize());
-    return false;
-  }
-
-  // reset image size
-  reshapeSize();
+  // reset output image size
   getOutput().setFrameHeight(oh_[0]);
   getOutput().setFrameWidth(ow_[0]);
-
-  // reset data
-  bs_ = getInput(0).getBatchSize();
-  LOG(INFO) << "layer name: " << getName();
-  LOG(INFO) << "reshape batch size: " << bs_;
-  resetOutput(bs_, getSize());
   printInfo();
-  return true;
 }
 
 void MkldnnConcatLayer::resetDnnFwd(PassType passType) {
-
   CHECK(bs_ == getInput(0).getBatchSize())
     << "Assert batchsize of input layers are equal";
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
@@ -114,7 +100,7 @@ void MkldnnConcatLayer::resetDnnFwd(PassType passType) {
     dataBottoms_[i]->initIntlCvt(dataBottoms_[i]->getUserPD(), dnnCvtNoNeed);
     srcs.push_back(*(dataBottoms_[i]->getIntlMem()));
   }
-  
+
   // inputs format should be all the same
   CHECK(prvs.size() == 0 || prvs.size() == inputLayers_.size())
     << "intl input format size does not match: "
@@ -129,7 +115,7 @@ void MkldnnConcatLayer::resetDnnFwd(PassType passType) {
 
   if (setDnnTopDataFmt_) {
     // fwdPD_ should be init with any type before, if in here.
-    dataTop_->initUser(topData, topDims, 
+    dataTop_->initUser(topData, topDims,
       memory::format(dataBottoms_[0]->getUserFmt()), eg);
     setTopDataMD(dataTop_->getUserMD());
     LOG(INFO) << "set next format: " << DNN_FORMAT[dataTop_->getUserFmt()];
@@ -154,11 +140,9 @@ void MkldnnConcatLayer::resetDnnFwd(PassType passType) {
     << DNN_FORMAT[dataBottoms_[0]->getIntlFmt()] << " >>> "
     << DNN_FORMAT[dataTop_->getIntlFmt()] << ") >>> "
     << DNN_FORMAT[dataTop_->getUserFmt()];
-
 }
 
 void MkldnnConcatLayer::resetDnnBwd() {
-
 }
 
 void MkldnnConcatLayer::myFwd(PassType passType) {
@@ -184,7 +168,6 @@ void MkldnnConcatLayer::myFwd(PassType passType) {
 }
 
 void MkldnnConcatLayer::exFwd(PassType passType) {
-
   int batchSize = getInput(0).getBatchSize();
   int size = getSize();
   resetOutput(batchSize, size);
@@ -211,11 +194,10 @@ void MkldnnConcatLayer::submitDnnFwd(PassType passType) {
 
   REGISTER_TIMER_INFO("FwAtvTimer", getName().c_str());
   forwardActivation();
-
 }
 
 void MkldnnConcatLayer::exBwd(const UpdateCallback &callback) {
-    (void)callback;
+  (void)callback;
 
   /* Do activation */ {
     REGISTER_TIMER_INFO("BpAvtTimer", getName().c_str());
@@ -233,7 +215,6 @@ void MkldnnConcatLayer::exBwd(const UpdateCallback &callback) {
     }
     offset += inSize;
   }
-
 }
 
 void MkldnnConcatLayer::submitDnnBwd(const UpdateCallback &callback) {

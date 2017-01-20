@@ -96,29 +96,20 @@ bool MkldnnConvLayer::initDnn(const LayerMap &layerMap,
   return true;
 }
 
-size_t MkldnnConvLayer::getOneBatchSize() {
+void MkldnnConvLayer::clearDataDiff() {
+  reserveOutput(bs_, getSize());
+}
+
+void MkldnnConvLayer::reshape() {
+  // reshape input and output size
   CHECK_NE(inputLayers_.size(), 0UL);
   size_t layerSize = 0;
   for (size_t i = 0; i < inputLayers_.size(); i++) {
     // all output size should be the same
-    // TODO(TJ): only care about i==0 by now
+    // TODO(TJ): only care about i==0 yet
     // check out the output size
     CHECK(layerSize == 0 || oh_[i] * ow_[i] * size_t(oc_) == layerSize);
     layerSize = oh_[i] * ow_[i] * oc_;
-  }
-  return layerSize;
-}
-
-// whether reset batchsize and image size of input and output
-bool MkldnnConvLayer::reshapeOutput() {
-  if (bs_ == getInput(0).getBatchSize()) {
-    // can remove resetoutput
-    // when confirm how multi inputs work and whether to clear diff
-    reserveOutput(bs_, getOneBatchSize());
-    return false;
-  }
-  // reset image size
-  for (size_t i = 0; i != inputLayers_.size(); ++i) {
     int height = inputLayers_[i]->getOutput().getFrameHeight();
     int width = inputLayers_[i]->getOutput().getFrameWidth();
     if (height != 0) ih_[i] = height;
@@ -127,15 +118,11 @@ bool MkldnnConvLayer::reshapeOutput() {
     oh_[i] = outputSize(ih_[i], fh_[i], ph_[i], sh_[i]);
     ow_[i] = outputSize(iw_[i], fw_[i], pw_[i], sw_[i]);
   }
+
+  // reset output image size
   getOutput().setFrameHeight(oh_[0]);
   getOutput().setFrameWidth(ow_[0]);
-
-  // reset data
-  bs_ = getInput(0).getBatchSize();
-  resetOutput(bs_, getOneBatchSize());
-  LOG(INFO) << "reshape batch size: " << bs_;
   printInfo();
-  return true;
 }
 
 void MkldnnConvLayer::resetDnnFwd(PassType passType) {
@@ -582,7 +569,7 @@ void MkldnnConvLayer::exBwdBias(MatrixPtr topDiff) {
   MatrixPtr biases =
     Matrix::create(biases_->getWGrad()->getData(), 1,
     biases_->getWGrad()->getElementCnt(), false, useGpu_);
-  size_t mapW = getOneBatchSize() / oc_;  // oh*ow
+  size_t mapW = getSize() / oc_;  // oh*ow
   size_t mapH = topDiff->getElementCnt() / mapW;  // oc*bs
   MatrixPtr vTmp = Matrix::create(topDiff->getData(), mapH, mapW, false, false);
   MatrixPtr transOutValue_;

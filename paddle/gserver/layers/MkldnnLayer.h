@@ -4,6 +4,7 @@
 
 #include "Layer.h"
 #include "paddle/math/Matrix.h"
+#include "paddle/utils/Stat.h"
 #include <vector>
 #include "mkldnn.hpp"
 #include "MkldnnBase.h"
@@ -75,7 +76,18 @@ public:
     Layer::forward(passType);
 
     // reshape if batchsize changes
-    if (reshapeOutput()) {
+    if (bs_ == getInput(0).getBatchSize()) {
+      // choose to clear top data or top diff
+      clearDataDiff();
+    } else {
+      bs_ = getInput(0).getBatchSize();
+
+      // reshape the input and output size
+      REGISTER_TIMER_INFO("FwReshapeTimer", getName().c_str());
+      LOG(INFO) << "reshape batch size: " << bs_;
+      reshape();
+      resetOutput(bs_, getSize());
+
       // dnn fwd init or reset
       LOG(INFO) << "reset mkldnn forward of layer: " << config_.name();
       resetDnnFwd(passType);
@@ -180,10 +192,18 @@ public:
 
   /** 
    * each dnn layer should have function
-   * to reshape the size and data of output if batchsize changes
-   * return false if donot need reshape 
+   * to reshape the input and output size, when batch size changes
    */
-  virtual bool reshapeOutput() = 0;
+  virtual void reshape() = 0;
+
+  /** 
+   * each dnn layer should have function
+   * to clear the top data and diff, or choose to reseve.
+   * Choose to use reserveOutput or resetOutput
+   */
+  // TODO(TJ): maybe can remove it
+  // when confirm whether need to clear topdiff and how multi inputs work
+  virtual void clearDataDiff() = 0;
 
   /** 
    * each dnn layer should have function

@@ -57,9 +57,9 @@ public:
     if (diffTop_) diffTop_->clearCvtFlag();
   }
 
-  size_t getOneBatchSize();
+  void reshape();
 
-  bool reshapeOutput();
+  void clearDataDiff();
 
   void resetDnnFwd(PassType passType);
   void resetDnnBwd();

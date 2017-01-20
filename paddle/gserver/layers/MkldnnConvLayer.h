@@ -73,8 +73,6 @@ public:
 
   bool initDnn(const LayerMap& layerMap, const ParameterMap& parameterMap);
 
-  size_t getOneBatchSize();
-
   bool hasMkldnnRelu() {
     if (!hasActivation()) {
       return false;
@@ -94,6 +92,10 @@ public:
     if (diffBias_) diffBias_->clearCvtFlag();
     if (diffWgt_) diffWgt_->clearCvtFlag();
   }
+
+  void reshape();
+
+  void clearDataDiff();
 
   /* forward data
    * input: botdata, wgtdata, biasdata

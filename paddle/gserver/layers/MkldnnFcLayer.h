@@ -63,8 +63,6 @@ public:
 
   bool initDnn(const LayerMap& layerMap, const ParameterMap& parameterMap);
 
-  size_t getOneBatchSize();
-
   void clearAllCvtFlags() {
     if (dataBot_) dataBot_->clearCvtFlag();
     if (dataTop_) dataTop_->clearCvtFlag();
@@ -76,8 +74,9 @@ public:
   //  if (diffWgt_) diffWgt_->clearCvtFlag();
   }
 
-  // return false if donot need reshape
-  bool reshapeOutput();
+  void reshape();
+
+  void clearDataDiff();
 
   void resetDnnFwd(PassType passType);
 

@@ -90,7 +90,12 @@ void MkldnnFcLayer::prefetch() {
   }
 }
 
-size_t MkldnnFcLayer::getOneBatchSize() {
+void MkldnnFcLayer::clearDataDiff() {
+  reserveOutput(bs_, getSize());
+}
+
+void MkldnnFcLayer::reshape() {
+  // reshape input and output size
   CHECK_NE(inputLayers_.size(), 0UL);
   size_t layerSize = 0;
   oc_ = getSize();
@@ -113,28 +118,11 @@ size_t MkldnnFcLayer::getOneBatchSize() {
     CHECK(layerSize == 0 || size_t(oh_[i] * ow_[i] * oc_) == layerSize);
     layerSize = oh_[i] * ow_[i] * oc_;
   }
-  return layerSize;
-}
 
-// whether reset batchsize and image size of input and output
-bool MkldnnFcLayer::reshapeOutput() {
-  REGISTER_TIMER_INFO("FwResetTimer", getName().c_str());
-  if (bs_ == getInput(0).getBatchSize()) {
-    // can remove reserveOutput when confirm how multi inputs work
-    // and whether to clear diff
-    reserveOutput(bs_, getOneBatchSize());
-    return false;
-  }
-  // reserve data
-  bs_ = getInput(0).getBatchSize();
-  LOG(INFO) << "reshape batch size: " << bs_;
-  reserveOutput(bs_, getOneBatchSize());
   printInfo();
-  return true;
 }
 
 void MkldnnFcLayer::resetDnnFwd(PassType passType) {
-  LOG(INFO) << "reset mkldnn forward of fc layer: " << config_.name();
   CHECK(bs_ == getInput(0).getBatchSize())
     << "Assert batchsize of input layers are equal";
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
