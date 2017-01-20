@@ -1,6 +1,6 @@
 set -e
 output=./models_googlenet
-model=models_googlenet/pass-00019/
+model=models_googlenetv1/pass-00019/
 function train() {
   cfg=$1
   thread=$2
@@ -30,9 +30,7 @@ function train() {
 #
 
 # googlenet
-train googlenet.py 1 64 googlenet
-#train googlenet.py 1 128 googlenet
-#train googlenet.py 1 256 googlenet
+train googlenetv1.py 1 64 googlenet
 
 # smallnet
 #train smallnet_mnist_cifar.py 1 64 smallnet

@@ -1,0 +1,7 @@
+data
+models_googlenetv1
+data/*
+models_googlenetv1/*
+plot.png
+*.log
+*.pyc
