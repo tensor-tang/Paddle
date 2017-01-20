@@ -1811,7 +1811,7 @@ class PoolLayer(LayerBase):
 
 @config_layer('mkldnn_pool')
 class MKLDNNPoolLayer(PoolLayer):
-    layer_type = 'mkldnn_pool'        
+    layer_type = 'mkldnn_pool'
 
 @config_layer('spp')
 class SpatialPyramidPoolLayer(LayerBase):
@@ -2744,11 +2744,12 @@ def ExpressionLayer(name, inputs, **xargs):
 
 @config_layer('concat')
 class ConcatenateLayer(LayerBase):
+    layer_type = 'mkldnn_concat' # 'concat'
     def __init__(self, name, inputs, bias=False, **xargs):
         config_assert(inputs, 'inputs cannot be empty')
         config_assert(not bias, 'ConcatenateLayer cannot support bias.')
         super(ConcatenateLayer, self).__init__(
-            name, 'concat', 0, inputs=inputs, **xargs)
+            name, self.layer_type, 0, inputs=inputs, **xargs)
         size = 0
         for input_index in xrange(len(self.inputs)):
             input_layer = self.get_input_layer(input_index)
@@ -2758,6 +2759,9 @@ class ConcatenateLayer(LayerBase):
 
         self.set_layer_size(size)
 
+@config_layer('mkldnn_concat')
+class MkldnnConcatenateLayer(ConcatenateLayer):
+    layer_type = 'mkldnn_concat'
 
 # like concat layer, but each input layer was processed by a Projection.
 @config_layer('concat2')

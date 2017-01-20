@@ -347,6 +347,9 @@ void MkldnnPoolLayer::myFwd(PassType passType) {
   stream(stream::kind::eager).submit(pipeline).wait();
 //  LOG(INFO) << "------------" << topdata[0];
 // << "," << topdata[1] << "," << topdata[2];
+
+// TODO(TJ): no activation???
+//  forwardActivation();
 }
 
 void MkldnnPoolLayer::exFwd(PassType passType) {

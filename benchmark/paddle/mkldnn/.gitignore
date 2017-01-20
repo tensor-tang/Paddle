@@ -1,0 +1,9 @@
+data
+models_googlenet
+data/*
+models_googlenet/*
+plot.png
+logs*
+*.log
+*.pyc
+train.list
