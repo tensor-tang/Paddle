@@ -19,6 +19,7 @@ namespace paddle {
 class MkldnnLayer : public Layer {
 public:
   /// data buffers
+  // TODO(TJ): need vector when know how RNN works
   MkldnnBufferPtr dataBot_;
   MkldnnBufferPtr dataTop_;
   /// diff buffer
@@ -28,7 +29,7 @@ public:
   // The spatial dimensions of height and width of input feature map.
   std::vector<int> ih_, iw_;
   // The spatial dimensions of height and width of output feature map.
-  std::vector<int> oh_, ow_;
+  std::vector<int> oh_, ow_;  // TODO(TJ): no need vector??
   // input channel number
   std::vector<int> ic_;
   // output channels
@@ -123,18 +124,20 @@ public:
   }
 
   bool isNextLayerDnn() {
+    bool useMkldnnAct = true;
     if (hasActivation()) {
       // so far has mkldnn relu and softmax activations
       // activation mkldnn format: input == output
       // relu: support nchw, nc, nChw8c and so on
       // softmax: support nchw and nc
-      return hasMkldnnAct();
+      // since activaion do not change format, so alos depends on next layer
+      useMkldnnAct = hasMkldnnAct();
     }
     const std::string dnn("mkldnn");
     if (!isNextLayerTypeEmpty()  // not empty
       && getNextLayerType().compare(0, dnn.length(), dnn) == 0 ) {
       // type started with "mkldnn"
-      return true;
+      return useMkldnnAct;
     } else {
       return false;
     }
