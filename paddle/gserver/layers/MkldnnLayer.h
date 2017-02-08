@@ -134,25 +134,23 @@ public:
       useMkldnnAct = hasMkldnnAct();
     }
     const std::string dnn("mkldnn");
-    if (!isNextLayerTypeEmpty()  // not empty
-      && getNextLayerType().compare(0, dnn.length(), dnn) == 0 ) {
-      // type started with "mkldnn"
-      return useMkldnnAct;
-    } else {
-      return false;
-    }
+    return (!isNextLayerTypeEmpty()  // not empty
+      // and type started with "mkldnn"
+      && getNextLayerType().compare(0, dnn.length(), dnn) == 0) ?
+      useMkldnnAct : false;
   }
 
   bool isPrevLayerDnn(size_t idx) {
-    if (getPrev(idx) == NULL)
+    if (getPrev(idx) == NULL || getPrev(idx)->getType().empty())
       return false;
+    bool useMkldnnAct = true;
     if (getPrev(idx)->hasActivation()) {
-      return getPrev(idx)->hasMkldnnAct();
+      useMkldnnAct = getPrev(idx)->hasMkldnnAct();
     }
     const std::string dnn("mkldnn");
     // type started with "mkldnn"
     return getPrev(idx)->getType().compare(0, dnn.length(), dnn) == 0 ?
-      true : false;
+      useMkldnnAct : false;
   }
 
   // for conv only support caffe mode by now
