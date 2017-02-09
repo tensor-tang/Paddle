@@ -33,5 +33,5 @@ function run() {
 }
 
 # googlenet
-run test googlenetv1.py 64 0
+run test googlenetv1.py 64 1
 #run train googlenetv1.py 64 0
