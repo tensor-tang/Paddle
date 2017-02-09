@@ -14,8 +14,10 @@
 
 from paddle.trainer_config_helpers import *
 
+batch_size = get_config_arg('batch_size', int, 64)
 is_predict = get_config_arg("is_predict", bool, False)
 is_test = get_config_arg("is_test", bool, False)
+use_dummy = get_config_arg("use_dummy", bool, False)
 data_provider = get_config_arg("data_provider", bool, True)
 ####################Data Configuration ##################
 img_size = 256
@@ -38,12 +40,11 @@ if not is_predict and data_provider:
     define_py_data_sources2(
         train_list,
         test_list,
-        module='image_provider',
+        module='dummy_provider' if use_dummy else 'image_provider',
         obj='processData',
         args=args)
 
 ######################Algorithm Configuration #############
-batch_size = 64
 settings(
     batch_size=batch_size,
     learning_rate=0.001 / batch_size,

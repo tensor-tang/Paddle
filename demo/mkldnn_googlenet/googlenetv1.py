@@ -1,15 +1,10 @@
 #!/usr/bin/env python
 from paddle.trainer_config_helpers import *
 
-height = 224
-width = 224
-num_class = 1000
 batch_size = get_config_arg('batch_size', int, 128)
-
-
-
 is_predict = get_config_arg("is_predict", bool, False)
 is_test = get_config_arg("is_test", bool, False)
+use_dummy = get_config_arg("use_dummy", bool, False)
 data_provider = get_config_arg("data_provider", bool, True)
 ####################Data Configuration ##################
 img_size = 256
@@ -32,20 +27,18 @@ if not is_predict and data_provider:
     define_py_data_sources2(
         train_list,
         test_list,
-        module='image_provider',
+        module='dummy_provider' if use_dummy else 'image_provider',
         obj='processData',
         args=args)
 
-
-
-
-
+######################Algorithm Configuration #############
 settings(
     batch_size=batch_size,
     learning_rate=0.001 / batch_size,
     learning_method=MomentumOptimizer(0.9),
     regularization=L2Regularization(0.0005 * batch_size))
 
+#######################Network Configuration #############
 def inception2(name, input, channels, \
     filter1,
     filter3R, filter3,
@@ -174,7 +167,7 @@ def inception(name, input, channels, \
 
 
 lab = data_layer(name="label", size=1000)
-data = data_layer(name="input", size=3 * height * width)
+data = data_layer(name="input", size=data_size)
 
 # stage 1
 conv1 = img_conv_layer(

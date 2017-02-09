@@ -30,6 +30,6 @@ paddle train \
 --init_model_path=$model \
 --job=test \
 --use_gpu=0 \
---trainer_count=1 \
+--config_args="is_test=1,use_dummy=0,batch_size=64" \
 2>&1 | tee $log
 

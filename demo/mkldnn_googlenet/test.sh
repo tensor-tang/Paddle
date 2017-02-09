@@ -1,15 +1,28 @@
 set -e
+unset OMP_NUM_THREADS MKL_NUM_THREADS
+num=$((`nproc`-2))
+use_num=$(($num>0?$num:1))
+export OMP_NUM_THREADS=$use_num
+export MKL_NUM_THREADS=$use_num
+
 output=./models_googlenet
 model=models_googlenetv1/pass-00019/
-function train() {
-  cfg=$1
-  bs=$2
-  args="batch_size=$2"
-  prefix=$3
-  task="test"
-  log="log_${task}_${prefix}_bs${bs}.log"
-  rm -f $log
-  paddle train --job=$task \
+
+function run() {
+    task=$1
+    cfg=$2
+    bs=$3
+    use_dummy=$4
+    prefix="googlenet"
+    is_test=0
+    if [ $task == "test" ]; then
+        is_test=1
+    fi
+    log="log_${task}_${prefix}_bs${bs}.log"
+    rm -f $log
+    
+    args="batch_size=${bs},is_test=${is_test},use_dummy=${use_dummy}"
+    paddle train --job=$task \
     --config=$cfg \
     --use_gpu=False \
     --log_period=1 \
@@ -20,5 +33,5 @@ function train() {
 }
 
 # googlenet
-train googlenetv1.py 64 googlenetv1
-
+run test googlenetv1.py 64 0
+#run train googlenetv1.py 64 0

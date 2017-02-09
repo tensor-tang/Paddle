@@ -13,6 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 set -e
+unset OMP_NUM_THREADS MKL_NUM_THREADS
+num=$((`nproc`-2))
+use_num=$(($num>0?$num:1))
+export OMP_NUM_THREADS=$use_num
+export MKL_NUM_THREADS=$use_num
+
 config=vgg_16_cifar.py
 log=log_test.log
 model=cifar_vgg_model/pass-00001/
@@ -23,6 +29,6 @@ paddle train \
 --init_model_path=$model \
 --job=test \
 --use_gpu=0 \
---trainer_count=1 \
+--config_args="is_test=1" \
 2>&1 | tee $log
 
