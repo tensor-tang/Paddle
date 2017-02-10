@@ -741,6 +741,7 @@ public:
         for (size_t i=0; i < headerPtr_->dim; ++i) {
           dat[i] = (real) s.getDouble(i);
         }
+        // TODO(TJ): here takes much time ~200ms/bs googlenetv1
     }
     ++height_;
   }
@@ -1017,6 +1018,7 @@ public:
   }
 
   virtual void drop(std::deque<PyObjectPtr> *data) {
+    // TODO(TJ): here takes much time! ~700ms in googlenet
     data->clear();
   }
 
