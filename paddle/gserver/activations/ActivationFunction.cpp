@@ -206,7 +206,9 @@ class ACTIVATION_CLASS_NAME(mkldnn_relu)
                         : public ActivationFunction, public MkldnnActivation {
 private:
   static const std::string name;
-  std::shared_ptr<mkldnn::relu_forward> reluFwd_;
+  std::shared_ptr<mkldnn::relu_forward> fwd_;
+  std::shared_ptr<mkldnn::relu_forward::primitive_desc> fwdPD_;
+  std::shared_ptr<mkldnn::relu_backward> bwd_;
 
 public:
   const std::string& getName() const { return name; }
@@ -226,59 +228,45 @@ public:
     real* pdata = arg.value->getData();
     dataBot_.reset(new mkldnn::memory({*md_, eg}, pdata));
     dataTop_.reset(new mkldnn::memory({*md_, eg}, pdata));
-    // TODO(TJ): check if OK use same pdata?
-    // in forward src and dst memory can be the same,
-    // but in backward not sure it's OK if they are the same, need double check
-    // maybe need define a temporary mkldnn:memory to handle the dst
-    // and then copy it to the output
 
     // careful: should be -0, not 0
     negative_slope = -0.f;
 
-    auto reluMD = mkldnn::relu_forward::desc(
+    auto fwdMD = mkldnn::relu_forward::desc(
       mkldnn::prop_kind::forward_training, *md_, negative_slope);
-    auto reluPD = mkldnn::relu_forward::primitive_desc(reluMD, eg);
-    reluFwd_.reset(new mkldnn::relu_forward(reluPD, *dataBot_, *dataTop_));
+    fwdPD_.reset(new mkldnn::relu_forward::primitive_desc(fwdMD, eg));
+    fwd_.reset(new mkldnn::relu_forward(*fwdPD_, *dataBot_, *dataTop_));
 
     needResetBwd_ = true;
   }
 
-  /** 
-   * each dnn layer should have function
-   * to init or reset dnn backward
-   */
   void resetDnnBwd(const Argument& arg, std::shared_ptr<void> topDiffMD) {
     if (!needResetBwd_)
       return;
 
-    // not implement
-    // in forward src and dst memory can be the same,
-    // but in backward not sure it's OK if they are the same, need double check
-    // maybe need define a temporary mkldnn:memory to handle the dst
-    // and then copy it to the output
+    mkldnn::engine eg = CpuEngine::Instance().getEngine();
+    real* pdiff = arg.grad->getData();
+    diffBot_.reset(new mkldnn::memory({*md_, eg}, pdiff));
+    diffTop_.reset(new mkldnn::memory({*md_, eg}, pdiff));
+
+    // TODO(TJ): need double check, weird and careful: should be 0, not -0
+    auto bwdMD = mkldnn::relu_backward::desc(*md_, *md_, -negative_slope);
+    auto bwdPD = mkldnn::relu_backward::primitive_desc(bwdMD, eg, *fwdPD_);
+    bwd_.reset(new mkldnn::relu_backward(
+      bwdPD, *dataBot_, *diffTop_, *diffBot_));
     needResetBwd_ = false;
   }
 
-// mkldnn format only support nchw
   void forward(Argument& act) {
-    /* for comparing with defalut result
-    MatrixPtr tmp = Matrix::create(act.value->getHeight(), act.value->getWidth(), false, false);
-    MatrixPtr in = Matrix::create(act.value->getHeight(), act.value->getWidth(), false, false);
-    in->copyFrom(*act.value);
-    act.value->relu(*tmp);
-    */
-
-    std::vector<mkldnn::primitive> fwd;
-    fwd.push_back(*reluFwd_);
-    mkldnn::stream(mkldnn::stream::kind::eager).submit(fwd).wait();
-
-    /* for comparing with defalut result
-    for (size_t i = 0; i < std::max(act.value->getElementCnt()/10, (size_t)1); ++i)
-      LOG(INFO) << "----------src: " << in->getData()[i] << "; "
-        << tmp->getData()[i] << " --- " << act.value->getData()[i];
-    */
+    std::vector<mkldnn::primitive> pipeline;
+    pipeline.push_back(*fwd_);
+    mkldnn::stream(mkldnn::stream::kind::eager).submit(pipeline).wait();
   }
-  void backward(Argument& act) { act.grad->reluDerivative(*act.value); }
+  void backward(Argument& act) {
+    std::vector<mkldnn::primitive> pipeline;
+    pipeline.push_back(*bwd_);
+    mkldnn::stream(mkldnn::stream::kind::eager).submit(pipeline).wait();
+  }
 END_DEFINE_ACTIVATION(mkldnn_relu)
 
 /**
@@ -291,7 +279,7 @@ class ACTIVATION_CLASS_NAME(mkldnn_softmax)
                         : public ActivationFunction, public MkldnnActivation {
 private:
   static const std::string name;
-  std::shared_ptr<mkldnn::softmax_forward> softmaxFwd_;
+  std::shared_ptr<mkldnn::softmax_forward> fwd_;
   int axis;  // 1 means bs*nc, 0 means nc*bs
 
   // backward
@@ -323,12 +311,11 @@ public:
 
     axis = 1;  // 1 means bs*nc, 0 means nc*bs
     // only support forward_scoring by now
-    auto softmaxMD = mkldnn::softmax_forward::desc(
+    auto fwdMD = mkldnn::softmax_forward::desc(
       mkldnn::prop_kind::forward_scoring, *md_, axis);
-    auto softmaxPD = mkldnn::softmax_forward::primitive_desc(
-      softmaxMD, eg);
-    softmaxFwd_.reset(new mkldnn::softmax_forward(
-      softmaxPD, *dataBot_, *dataTop_));
+    auto fwdPD = mkldnn::softmax_forward::primitive_desc(
+      fwdMD, eg);
+    fwd_.reset(new mkldnn::softmax_forward(fwdPD, *dataBot_, *dataTop_));
 
     needResetBwd_ = true;
   }
@@ -359,9 +346,9 @@ public:
     // in->copyFrom(*act.value);
     // act.value->softmax(*tmp);
 
-    std::vector<mkldnn::primitive> fwd;
-    fwd.push_back(*softmaxFwd_);
-    mkldnn::stream(mkldnn::stream::kind::eager).submit(fwd).wait();
+    std::vector<mkldnn::primitive> pipeline;
+    pipeline.push_back(*fwd_);
+    mkldnn::stream(mkldnn::stream::kind::eager).submit(pipeline).wait();
 
     // for comparing with defalut result
     // for (size_t i = 0; i < std::max(act.value->getElementCnt()/10,

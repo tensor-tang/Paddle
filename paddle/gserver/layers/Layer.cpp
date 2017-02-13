@@ -388,10 +388,10 @@ void Layer::backwardActivation() {
   }
 
 #ifdef PADDLE_USE_MKLDNN
-    if (hasMkldnnAct()) {
-      activation_->resetDnnBwd(output_,
-        std::static_pointer_cast<void>(topDiffMD_));
-    }
+  if (hasMkldnnAct()) {
+    activation_->resetDnnBwd(output_,
+      std::static_pointer_cast<void>(topDiffMD_));
+  }
 #endif
 
   activation_->backward(output_);

@@ -23,6 +23,8 @@ public:
   std::shared_ptr<mkldnn::memory::desc> md_;
   std::shared_ptr<mkldnn::memory> dataBot_;
   std::shared_ptr<mkldnn::memory> dataTop_;
+  std::shared_ptr<mkldnn::memory> diffBot_;
+  std::shared_ptr<mkldnn::memory> diffTop_;
   bool needResetBwd_;
 
 public:
@@ -34,8 +36,8 @@ public:
       md_(nullptr),
       dataBot_(nullptr),
       dataTop_(nullptr),
-    //  diffBot_(nullptr),
-    //  diffTop_(nullptr),
+      diffBot_(nullptr),
+      diffTop_(nullptr),
       needResetBwd_(true)
     {}
 
