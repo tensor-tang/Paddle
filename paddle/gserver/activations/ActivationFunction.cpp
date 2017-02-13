@@ -249,8 +249,7 @@ public:
     diffBot_.reset(new mkldnn::memory({*md_, eg}, pdiff));
     diffTop_.reset(new mkldnn::memory({*md_, eg}, pdiff));
 
-    // TODO(TJ): need double check, weird and careful: should be 0, not -0
-    auto bwdMD = mkldnn::relu_backward::desc(*md_, *md_, -negative_slope);
+    auto bwdMD = mkldnn::relu_backward::desc(*md_, *md_, negative_slope);
     auto bwdPD = mkldnn::relu_backward::primitive_desc(bwdMD, eg, *fwdPD_);
     bwd_.reset(new mkldnn::relu_backward(
       bwdPD, *dataBot_, *diffTop_, *diffBot_));
