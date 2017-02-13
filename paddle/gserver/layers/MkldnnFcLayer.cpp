@@ -126,15 +126,13 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   CHECK(bs_ == getInput(0).getBatchSize())
     << "Assert batchsize of input layers are equal";
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
-  hasBias_ = (biases_ && biases_->getW()) ? true : false;
+  hasBias_ = (biases_ && biases_->getW());
   // create dim structure that describes user data.
   memory::dims botDims, wgtDims, biasDims, topDims;
   memory::format botFmt, wgtFmt, biasFmt, topFmt;
   if (!has_spatial_) {
     botDims = {bs_, ic_[0]};
     wgtDims = {oc_, ic_[0]};  // transpose from paddle weight
-    // TODO(TJ): when backward done
-    // maybe we donot need reley on weight format of paddle
     botFmt = memory::format::nc;
     wgtFmt = memory::format::oi;
   } else {
@@ -186,7 +184,7 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   fwdPD.reset(new inner_product_forward::primitive_desc(*fwdDesc, eg));
   // init cvt
   if (dataBot_->initIntlCvt(
-    fwdPD->src_primitive_desc(), dnnCvtUser2Internal)) {
+    fwdPD->src_primitive_desc(), dnnCvtUser2Intl)) {
     LOG(INFO) << "need reorder --- bottom data: "
       << DNN_FORMAT[dataBot_->getUserFmt()]
       << " >>>>> "
@@ -197,7 +195,7 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
     real *wgtData = selfWgtData_[0]->getData();
     dataWgt_->initUser(wgtData, wgtDims, wgtFmt, eg);
     if (dataWgt_->initIntlCvt(
-      fwdPD->weights_primitive_desc(), dnnCvtUser2Internal)) {
+      fwdPD->weights_primitive_desc(), dnnCvtUser2Intl)) {
       LOG(INFO) << "need reorder --- weight data: "
         << DNN_FORMAT[dataWgt_->getUserFmt()]
         << " >>>>> "
@@ -216,7 +214,7 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   }
   if (hasBias_) {
     if (dataBias_->initIntlCvt(
-      fwdPD->bias_primitive_desc(), dnnCvtUser2Internal)) {
+      fwdPD->bias_primitive_desc(), dnnCvtUser2Intl)) {
       LOG(INFO) << "need reorder --- bias data: "
         << DNN_FORMAT[dataBias_->getUserFmt()]
         << " >>>>> "
@@ -232,7 +230,7 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
     dataTop_->initUser(topData, topDims, topFmt, eg);
   }
   if (dataTop_->initIntlCvt
-    (fwdPD->dst_primitive_desc(), dnnCvtInternal2User)) {
+    (fwdPD->dst_primitive_desc(), dnnCvtIntl2User)) {
     LOG(INFO) << "need reorder --- top data: "
       << DNN_FORMAT[dataTop_->getIntlFmt()]
       << " >>>>> "
@@ -255,13 +253,119 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
 }
 
 void MkldnnFcLayer::resetDnnBwd() {
-  /*LOG(INFO) << "init or reset fc backward of layer: " << config_.name();
-  */
+  mkldnn::engine eg = CpuEngine::Instance().getEngine();
+  bool hasBias = (biases_ && biases_->getWGrad());
+  prop_kind pk = prop_kind::forward;
+  // init top diff user
+  real *topDiff = getOutputGrad()->getData();
+  diffTop_.reset(new MkldnnBuffer());
+  const std::shared_ptr<mkldnn::memory::desc> inputDiffMD = getTopDiffMD();
+  if (inputDiffMD) {
+    diffTop_->initUser(topDiff, *inputDiffMD, eg);
+  } else {
+    memory::dims topDims = {bs_, oc_};
+    diffTop_->initUser(topDiff, topDims, memory::format::nc, eg);
+  }
+  if (hasBias) {
+    // bias backward can not be execute seperately, 
+    // only can execute with weight bakcward
+    real* biasDiff = biases_->getWGrad()->getData();
+    memory::dims biasDims = {oc_};
+    diffBias_.reset(new MkldnnBuffer());
+    diffBias_->initUser(biasDiff, biasDims, memory::format::x, eg);
+  }
+  // TODO(TJ): only care about i==0 yet, meaningful with i>1?
+  for (size_t i = 0; i != inputLayers_.size(); ++i) {
+    CHECK(bs_ == getInput(i).getBatchSize()) << "batchsize should equal";
+    CHECK(weights_[i]->getWGrad()) << "should have weight anyway";
+
+    // prepare backward weight and bias ***************************
+    std::shared_ptr<inner_product_forward::desc> bwdFwdDesc;
+    std::shared_ptr<inner_product_forward::primitive_desc> bwdFwdPD;
+    std::shared_ptr<inner_product_backward_weights::desc> bwdWgtDesc;
+    std::shared_ptr<inner_product_backward_weights::primitive_desc> bwdWgtPD;
+    bwdFwdDesc.reset(new inner_product_forward::desc(pk,
+      dataBot_->getIntlMD(), dataWgt_->getIntlMD(), dataTop_->getIntlMD()));
+    bwdFwdPD.reset(new inner_product_forward::primitive_desc(
+      *bwdFwdDesc, eg));
+    CHECK(hasBias) << "only support with bias in mkldnn";
+    bwdWgtDesc.reset(new inner_product_backward_weights::desc(
+      dataBot_->getIntlMD(), dataWgt_->getIntlMD(),
+      dataBias_->getIntlMD(), dataTop_->getIntlMD()));
+    bwdWgtPD.reset(new inner_product_backward_weights::primitive_desc(
+      *bwdWgtDesc, eg, *bwdFwdPD));
+    CHECK(dataBot_->getIntlPD() == bwdWgtPD->src_primitive_desc());
+    CHECK(dataWgt_->getIntlPD() == bwdWgtPD->diff_weights_primitive_desc());
+    CHECK(dataBias_->getIntlPD() == bwdWgtPD->diff_bias_primitive_desc());
+    
+    // init reorder
+    diffWgt_.reset(new MkldnnBuffer());
+    if (usePaddleFmt_) {
+      real *wgtDiff = selfWgtDiff_[i]->getData();
+      memory::dims wgtDims = !has_spatial_ ? memory::dims{oc_, ic_[i]}
+        : memory::dims{oc_, ic_[i], ih_[i], iw_[i]};
+      diffWgt_->initUser(wgtDiff, wgtDims,
+        memory::format(dataWgt_->getUserFmt()), eg);
+      if (diffWgt_->initIntlCvt(dataWgt_->getIntlPD(), dnnCvtIntl2User)) {
+        LOG(INFO) << "need reorder --- weight diff: "
+          << DNN_FORMAT[diffWgt_->getIntlFmt()]
+          << " >>>>> "
+          << DNN_FORMAT[diffWgt_->getUserFmt()];
+      }
+    } else {
+      real *wgtDiff = weights_[i]->getWGrad()->getData();
+      diffWgt_->initUser(wgtDiff, dataWgt_->getIntlPD());
+      diffWgt_->initIntlCvt(diffWgt_->getUserPD(), dnnCvtNoNeed);
+    }
+    diffTop_->initIntlCvt(bwdWgtPD->diff_dst_primitive_desc(), dnnCvtUser2Intl);
+    // bias backward can only be executed in weight backward with MKL-DNN
+    diffBias_->initIntlCvt(dataBias_->getIntlPD(), dnnCvtIntl2User);
+    bwdWgt_.reset(new inner_product_backward_weights(*bwdWgtPD,
+      *(dataBot_->getIntlMem()), *(diffTop_->getIntlMem()),
+      *(diffWgt_->getIntlMem()), *(diffBias_->getIntlMem())));
+
+    // then prepare backward data *************************************
+    LayerPtr prevLayer = getPrev(i);
+    if (NULL == prevLayer->getOutputGrad()) {
+      continue; // data layer has not diff
+    }
+    
+    std::shared_ptr<inner_product_backward_data::desc> bwdDataDesc;
+    std::shared_ptr<inner_product_backward_data::primitive_desc> bwdDataPD;
+    bwdDataDesc.reset(new inner_product_backward_data::desc(
+      dataBot_->getIntlMD(), dataWgt_->getIntlMD(), dataTop_->getIntlMD()));
+    bwdDataPD.reset(new inner_product_backward_data::primitive_desc(
+      *bwdDataDesc, eg, *bwdFwdPD));
+    CHECK(dataWgt_->getIntlPD() == bwdDataPD->weights_primitive_desc());
+    CHECK(diffTop_->getIntlPD() == bwdDataPD->diff_dst_primitive_desc());
+    // init bottom diff
+    real* botDiff = prevLayer->getOutputGrad()->getData();
+    diffBot_.reset(new MkldnnBuffer());
+    if (setDnnBotDiffFmt_[i]) {
+      diffBot_->initUser(botDiff, bwdDataPD->diff_src_primitive_desc());
+      getPrev(i)->setTopDiffMD(diffBot_->getUserMD());
+    } else {
+      memory::dims botDims = !has_spatial_ ? memory::dims{bs_, ic_[i]}
+        : memory::dims{bs_, ic_[i], ih_[i], iw_[i]};
+      memory::format botFmt = !has_spatial_ ? memory::format::nc
+        : memory::format::nchw;
+      diffBot_->initUser(botDiff, botDims, botFmt, eg);
+    }
+    diffBot_->initIntlCvt(
+      bwdDataPD->diff_src_primitive_desc(), dnnCvtIntl2User);
+    bwdData_.reset(new inner_product_backward_data(
+      *bwdDataPD, *(diffTop_->getIntlMem()),
+      *(dataWgt_->getIntlMem()), *(diffBot_->getIntlMem())));
+    LOG(INFO) << "diff format flow --- "
+      << DNN_FORMAT[diffBot_->getUserFmt()] << " <<< ("
+      << DNN_FORMAT[diffBot_->getIntlFmt()] << " <<< "
+      << DNN_FORMAT[diffTop_->getIntlFmt()] << ") <<< "
+      << DNN_FORMAT[diffTop_->getUserFmt()];
+  }
+
 }
 
 void MkldnnFcLayer::myFwd(PassType passType) {
-  /// all sumbit cvt should be clear
-  clearAllCvtFlags();
   CHECK(getInput(0).value) << "The input of 'fc' layer must be matrix";
   real *botdata = getPrev(0)->getOutputValue()->getData();
   real *topdata = getOutputValue()->getData();
@@ -282,9 +386,6 @@ void MkldnnFcLayer::myFwd(PassType passType) {
   stream(stream::kind::eager).submit(pipeline).wait();
 //  LOG(INFO) << "my-" << topdata[0] << "," << topdata[1] << "," << topdata[2];
 
-  // activation
-  REGISTER_TIMER_INFO("mkldnn_FcFwAtvTimer", getName().c_str());
-  forwardActivation();
 }
 
 void MkldnnFcLayer::exFwd(PassType passType) {
@@ -308,27 +409,31 @@ void MkldnnFcLayer::exFwd(PassType passType) {
   }
 /*  real *topdata = outV->getData();
   LOG(INFO) << "ex ------------" << topdata[0] << "," << topdata[1] << "," << topdata[2];*/
-  // forwardActivation();
+
 }
 
 void MkldnnFcLayer::submitDnnFwd(PassType passType) {
   myFwd(passType);
 //  exFwd(passType);
+// activation
+  REGISTER_TIMER_INFO("mkldnn_FcFwAtvTimer", getName().c_str());
+  forwardActivation();
 }
 
 void MkldnnFcLayer::exBwd(const UpdateCallback &callback) {
-  /* Do derivation */ {
-    REGISTER_TIMER_INFO("BpAvtTimer", getName().c_str());
-    backwardActivation();
-  }
+  real* biasdiff = biases_->getWGrad()->getData();
+  
+  real* wgtdiff = weights_[0]->getWGrad()->getData();
 
+  LOG(INFO) << "--------------------ex before wgt, bias diff: "<< wgtdiff[0] << "," << wgtdiff[3] << ","<<biasdiff[0]<< ","<<biasdiff[2];
+      
   if (biases_ && biases_->getWGrad()) {
-    REGISTER_TIMER_INFO("BpBiasTimer", getName().c_str());
     biases_->getWGrad()->collectBias(*getOutputGrad(), 1);
 
     /* Increasing the number of gradient */
-    biases_->getParameterPtr()->incUpdate(callback);
+//    biases_->getParameterPtr()->incUpdate(callback);
   }
+
 
   bool syncFlag = hl_get_sync_flag();
 
@@ -337,10 +442,9 @@ void MkldnnFcLayer::exBwd(const UpdateCallback &callback) {
     if (weights_[i]->getWGrad()) {
       MatrixPtr input_T = getInputValue(i)->getTranspose();
       MatrixPtr oGrad = getOutputGrad();
-      {
-        REGISTER_TIMER_INFO("GradMulTimer", getName().c_str());
-        weights_[i]->getWGrad()->mul(input_T, oGrad, 1, 1);
-      }
+      weights_[i]->getWGrad()->mul(input_T, oGrad, 1, 1);
+      LOG(INFO) << "--------------------ex wgt, bias diff: "<< wgtdiff[0] << "," << wgtdiff[3] << ","<<biasdiff[0]<< ","<<biasdiff[2];
+            
     }
 
     // If callback does not change value, backprop error asynchronously so that
@@ -348,38 +452,95 @@ void MkldnnFcLayer::exBwd(const UpdateCallback &callback) {
     hl_set_sync_flag(false);
 
     /* Calculate the input layers error */
+    
+    
     MatrixPtr preGrad = getInputGrad(i);
+    real* botdiff = preGrad->getData();
+    LOG(INFO) << "--------------------ex before data diff: "<< botdiff[0] << "," << botdiff[10];
     if (NULL != preGrad) {
       MatrixPtr weights_T = weights_[i]->getW()->getTranspose();
-      REGISTER_TIMER_INFO("BpMulTimer", getName().c_str());
       preGrad->mul(getOutputGrad(), weights_T, 1, 1);
     }
     hl_set_sync_flag(syncFlag);
-    {
-      REGISTER_TIMER_INFO("WeightUpdate", getName().c_str());
-      weights_[i]->getParameterPtr()->incUpdate(callback);
-    }
+    LOG(INFO) << "--------------------ex data diff: "<< botdiff[0] << "," << botdiff[10];
+
+
+//      weights_[i]->getParameterPtr()->incUpdate(callback);
+
+  }
+}
+
+void MkldnnFcLayer::submitBwdData(int idx, const MatrixPtr& botGrad) {
+  if (botGrad == NULL) {
+    return;
+  }
+  real* botdiff = botGrad->getData();
+  real* topdiff = getOutputGrad()->getData();
+  std::vector<primitive> pipeline;
+  if (usePaddleFmt_) {  // no need cvt wgt without usePaddleFmt_
+    CHECK(selfWgtData_[idx]);
+    real* wgtdata = selfWgtData_[idx]->getData();
+    dataWgt_->submitCvt(pipeline, wgtdata);
+  }
+  diffTop_->submitCvt(pipeline, topdiff);
+  pipeline.push_back(*bwdData_);
+  diffBot_->submitCvt(pipeline, botdiff);
+  stream(stream::kind::eager).submit(pipeline).wait();
+//  LOG(INFO) << "--------------------my data diff: "<< botdiff[0] << "," << botdiff[10];
+}
+
+void MkldnnFcLayer::submitBwdWgts(int idx, const MatrixPtr& botVal) {
+  real* botdata = botVal->getData();  
+  real* topdiff = getOutputGrad()->getData();
+  real* wgtdiff = weights_[idx]->getWGrad()->getData();
+  if (usePaddleFmt_) {
+    CHECK(selfWgtDiff_[idx]);
+    wgtdiff = selfWgtDiff_[idx]->getData();
+  }
+  std::vector<primitive> pipeline;
+  diffTop_->submitCvt(pipeline, topdiff);
+  dataBot_->submitCvt(pipeline, botdata);
+  pipeline.push_back(*bwdWgt_);
+  diffWgt_->submitCvt(pipeline, wgtdiff);
+  if (biases_ && biases_->getWGrad()) {
+    // bias backward can only execute in filter backward with MKL-DNN
+    real* biasdiff = biases_->getWGrad()->getData();
+    diffBias_->submitCvt(pipeline, biasdiff);
+  }
+//  LOG(INFO) << "size:" << pipeline.size();
+  stream(stream::kind::eager).submit(pipeline).wait();
+  
+  if (usePaddleFmt_) {
+    // save to actual weight param
+    selfWgtDiff_[idx]->transpose(weights_[idx]->getWGrad_mutable(), false);
   }
 }
 
 void MkldnnFcLayer::submitDnnBwd(const UpdateCallback &callback) {
-  exBwd(callback);
-  // dnn backward
-  /*
+  backwardActivation();
+
+//  exBwd(nullptr);
+
+//  real* wgtdiff = weights_[0]->getWGrad()->getData();
+//  real* biasdiff = biases_->getWGrad()->getData();
+
+
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
-    // backward weights before data, since may have not botdiff in some layer
+    submitBwdData(i, getPrev(i)->getOutputGrad());
+    
     if (weights_[i]->getWGrad()) {
-      submitBwdWgts(i, getPrev(i)->getOutputValue(), getOutputGrad());
-      // Increasing the number of gradient 
-      weights_[i]->getParameterPtr()->incUpdate(callback);
+ //     LOG(INFO) << "--------------------ex wgt, bias diff: "<< wgtdiff[0] << "," << wgtdiff[3] << ","<<biasdiff[0]<< ","<<biasdiff[2];
+      
+      submitBwdWgts(i, getPrev(i)->getOutputValue());
+ //     LOG(INFO) << "--------------------my wgt, bias diff: "<< wgtdiff[0] << "," << wgtdiff[3] << ","<<biasdiff[0]<< ","<<biasdiff[2];
+      weights_[i]->getParameterPtr()->incUpdate(callback);   
     }
-    submitBwdData(i, getOutputGrad(), getPrev(i)->getOutputGrad());
   }
   if (biases_ && biases_->getWGrad()) {
-    // Increasing the number of gradient 
     biases_->getParameterPtr()->incUpdate(callback);
   }
-  */
+
+
 }
 
 }  // namespace paddle

@@ -139,7 +139,7 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
 
   // init top cvt
   if (dataTop_->initIntlCvt(
-    fwdPD_->dst_primitive_desc(), dnnCvtInternal2User)) {
+    fwdPD_->dst_primitive_desc(), dnnCvtIntl2User)) {
     LOG(INFO) << "need reorder --- top data: "
       << DNN_FORMAT[dataTop_->getIntlFmt()]
       << " >>>>> "
@@ -153,9 +153,6 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
 }
 
 void MkldnnAddtoLayer::myFwd(PassType passType) {
-  /// all sumbit cvt should be clear
-  clearAllCvtFlags();
-
   std::vector<primitive> pipeline;
   std::vector<primitive::at> srcs;
 

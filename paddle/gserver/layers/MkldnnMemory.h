@@ -15,8 +15,8 @@ namespace paddle {
  */
  typedef enum {
     dnnCvtNone             = 0,
-    dnnCvtUser2Internal    = 1,
-    dnnCvtInternal2User    = 2,
+    dnnCvtUser2Intl        = 1,
+    dnnCvtIntl2User        = 2,
     dnnCvtNoNeed           = 3,
     dnnCvtNumber           = 4
 } dnnCvtType_t;
@@ -112,7 +112,7 @@ public:
   // init internal and conversion(reorder)
   // return true if need cvt.
   bool initIntlCvt(mkldnn::memory::primitive_desc intlPD, int cvtType) {
-    CHECK(cvtType == dnnCvtUser2Internal || cvtType == dnnCvtInternal2User
+    CHECK(cvtType == dnnCvtUser2Intl || cvtType == dnnCvtIntl2User
       || cvtType == dnnCvtNoNeed) << "please specify one type of conversion";
     CHECK(pUser_)
       << "call initUser before init internal layout and conversion";
@@ -128,7 +128,7 @@ public:
       // allocate internal src memory from user
       this->pIntl_.reset(new mkldnn::memory(intlPD));
       // create a reorder
-      if (cvtType == dnnCvtUser2Internal) {
+      if (cvtType == dnnCvtUser2Intl) {
         this->pCvt_.reset(new mkldnn::reorder(*pUser_, *pIntl_));
       } else {
         this->pCvt_.reset(new mkldnn::reorder(*pIntl_, *pUser_));

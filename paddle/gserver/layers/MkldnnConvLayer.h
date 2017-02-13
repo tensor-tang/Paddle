@@ -18,11 +18,9 @@ namespace paddle {
 class MkldnnConvLayer : public MkldnnLayer {
 protected:
   std::shared_ptr<mkldnn::convolution_forward::primitive> fwd_;
-  /// For dnn convolution. Primitive Desc
-  std::shared_ptr<mkldnn::convolution_backward_data::primitive_desc> bwdDataPD_;
-  std::shared_ptr<
-    mkldnn::convolution_backward_weights::primitive_desc> bwdWgtPD_;
-
+  std::shared_ptr<mkldnn::convolution_backward_weights> bwdWgt_;
+  std::shared_ptr<mkldnn::convolution_backward_data> bwdData_;
+  
   /// data buffers
   MkldnnBufferPtr dataWgt_;
   MkldnnBufferPtr dataBias_;
@@ -46,9 +44,8 @@ protected:
 
   /// shape of weight: (oc, ic*fh*fw/gp)
   WeightList weights_;
-  /// If shared_biases is false shape of bias: (oc, 1)
-  /// If shared_biases is ture shape of bias:
-  /// (oc * outputX * outputY, 1)
+  /// If shared_biases is false shape of bias: (oc * outputX * outputY, 1)
+  /// If shared_biases is ture shape of bias: (oc, 1)
   std::unique_ptr<Weight> biases_;
   bool hasRelu_;
   bool useConvRelu_;
@@ -58,8 +55,8 @@ public:
   explicit MkldnnConvLayer(const LayerConfig& config)
     : MkldnnLayer(config),
       fwd_(nullptr),
-      bwdDataPD_(nullptr),
-      bwdWgtPD_(nullptr),
+      bwdWgt_(nullptr),
+      bwdData_(nullptr),
       dataWgt_(nullptr),
       dataBias_(nullptr),
       diffWgt_(nullptr),
@@ -82,7 +79,7 @@ public:
     return type.compare(0, dnn.length(), dnn) == 0 ? true : false;
   }
 
-  void clearAllCvtFlags() {
+  void clearAllDnnCvtFlags() {
     if (dataBot_) dataBot_->clearCvtFlag();
     if (dataTop_) dataTop_->clearCvtFlag();
     if (dataBias_) dataBias_->clearCvtFlag();
@@ -97,6 +94,14 @@ public:
 
   void clearDataDiff();
 
+
+
+  // return false if donot need reshape
+  bool reshapeOutput();
+
+  void resetDnnFwd(PassType passType);
+  void resetDnnBwd();
+
   /* forward data
    * input: botdata, wgtdata, biasdata
    * output topdata
@@ -104,28 +109,12 @@ public:
   void submitFwdOnce(PassType passType, int inputIdx,
     const MatrixPtr& botVal, const MatrixPtr& topVal);
 
-  /* backward data
-   * input: topdiff, wgtdata
-   * output botdiff
-   */
-  void submitBwdData(
-    int inputIdx, const MatrixPtr& topGrad, const MatrixPtr& botGrad);
-
-  /* backward wgt and bias
-   * input: topdiff, botdata
-   * output wgtdiff, biasdiff
-   */
-  void submitBwdWgts(
-    int inputIdx, const MatrixPtr& botVal, const MatrixPtr& topGrad);
-
-  // return false if donot need reshape
-  bool reshapeOutput();
-
-  void resetDnnFwd(PassType passType);
-
-  void resetDnnBwd();
-
   void submitDnnFwd(PassType passType);
+
+  void submitBwdData(int inputIdx, const MatrixPtr& botGrad);
+
+  void submitBwdWgts(int inputIdx, const MatrixPtr& botVal);
+
   void submitDnnBwd(const UpdateCallback& callback);
 
 private:

@@ -316,7 +316,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
     dataTop_->initUser(topData, topDims, memory::format::nchw, eg);
   }
   if (dataTop_->initIntlCvt(
-    fwdPD_->dst_primitive_desc(), dnnCvtInternal2User)) {
+    fwdPD_->dst_primitive_desc(), dnnCvtIntl2User)) {
     LOG(INFO) << "need reorder --- top data: "
       << DNN_FORMAT[dataTop_->getIntlFmt()]
       << " >>>>> "
@@ -336,7 +336,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
     wgtScaleShift_.reset(new MkldnnBuffer());
     wgtScaleShift_->initUser(wgtData, wgtDims, memory::format::nc, eg);
     if (wgtScaleShift_->initIntlCvt(
-      fwdPD_->weights_primitive_desc(), dnnCvtUser2Internal)) {
+      fwdPD_->weights_primitive_desc(), dnnCvtUser2Intl)) {
       LOG(FATAL) << "should donot need cvt!!! user vs intl format:"
       << DNN_FORMAT[wgtScaleShift_->getUserFmt()] << " vs "
       << DNN_FORMAT[wgtScaleShift_->getIntlFmt()];
@@ -353,26 +353,26 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
     var_->initUser(localVar_->getData(), {oc_}, memory::format::x, eg);
     if (useGlobalStats_) {
       if (mean_->initIntlCvt(
-        fwdPD_->mean_primitive_desc(), dnnCvtUser2Internal)) {
+        fwdPD_->mean_primitive_desc(), dnnCvtUser2Intl)) {
         LOG(FATAL) << "should donot need cvt!!! format-- user vs intl:"
           << DNN_FORMAT[mean_->getUserFmt()] << " vs "
           << DNN_FORMAT[mean_->getIntlFmt()];
       }
       if (var_->initIntlCvt(
-        fwdPD_->variance_primitive_desc(), dnnCvtUser2Internal)) {
+        fwdPD_->variance_primitive_desc(), dnnCvtUser2Intl)) {
         LOG(FATAL) << "should donot need cvt!!! format-- user vs intl:"
           << DNN_FORMAT[var_->getUserFmt()] << " vs "
           << DNN_FORMAT[var_->getIntlFmt()];
       }
     } else {
       if (mean_->initIntlCvt(
-        fwdPD_->mean_primitive_desc(), dnnCvtInternal2User)) {
+        fwdPD_->mean_primitive_desc(), dnnCvtIntl2User)) {
         LOG(FATAL) << "should donot need cvt!!! format-- user vs intl:"
           << DNN_FORMAT[mean_->getUserFmt()] << " vs "
           << DNN_FORMAT[mean_->getIntlFmt()];
       }
       if (var_->initIntlCvt(
-        fwdPD_->variance_primitive_desc(), dnnCvtInternal2User)) {
+        fwdPD_->variance_primitive_desc(), dnnCvtIntl2User)) {
         LOG(FATAL) << "should donot need cvt!!! format-- user vs intl:"
           << DNN_FORMAT[var_->getUserFmt()] << " vs "
           << DNN_FORMAT[var_->getIntlFmt()];
@@ -396,8 +396,7 @@ void MkldnnBatchNormLayer::myFwd(PassType passType) {
   if (passType == PASS_TRAIN && useGlobalStats_ == true) {
     LOG(FATAL) << "this should not happen!!! use gloal stat in training";
   }
-  /// all sumbit cvt should be clear
-  clearAllCvtFlags();
+
   std::vector<primitive> pipeline;
 
   // data bottom

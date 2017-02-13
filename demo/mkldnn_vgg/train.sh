@@ -13,6 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 set -e
+
+unset OMP_NUM_THREADS MKL_NUM_THREADS
+num=$((`nproc`-2))
+use_num=$(($num>0?$num:1))
+export OMP_NUM_THREADS=$use_num
+export MKL_NUM_THREADS=$use_num
+
 config=vgg_19.py
 output=./models_vgg_19
 log=log_train.log
@@ -26,6 +33,7 @@ paddle train \
 --trainer_count=1 \
 --num_passes=2 \
 --save_dir=$output \
+--config_args="use_dummy=0,batch_size=32" \
 2>&1 | tee $log
 
 #--saving_period_by_batches=3 \  // not work

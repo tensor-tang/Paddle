@@ -46,7 +46,7 @@ public:
    */
   bool initDnn(const LayerMap& layerMap, const ParameterMap& parameterMap);
 
-  void clearAllCvtFlags() {
+  void clearAllDnnCvtFlags() {
     for (size_t i = 0; i < dataBottoms_.size(); ++i) {
       if (dataBottoms_[i])
         dataBottoms_[i]->clearCvtFlag();

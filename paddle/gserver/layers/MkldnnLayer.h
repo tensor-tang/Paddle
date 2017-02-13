@@ -94,8 +94,9 @@ public:
       resetDnnFwd(passType);
       needResetBwd_ = true;
     }
-
-    // submit dnn forward
+    // all sumbit cvt should be clear
+    clearAllDnnCvtFlags();
+    // then submit dnn forward    
     submitDnnFwd(passType);
   }
 
@@ -134,7 +135,7 @@ public:
       useMkldnnAct = hasMkldnnAct();
     }
     const std::string dnn("mkldnn");
-    return (!isNextLayerTypeEmpty()  // not empty
+    return (!isNextLayerTypeEmpty()
       // and type started with "mkldnn"
       && getNextLayerType().compare(0, dnn.length(), dnn) == 0) ?
       useMkldnnAct : false;
@@ -217,6 +218,12 @@ public:
    * to init or reset dnn backward
    */
   virtual void resetDnnBwd() = 0;
+
+  /** 
+   * each dnn layer should have function
+   * to clear all the MkldnnBuffer cvt flags
+   */
+  virtual void clearAllDnnCvtFlags() = 0;
 
   virtual void submitDnnFwd(PassType passType) = 0;
   virtual void submitDnnBwd(const UpdateCallback& callback) = 0;

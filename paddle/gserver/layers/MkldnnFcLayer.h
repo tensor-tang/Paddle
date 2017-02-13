@@ -17,10 +17,9 @@ namespace paddle {
  */
 class MkldnnFcLayer : public MkldnnLayer {
 protected:
-  std::shared_ptr<mkldnn::inner_product_forward::primitive> fwd_;
-
-  // std::shared_ptr<convolution_backward_data::primitive_desc> bwdDataPD_;
-  // std::shared_ptr<convolution_backward_weights::primitive_desc> bwdWgtPD_;
+  std::shared_ptr<mkldnn::inner_product_forward> fwd_;
+  std::shared_ptr<mkldnn::inner_product_backward_data> bwdData_;
+  std::shared_ptr<mkldnn::inner_product_backward_weights> bwdWgt_;
 
   // if image width and height !=0
   bool has_spatial_;
@@ -28,8 +27,8 @@ protected:
   MkldnnBufferPtr dataWgt_;
   MkldnnBufferPtr dataBias_;
   /// diff buffer
-//  MkldnnBufferPtr diffWgt_;
-//  MkldnnBufferPtr diffBias_;
+  MkldnnBufferPtr diffWgt_;
+  MkldnnBufferPtr diffBias_;
   bool hasBias_;
 
   // fc
@@ -53,8 +52,8 @@ public:
       has_spatial_(false),
       dataWgt_(nullptr),
       dataBias_(nullptr),
-//      diffWgt_(nullptr),
-//      diffBias_(nullptr),
+      diffWgt_(nullptr),
+      diffBias_(nullptr),
 //      bwdWgtPD_(nullptr)
       hasBias_(false)
     {}
@@ -63,15 +62,15 @@ public:
 
   bool initDnn(const LayerMap& layerMap, const ParameterMap& parameterMap);
 
-  void clearAllCvtFlags() {
+  void clearAllDnnCvtFlags() {
     if (dataBot_) dataBot_->clearCvtFlag();
     if (dataTop_) dataTop_->clearCvtFlag();
-    if (diffBot_) diffBot_->clearCvtFlag();
-    if (diffTop_) diffTop_->clearCvtFlag();
     if (dataBias_) dataBias_->clearCvtFlag();
     if (dataWgt_) dataWgt_->clearCvtFlag();
-  //  if (diffBias_) diffBias_->clearCvtFlag();
-  //  if (diffWgt_) diffWgt_->clearCvtFlag();
+    if (diffBot_) diffBot_->clearCvtFlag();
+    if (diffTop_) diffTop_->clearCvtFlag();
+    if (diffBias_) diffBias_->clearCvtFlag();
+    if (diffWgt_) diffWgt_->clearCvtFlag();
   }
 
   void reshape();
@@ -83,6 +82,11 @@ public:
   void resetDnnBwd();
 
   void submitDnnFwd(PassType passType);
+  
+  void submitBwdData(int idx, const MatrixPtr& botGrad);
+
+  void submitBwdWgts(int idx, const MatrixPtr& botVal);
+  
   void submitDnnBwd(const UpdateCallback& callback);
 
   // keep for paddle

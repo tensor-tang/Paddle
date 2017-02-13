@@ -17,9 +17,9 @@ namespace paddle {
  */
 class MkldnnPoolLayer : public MkldnnLayer {
 protected:
-  std::shared_ptr<mkldnn::pooling_forward::primitive> fwd_;
-  // std::shared_ptr<convolution_backward_data::primitive_desc> bwdDataPD_;
-  // std::shared_ptr<convolution_backward_weights::primitive_desc> bwdWgtPD_;
+  std::shared_ptr<mkldnn::pooling_forward> fwd_;
+  std::shared_ptr<mkldnn::pooling_forward::primitive_desc> fwdPD_;
+  std::shared_ptr<mkldnn::pooling_backward> bwd_;
 
   std::shared_ptr<mkldnn::memory> workspace_;
   bool withWorkspace_;
@@ -34,15 +34,16 @@ public:
   explicit MkldnnPoolLayer(const LayerConfig& config)
     : MkldnnLayer(config),
       fwd_(nullptr),
+      fwdPD_(nullptr),
+      bwd_(nullptr),
       workspace_(nullptr)
-//      bwdWgtPD_(nullptr)
     {}
 
   ~MkldnnPoolLayer() {}
 
   bool initDnn(const LayerMap& layerMap, const ParameterMap& parameterMap);
 
-  void clearAllCvtFlags() {
+  void clearAllDnnCvtFlags() {
     if (dataBot_) dataBot_->clearCvtFlag();
     if (dataTop_) dataTop_->clearCvtFlag();
     if (diffBot_) diffBot_->clearCvtFlag();
