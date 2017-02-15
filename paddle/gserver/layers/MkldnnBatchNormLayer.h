@@ -26,17 +26,16 @@ protected:
   bool usePaddleFmt_;
 
   /// data buffers
-  MkldnnBufferPtr wgtScaleShift_;
+  MkldnnBufferPtr wgtScaleShift_;  // wgt includes scale and shift in mkldnn
   MkldnnBufferPtr mean_;
   MkldnnBufferPtr var_;
 
-  MatrixPtr myScaleShift_;  // scale and shift, 2*oc
+  MatrixPtr selfScaleShift_;  // scale and shift, 2*oc
   MatrixPtr localMean_;  // m
   MatrixPtr localVar_;  // v^2
 
-  /// diff buffer
-//  MkldnnBufferPtr diffWgt_;
-//  MkldnnBufferPtr diffBias_;
+  /// diff buffer 
+  MkldnnBufferPtr diffWgt_;
 
   bool useScaleShift_;
 
@@ -47,7 +46,6 @@ protected:
   /// Epsilon value used in the batch normalization formula.
   static const real EPS;
 
-protected:
   /// Feature dimension. If the input layer is conv layer, it is the channels
     /// of feature map of the conv layer. If the input layer is fully-connected
     /// layer, it is the dimension of fc layer.
@@ -112,7 +110,7 @@ public:
       wgtScaleShift_(nullptr),
       mean_(nullptr),
       var_(nullptr),
-//      diffWgt_(nullptr),
+      diffWgt_(nullptr),
 //      diffBias_(nullptr),
 //      bwdWgtPD_(nullptr)
       useScaleShift_(true),
@@ -139,9 +137,7 @@ public:
 
   void clearDataDiff();
 
-  void resetDnnFwd(PassType passType);
-
-  void resetDnnBwd();
+  void resetDnn(PassType passType);
 
   void submitDnnFwd(PassType passType);
   void submitDnnBwd(const UpdateCallback& callback);

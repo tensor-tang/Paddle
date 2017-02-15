@@ -69,7 +69,7 @@ void MkldnnConcatLayer::reshape() {
   printInfo();
 }
 
-void MkldnnConcatLayer::resetDnnFwd(PassType passType) {
+void MkldnnConcatLayer::resetDnn(PassType passType) {
   CHECK(bs_ == getInput(0).getBatchSize())
     << "Assert batchsize of input layers are equal";
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
@@ -140,9 +140,6 @@ void MkldnnConcatLayer::resetDnnFwd(PassType passType) {
     << DNN_FORMAT[dataBottoms_[0]->getIntlFmt()] << " >>> "
     << DNN_FORMAT[dataTop_->getIntlFmt()] << ") >>> "
     << DNN_FORMAT[dataTop_->getUserFmt()];
-}
-
-void MkldnnConcatLayer::resetDnnBwd() {
 }
 
 void MkldnnConcatLayer::myFwd(PassType passType) {

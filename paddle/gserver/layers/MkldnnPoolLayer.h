@@ -54,9 +54,7 @@ public:
 
   void clearDataDiff();
 
-  void resetDnnFwd(PassType passType);
-
-  void resetDnnBwd();
+  void resetDnn(PassType passType);
 
   void submitDnnFwd(PassType passType);
 

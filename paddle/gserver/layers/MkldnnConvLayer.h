@@ -99,8 +99,7 @@ public:
   // return false if donot need reshape
   bool reshapeOutput();
 
-  void resetDnnFwd(PassType passType);
-  void resetDnnBwd();
+  void resetDnn(PassType passType);
 
   /* forward data
    * input: botdata, wgtdata, biasdata
@@ -111,9 +110,9 @@ public:
 
   void submitDnnFwd(PassType passType);
 
-  void submitBwdData(int inputIdx, const MatrixPtr& botGrad);
+  void submitBwdData(int inputIdx);
 
-  void submitBwdWgts(int inputIdx, const MatrixPtr& botVal);
+  void submitBwdWgts(int inputIdx);
 
   void submitDnnBwd(const UpdateCallback& callback);
 

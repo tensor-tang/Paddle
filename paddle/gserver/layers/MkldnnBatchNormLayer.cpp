@@ -245,23 +245,22 @@ void MkldnnBatchNormLayer::reshape() {
   printInfo();
 }
 
-void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
-  LOG(INFO) << "reset mkldnn forward of batch_norm layer: " << config_.name();
-  CHECK(bs_ == getInput(0).getBatchSize())
-    << "Assert batchsize of input layers are equal";
+void MkldnnBatchNormLayer::resetDnn(PassType passType) {
+  CHECK(bs_ == getInput(0).getBatchSize()) << "batchsize should equal";
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
   if (ih_[0] == iw_[0] && ih_[0] == 1) {
-    // mkldnn has some issue with this case, so use paddle code instead
+    // TODO(TJ): fixed, remove here
+    // mkldnn has some issue with this case yet, so use paddle code instead
     useEx_ = true;
     usePaddleFmt_ = true;  // force to true
-    LOG(INFO) << "Skip MKLDNN prepare when iw==ih==1";
-    return;
+    //LOG(INFO) << "Skip MKLDNN prepare when iw==ih==1";
+    //return;
   }
   useEx_ = false;
-  bool hasBias = (biases_ && biases_->getW()) ? true : false;
-  bool hasWgts = (weight_ && weight_->getW()) ? true : false;
+  bool hasBias = (biases_ && biases_->getW());
+  bool hasWgts = (weight_ && weight_->getW());
   useScaleShift_ = (hasBias && hasWgts);
-  // only wgt and bias at same time,
+
   if (!useScaleShift_ && hasWgts) {
     LOG(FATAL) << "only support both weigt and bias at same time, or neither";
   }
@@ -273,8 +272,10 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
     useGlobalStats_ = config_.use_global_stats();
   }
   if (passType == PASS_TRAIN && useGlobalStats_ == true) {
-    LOG(FATAL) << "this should not happen!!! use gloal stat in training";
+    LOG(WARNING) << "use_global_stats is invalid setting in training phase";
+    useGlobalStats_ = false;
   }
+
   prop_kind pk = (passType == PASS_TEST) ? prop_kind::forward_scoring :
     prop_kind::forward_training;
   unsigned flags = 0u;
@@ -283,31 +284,48 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   if (useScaleShift_)
     flags = (flags | batch_normalization_flag::use_scale_shift);
 
+  // create mkldnn data buffer
+  dataBot_.reset(new MkldnnBuffer());
+  dataTop_.reset(new MkldnnBuffer());
+  if (useScaleShift_) {    
+    wgtScaleShift_.reset(new MkldnnBuffer());
+  }
+
   // create dim structure that describes user data.
   memory::dims botDims, wgtDims, topDims;
   botDims = {bs_, ic_[0], ih_[0], iw_[0]};
   topDims = {bs_, oc_, oh_[0], ow_[0]};  // == botDims
-  dataBot_.reset(new MkldnnBuffer());
-  dataTop_.reset(new MkldnnBuffer());
+
   real *botData = getPrev(0)->getOutputValue()->getData();
   real *topData = getOutputValue()->getData();
+  // prepare bottom data if use prv input
   const std::shared_ptr<memory::desc> prvMD = getPrev(0)->getTopDataMD();
   if (prvMD) {
     dataBot_->initUser(botData, *prvMD, eg);
-    LOG(INFO) << "use prev format: " << DNN_FORMAT[dataBot_->getUserFmt()];
+    bool isNC = dataBot_->getUserFmt() == memory::format::nc;
+    if (isNC) {
+      CHECK(ih_[0] == iw_[0] && ih_[0] == 1)
+        << "iw, ih must be 1 with nc input";
+      // do not support nc input, so change to nchw
+      dataBot_->initUser(botData, botDims, memory::format::nchw, eg);
+      LOG(INFO) << "use nchw format";
+    } else {
+      LOG(INFO) << "use prev format: " << DNN_FORMAT[dataBot_->getUserFmt()];
+    }
   } else {
     dataBot_->initUser(botData, botDims, memory::format::nchw, eg);
   }
-
+  /// init mkldnn forward ******************************************************
+  // create fwd
   std::shared_ptr<batch_normalization_forward::desc> fwdDesc;
-  fwdDesc.reset(new batch_normalization_forward::desc(pk,
-    prvMD ? dataBot_->getUserMD() : getAnyMD(botDims), EPS, flags));
+  fwdDesc.reset(new batch_normalization_forward::desc(
+    pk, dataBot_->getUserMD(), EPS, flags));
   fwdPD_.reset(new batch_normalization_forward::primitive_desc(
     *fwdDesc, eg));
 
-  // init bottom cvt
-  dataBot_->initIntlCvt(dataBot_->getUserPD(), dnnCvtNoNeed);
-  // init top user memory and cvt
+  // init mkldnn buffer and conversion
+  // src_primitive_desc == dst_primitive_desc in batch_normalization_forward
+  dataBot_->initIntlCvt(fwdPD_->dst_primitive_desc(), dnnCvtUser2Intl);
   if (setDnnTopDataFmt_) {
     dataTop_->initUser(topData, fwdPD_->dst_primitive_desc());
     setTopDataMD(dataTop_->getUserMD());
@@ -315,25 +333,17 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   } else {
     dataTop_->initUser(topData, topDims, memory::format::nchw, eg);
   }
-  if (dataTop_->initIntlCvt(
-    fwdPD_->dst_primitive_desc(), dnnCvtIntl2User)) {
-    LOG(INFO) << "need reorder --- top data: "
-      << DNN_FORMAT[dataTop_->getIntlFmt()]
-      << " >>>>> "
-      << DNN_FORMAT[dataTop_->getUserFmt()];
-  }
-
+  dataTop_->initIntlCvt(fwdPD_->dst_primitive_desc(), dnnCvtIntl2User);
   // weight
   if (useScaleShift_) {
     if (usePaddleFmt_) {
-      myScaleShift_ = Matrix::create(2, oc_, false, false);
+      selfScaleShift_ = Matrix::create(2, oc_, false, false);
     } else {
-      myScaleShift_ = weight_->getW();
+      selfScaleShift_ = weight_->getW();
       LOG(FATAL) << "should not come here so far!!!";
     }
-    real *wgtData = myScaleShift_->getData();
+    real *wgtData = selfScaleShift_->getData();
     wgtDims = {2, oc_};
-    wgtScaleShift_.reset(new MkldnnBuffer());
     wgtScaleShift_->initUser(wgtData, wgtDims, memory::format::nc, eg);
     if (wgtScaleShift_->initIntlCvt(
       fwdPD_->weights_primitive_desc(), dnnCvtUser2Intl)) {
@@ -352,8 +362,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
     mean_->initUser(localMean_->getData(), {oc_}, memory::format::x, eg);
     var_->initUser(localVar_->getData(), {oc_}, memory::format::x, eg);
     if (useGlobalStats_) {
-      if (mean_->initIntlCvt(
-        fwdPD_->mean_primitive_desc(), dnnCvtUser2Intl)) {
+      if (mean_->initIntlCvt(fwdPD_->mean_primitive_desc(), dnnCvtUser2Intl)) {
         LOG(FATAL) << "should donot need cvt!!! format-- user vs intl:"
           << DNN_FORMAT[mean_->getUserFmt()] << " vs "
           << DNN_FORMAT[mean_->getIntlFmt()];
@@ -385,10 +394,41 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
     << DNN_FORMAT[dataBot_->getIntlFmt()] << " >>> "
     << DNN_FORMAT[dataTop_->getIntlFmt()] << ") >>> "
     << DNN_FORMAT[dataTop_->getUserFmt()];
-}
 
-void MkldnnBatchNormLayer::resetDnnBwd() {
-  /*LOG(INFO) << "init or reset fc backward of layer: " << config_.name();
+  /// init mkldnn backward *****************************************************
+  if (passType != PASS_TRAIN)
+    return;
+  /*
+  // create mkldnn diff buffer
+  diffBot_.reset(new MkldnnBuffer());
+  diffTop_.reset(new MkldnnBuffer());
+  if (useScaleShift_) {    
+    diffWgt_.reset(new MkldnnBuffer());
+  }
+  // prepare top diff if use dnn input
+  real *topDiff = getOutputGrad()->getData();
+  const std::shared_ptr<mkldnn::memory::desc> inputDiffMD = getTopDiffMD();
+  if (inputDiffMD) {
+    diffTop_->initUser(topDiff, *inputDiffMD, eg);
+  } else {
+    diffTop_->initUser(topDiff, topDims, memory::format::nchw, eg);
+  }
+  // create backward desc ----------------------------------------
+  std::shared_ptr<batch_normalization_backward::desc> bwdDesc;
+  std::shared_ptr<batch_normalization_backward::primitive_desc> bwdPD;
+  bwdDesc.reset(new batch_normalization_backward::desc(
+    pk, dataBot_->getIntlMD(), dataBot_->getIntlMD(), EPS, flags));
+  bwdPD.reset(new batch_normalization_backward::primitive_desc(
+    *bwdDesc, eg, *fwdPD_));
+  CHECK(bwdPD->weights_primitive_desc() == fwdPD_->weights_primitive_desc());
+  if (useScaleShift_) {
+    weights.reset(new memory(
+              bnrm_bwd_prim_desc->weights_primitive_desc()));
+  }
+  diff_weights.reset(new memory(bnrm_bwd_prim_desc->diff_weights_primitive_desc()));
+  mean.reset(new memory(bnrm_bwd_prim_desc->mean_primitive_desc()));
+  variance.reset(new memory(
+              bnrm_bwd_prim_desc->variance_primitive_desc()));
   */
 }
 
@@ -406,19 +446,19 @@ void MkldnnBatchNormLayer::myFwd(PassType passType) {
   // data wgt
   if (useScaleShift_) {
     if (usePaddleFmt_) {
-      memcpy(myScaleShift_->getData(), weight_->getW()->getData(),
+      memcpy(selfScaleShift_->getData(), weight_->getW()->getData(),
         sizeof(real) * oc_);
-      memcpy(myScaleShift_->getData() + oc_, biases_->getW()->getData(),
+      memcpy(selfScaleShift_->getData() + oc_, biases_->getW()->getData(),
         sizeof(real) * oc_);
       /*for (int i = 0; i < oc_; ++i) {
-        myScaleShift_->getData()[i] = weight_->getW()->getData()[i];
-        myScaleShift_->getData()[i+oc_] = biases_->getW()->getData()[i];
+        selfScaleShift_->getData()[i] = weight_->getW()->getData()[i];
+        selfScaleShift_->getData()[i+oc_] = biases_->getW()->getData()[i];
       }*/
     } else {
-      myScaleShift_ = weight_->getW();
+      selfScaleShift_ = weight_->getW();
       LOG(FATAL) << "should not come here so far!!!";
     }
-    real *wgtdata = myScaleShift_->getData();
+    real *wgtdata = selfScaleShift_->getData();
     wgtScaleShift_->submitCvt(pipeline, wgtdata);
   }
   if (useGlobalStats_) {
@@ -511,9 +551,8 @@ void MkldnnBatchNormLayer::myFwd(PassType passType) {
   real *topdata = getOutputValue()->getData();
   dataTop_->submitCvt(pipeline, topdata);
 // LOG(INFO) << botdata[1] << "," << localMean_->getData()[1] << "," <<
-// localVar_->getData()[1] << "," << myScaleShift_->getData()[1] << topdata[1];
+// localVar_->getData()[1] << "," << selfScaleShift_->getData()[1] << topdata[1];
   // start forward
-  REGISTER_TIMER_INFO("mkldnn_BN_Fwd", getName().c_str());
   stream(stream::kind::eager).submit(pipeline).wait();
 
   if (passType == PASS_TRAIN && !useGlobalStats_) {
@@ -599,18 +638,14 @@ void MkldnnBatchNormLayer::submitDnnFwd(PassType passType) {
     myFwd(passType);
   } else {
     // only when ih==iw==1
-    exFwd(passType);
+    myFwd(passType);
   }
   // activation
-  REGISTER_TIMER_INFO("mkldnn_BN_FwAtvTimer", getName().c_str());
   forwardActivation();
 }
 
 void MkldnnBatchNormLayer::exBwd(const UpdateCallback &callback) {
-  /* Do derivation */ {
-    REGISTER_TIMER_INFO("BpAvtTimer", getName().c_str());
-    backwardActivation();
-  }
+
   int batchSize = getInputValue(0)->getHeight();
 
   Matrix::resizeOrCreate(meanGrad_, 1, oc_, false, useGpu_);
@@ -682,6 +717,8 @@ void MkldnnBatchNormLayer::exBwd(const UpdateCallback &callback) {
 }
 
 void MkldnnBatchNormLayer::submitDnnBwd(const UpdateCallback &callback) {
+  backwardActivation();
+
   exBwd(callback);
   // dnn backward
 }

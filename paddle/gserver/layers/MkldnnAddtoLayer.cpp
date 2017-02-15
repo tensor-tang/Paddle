@@ -70,7 +70,7 @@ void MkldnnAddtoLayer::reshape() {
   printInfo();
 }
 
-void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
+void MkldnnAddtoLayer::resetDnn(PassType passType) {
   LOG(INFO) << "reset mkldnn forward of addto layer: " << config_.name();
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
   memory::dims botDims, topDims;
@@ -194,10 +194,6 @@ void MkldnnAddtoLayer::submitDnnFwd(PassType passType) {
 
   REGISTER_TIMER_INFO("mkldnn_addto_FwAtvTimer", getName().c_str());
   forwardActivation();
-}
-
-void MkldnnAddtoLayer::resetDnnBwd() {
-  // there is no backward for addto in mkldnn
 }
 
 void MkldnnAddtoLayer::exBwd(const UpdateCallback& callback) {

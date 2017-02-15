@@ -37,8 +37,6 @@ public:
   // batchsize
   int bs_;
 
-  bool needResetBwd_;
-
   // flags whether to set memory format of top data or bot diff
   bool setDnnTopDataFmt_;
   std::vector<bool> setDnnBotDiffFmt_;
@@ -50,7 +48,6 @@ public:
       dataTop_(nullptr),
       diffBot_(nullptr),
       diffTop_(nullptr),
-      needResetBwd_(true),
       setDnnTopDataFmt_(false)
     {}
 
@@ -76,7 +73,7 @@ public:
   void forward(PassType passType) {
     Layer::forward(passType);
 
-    // reshape if batchsize changes
+    // reshape if batch size changes
     if (bs_ == getInput(0).getBatchSize()) {
       // choose to clear top data or top diff
       clearDataDiff();
@@ -84,31 +81,26 @@ public:
       bs_ = getInput(0).getBatchSize();
 
       // reshape the input and output size
-      REGISTER_TIMER_INFO("FwReshapeTimer", getName().c_str());
+      REGISTER_TIMER_INFO("mkldnn_ReshapeTimer", getName().c_str());
       LOG(INFO) << "reshape batch size: " << bs_;
       reshape();
       resetOutput(bs_, getSize());
 
-      // dnn fwd init or reset
-      LOG(INFO) << "reset mkldnn forward of layer: " << config_.name();
-      resetDnnFwd(passType);
-      needResetBwd_ = true;
+      // mkldnn init or reset
+      LOG(INFO) << "reset mkldnn of layer: " << getName();
+      resetDnn(passType);
     }
+
     // all sumbit cvt should be clear
     clearAllDnnCvtFlags();
-    // then submit dnn forward    
+    // then submit dnn forward
+    REGISTER_TIMER_INFO("mkldnn_FwdTimer", getName().c_str());
     submitDnnFwd(passType);
   }
 
   void backward(const UpdateCallback& callback) {
-    if (needResetBwd_) {
-      // dnn fwd init or reset
-      LOG(INFO) << "reset mkldnn backward of layer: " << config_.name();
-      resetDnnBwd();
-      needResetBwd_ = false;
-    }
-
     // submit dnn backward
+    REGISTER_TIMER_INFO("mkldnn_BwdTimer", getName().c_str());
     submitDnnBwd(callback);
   }
 
@@ -200,24 +192,18 @@ public:
 
   /** 
    * each dnn layer should have function
+   * to init or reset mkldnn
+   */
+  virtual void resetDnn(PassType passType) = 0;
+
+  /** 
+   * each dnn layer should have function
    * to clear the top data and diff, or choose to reseve.
    * Choose to use reserveOutput or resetOutput
    */
   // TODO(TJ): maybe can remove it
   // when confirm whether need to clear topdiff and how multi inputs work
   virtual void clearDataDiff() = 0;
-
-  /** 
-   * each dnn layer should have function
-   * to init or reset dnn forward
-   */
-  virtual void resetDnnFwd(PassType passType) = 0;
-
-  /** 
-   * each dnn layer should have function
-   * to init or reset dnn backward
-   */
-  virtual void resetDnnBwd() = 0;
 
   /** 
    * each dnn layer should have function

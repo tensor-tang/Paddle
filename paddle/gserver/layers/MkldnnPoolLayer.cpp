@@ -79,7 +79,7 @@ void MkldnnPoolLayer::reshape() {
   printInfo();
 }
 
-void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
+void MkldnnPoolLayer::resetDnn(PassType passType) {
   CHECK(bs_ == getInput(0).getBatchSize())
     << "Assert batchsize of input layers are equal";
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
@@ -89,6 +89,11 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
   memory::dims strides = {sh_, sw_};
   memory::dims padding = {ph_, pw_};
   memory::dims topDims = {bs_, oc_, oh_[0], ow_[0]};
+  std::vector<int> padR = {ph_, pw_};
+  for (int k = 0; k < 2; ++k) {
+    if ((ih_[0] + ph_ + padR[0] - fh_)/sh_ + 1 != oh_[0]) ++padR[0];
+    if ((iw_[0] + pw_ + padR[1] - fw_)/sw_ + 1 != ow_[0]) ++padR[1];
+  }
 
   dataBot_.reset(new MkldnnBuffer());
   dataTop_.reset(new MkldnnBuffer());
@@ -112,7 +117,7 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
   fwdDesc.reset(new pooling_forward::desc(pk, poolAlgo_,
                     prvMD ? dataBot_->getUserMD() : getAnyMD(botDims),
                     getAnyMD(topDims),
-                    strides, kernel, padding, padding,
+                    strides, kernel, padding, padR,
                     padding_kind::zero));
   // init cvt
   dataBot_->initIntlCvt(dataBot_->getUserPD(), dnnCvtNoNeed);
@@ -156,13 +161,8 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
     << DNN_FORMAT[dataBot_->getIntlFmt()] << " >>> "
     << DNN_FORMAT[dataTop_->getIntlFmt()] << ") >>> "
     << DNN_FORMAT[dataTop_->getUserFmt()];
-}
 
-void MkldnnPoolLayer::resetDnnBwd() {
-  mkldnn::engine eg = CpuEngine::Instance().getEngine();
-  memory::dims kernel = {fh_, fw_};
-  memory::dims strides = {sh_, sw_};
-  memory::dims padding = {ph_, pw_};
+  if (passType == PASS_TRAIN) {
   diffBot_.reset(new MkldnnBuffer());
   diffTop_.reset(new MkldnnBuffer());
 
@@ -190,7 +190,7 @@ void MkldnnPoolLayer::resetDnnBwd() {
   std::shared_ptr<pooling_backward::primitive_desc> bwdPD;
   bwdDesc.reset(new pooling_backward::desc(
     poolAlgo_, dataBot_->getIntlMD(), dataTop_->getIntlMD(),
-    strides, kernel, padding, padding, padding_kind::zero));
+    strides, kernel, padding, padR, padding_kind::zero));
   bwdPD.reset(new pooling_backward::primitive_desc(
     *bwdDesc, eg, *fwdPD_));
   if (withWorkspace_) {
@@ -205,6 +205,7 @@ void MkldnnPoolLayer::resetDnnBwd() {
     << DNN_FORMAT[diffBot_->getIntlFmt()] << " <<< "
     << DNN_FORMAT[diffTop_->getIntlFmt()] << ") <<< "
     << DNN_FORMAT[diffTop_->getUserFmt()];
+  }
 }
 
 void MkldnnPoolLayer::myFwd(PassType passType) {
