@@ -130,8 +130,8 @@ void MkldnnConvLayer::resetDnn(PassType passType) {
   memory::format fmt = memory::format::nchw;
   memory::format fmtx = memory::format::x;
   bool hasBias = (biases_ && biases_->getW());
-  prop_kind pk = passType == PASS_TEST ?
-    prop_kind::forward_scoring : prop_kind::forward_training;
+  prop_kind fwdpk = passType == PASS_TEST ? prop_kind::forward_scoring
+    : prop_kind::forward_training;
   // conv_relu only support scoring yet
   useConvRelu_ = (hasRelu_ && passType == PASS_TEST);
 
@@ -196,7 +196,7 @@ void MkldnnConvLayer::resetDnn(PassType passType) {
     std::shared_ptr<convolution_forward::desc> fwdDesc;
     std::shared_ptr<mkldnn::convolution_forward::primitive_desc> fwdPD;
     if (hasBias) {
-      fwdDesc.reset(new convolution_forward::desc(pk,
+      fwdDesc.reset(new convolution_forward::desc(fwdpk,
                     algorithm::convolution_direct,
                     prvMD ? dataBot_->getUserMD() : getAnyMD(botDims),
                     getAnyMD(wgtDims),
@@ -204,7 +204,7 @@ void MkldnnConvLayer::resetDnn(PassType passType) {
                     getAnyMD(topDims),
                     strides, padding, padR, padding_kind::zero));
     } else {
-      fwdDesc.reset(new convolution_forward::desc(pk,
+      fwdDesc.reset(new convolution_forward::desc(fwdpk,
                     algorithm::convolution_direct,
                     prvMD ? dataBot_->getUserMD() : getAnyMD(botDims),
                     getAnyMD(wgtDims),
@@ -297,6 +297,7 @@ void MkldnnConvLayer::resetDnn(PassType passType) {
     if (passType != PASS_TRAIN)
       continue;
     hasBias = (hasBias && biases_->getWGrad());
+    //pk = prop_kind::backward;
     // create buffer, could be vector later
     diffBot_.reset(new MkldnnBuffer());
     diffWgt_.reset(new MkldnnBuffer());
@@ -373,7 +374,7 @@ void MkldnnConvLayer::resetDnn(PassType passType) {
     std::shared_ptr<convolution_backward_data::desc> bwdDataDesc;
     std::shared_ptr<convolution_backward_data::primitive_desc> bwdDataPD;
     bwdDataFwdDesc.reset(new convolution_forward::desc(
-      pk, algo,
+      fwdpk, algo,
       dataBot_->getIntlMD(),
       dataWgt_->getIntlMD(),
       diffTop_->getIntlMD(),

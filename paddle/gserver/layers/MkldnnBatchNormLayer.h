@@ -17,31 +17,25 @@ namespace paddle {
  */
 class MkldnnBatchNormLayer : public MkldnnLayer {
 protected:
-  /// For dnn fc. Primitive Desc
-  std::shared_ptr<mkldnn::batch_normalization_forward::primitive_desc> fwdPD_;
-  // std::shared_ptr<convolution_backward_data::primitive_desc> bwdDataPD_;
-  // std::shared_ptr<convolution_backward_weights::primitive_desc> bwdWgtPD_;
+  std::shared_ptr<mkldnn::batch_normalization_forward> fwd_;
+  std::shared_ptr<mkldnn::batch_normalization_backward> bwd_;
 
   // use paddle weight format
   bool usePaddleFmt_;
 
   /// data buffers
-  MkldnnBufferPtr wgtScaleShift_;  // wgt includes scale and shift in mkldnn
+  MkldnnBufferPtr dataScaleShift_;  // wgt includes scale and shift in mkldnn
   MkldnnBufferPtr mean_;
   MkldnnBufferPtr var_;
+  /// diff buffer 
+  MkldnnBufferPtr diffScaleShift_;
 
-  MatrixPtr selfScaleShift_;  // scale and shift, 2*oc
+  MatrixPtr selfScaleShiftData_;  // scale and shift value, 2*oc
+  MatrixPtr selfScaleShiftDiff_;  // scale and shift diff, 2*oc
   MatrixPtr localMean_;  // m
   MatrixPtr localVar_;  // v^2
 
-  /// diff buffer 
-  MkldnnBufferPtr diffWgt_;
-
   bool useScaleShift_;
-
-  // since MKLDNN have some issue with ih==iw==1
-  // so then use default paddle code in this case
-  bool useEx_;
 
   /// Epsilon value used in the batch normalization formula.
   static const real EPS;
@@ -50,17 +44,14 @@ protected:
     /// of feature map of the conv layer. If the input layer is fully-connected
     /// layer, it is the dimension of fc layer.
 
-  // ex bn
-  /// Batch normalization scale parameter, which is referred to as gamma in
-  /// in original paper.
+  /// here weight_ in paddle is scale in mkldnn
   std::unique_ptr<Weight> weight_;
+  /// here bias in paddle is shift in mkldnn
+  std::unique_ptr<Weight> biases_;
   /// Moving average of mean.
   std::unique_ptr<Weight> movingMean_;
   /// Moving average of variance.
   std::unique_ptr<Weight> movingVar_;
-  /// Batch normalization bias parameter, which is referred to as beta in
-  /// in original paper.
-  std::unique_ptr<Weight> biases_;
 
   /// Save intermediate results computed during the forward pass,
   /// these can then be reused to speed up the backward pass.
@@ -96,7 +87,6 @@ protected:
   void shrinkMat(const MatrixPtr& in, MatrixPtr& out);
 
   /// Load mean and variance only once flag.
-  bool firstTest_;
   MatrixPtr tmpMat_, tmpGrad_;
   MatrixPtr expandedIn_, expandedOut_;
   MatrixPtr expandedInGrad_, expandedOutGrad_, inGrad_;
@@ -105,16 +95,16 @@ protected:
 public:
   explicit MkldnnBatchNormLayer(const LayerConfig& config)
     : MkldnnLayer(config),
-      fwdPD_(nullptr),
+      fwd_(nullptr),
+      bwd_(nullptr),
       usePaddleFmt_(true),
-      wgtScaleShift_(nullptr),
+      dataScaleShift_(nullptr),
       mean_(nullptr),
       var_(nullptr),
-      diffWgt_(nullptr),
+      diffScaleShift_(nullptr),
 //      diffBias_(nullptr),
 //      bwdWgtPD_(nullptr)
-      useScaleShift_(true),
-      useEx_(false)
+      useScaleShift_(true)
     {}
 
   ~MkldnnBatchNormLayer() {}
@@ -126,11 +116,11 @@ public:
     if (dataTop_) dataTop_->clearCvtFlag();
     if (diffBot_) diffBot_->clearCvtFlag();
     if (diffTop_) diffTop_->clearCvtFlag();
-    if (wgtScaleShift_) wgtScaleShift_->clearCvtFlag();
+    if (dataScaleShift_) dataScaleShift_->clearCvtFlag();
+    if (diffScaleShift_) diffScaleShift_->clearCvtFlag();
     if (mean_) mean_->clearCvtFlag();
     if (var_) var_->clearCvtFlag();
   //  if (diffBias_) diffBias_->clearCvtFlag();
-  //  if (diffWgt_) diffWgt_->clearCvtFlag();
   }
 
   void reshape();
