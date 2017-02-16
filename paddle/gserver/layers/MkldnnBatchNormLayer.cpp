@@ -398,7 +398,7 @@ void MkldnnBatchNormLayer::resetDnn(PassType passType) {
     << DNN_FORMAT[dataTop_->getUserFmt()];
 
   /// init mkldnn backward *****************************************************
-  if (passType != PASS_TRAIN)
+  if (passType == PASS_TEST)
     return;
   LayerPtr prevLayer = getPrev(0);
   if (NULL == prevLayer->getOutputGrad()) {

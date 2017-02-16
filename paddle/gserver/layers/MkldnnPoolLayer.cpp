@@ -162,7 +162,7 @@ void MkldnnPoolLayer::resetDnn(PassType passType) {
     << DNN_FORMAT[dataTop_->getIntlFmt()] << ") >>> "
     << DNN_FORMAT[dataTop_->getUserFmt()];
 
-  if (passType == PASS_TRAIN) {
+  if (passType != PASS_TEST) {
   diffBot_.reset(new MkldnnBuffer());
   diffTop_.reset(new MkldnnBuffer());
 

@@ -26,6 +26,18 @@ add_unittest_without_exec(test_ActivationGrad
     TestUtil.cpp)
 add_test(NAME test_ActivationGrad
     COMMAND test_ActivationGrad)
+
+################# test_MkldnnLayers #######################
+if(WITH_MKLDNN)
+    add_unittest_without_exec(test_MkldnnLayers
+        test_MkldnnLayers.cpp
+        LayerGradUtil.cpp
+        TestUtil.cpp)
+
+    add_test(NAME test_MkldnnLayers
+        COMMAND test_MkldnnLayers)
+endif()
+
 ################# test_ConvTrans #######################
 add_unittest_without_exec(test_ConvTrans
     test_ConvTrans.cpp

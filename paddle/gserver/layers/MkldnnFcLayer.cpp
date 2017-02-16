@@ -251,7 +251,7 @@ void MkldnnFcLayer::resetDnn(PassType passType) {
     << DNN_FORMAT[dataTop_->getIntlFmt()] << ") >>> "
     << DNN_FORMAT[dataTop_->getUserFmt()];
 
-  if (passType == PASS_TRAIN) {
+  if (passType != PASS_TEST) {
     mkldnn::engine eg = CpuEngine::Instance().getEngine();
     bool hasBias = (biases_ && biases_->getWGrad());
     prop_kind pk = prop_kind::forward;
