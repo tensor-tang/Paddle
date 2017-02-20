@@ -34,40 +34,45 @@ P_DECLARE_bool(thread_local_rand_use_global_seed);
 P_DECLARE_bool(prev_batch_state);
 
 
-void testConvLayer(bool trans) {
+void testConvLayer() {
+  bool trans = false;
+  bool useGpu = false;
   TestConfig config;
-  config.biasSize = 16;
+  config.biasSize = 64;
   config.layerConfig.set_type("mkldnn_conv");
-  config.layerConfig.set_num_filters(16);
+  config.layerConfig.set_num_filters(64);
   config.layerConfig.set_partial_sum(1);
   config.layerConfig.set_shared_biases(true);
 
-  config.inputDefs.push_back({INPUT_DATA, "layer_0", 768, 288});
+  config.inputDefs.push_back({INPUT_DATA, "layer_0", 3072, 1728});
   LayerInputConfig* input = config.layerConfig.add_inputs();
   ConvConfig* conv = input->mutable_conv_conf();
-  conv->set_filter_size(2);
+  conv->set_filter_size(3);
   conv->set_filter_size_y(3);
   conv->set_channels(3);
-  conv->set_padding(0);
+  conv->set_padding(1);
   conv->set_padding_y(1);
-  conv->set_stride(2);
-  conv->set_stride_y(2);
+  conv->set_stride(1);
+  conv->set_stride_y(1);
   conv->set_groups(1);
   conv->set_filter_channels(conv->channels() / conv->groups());
-  conv->set_img_size(16);
+  conv->set_img_size(32);
   conv->set_output_x(outputSize(conv->img_size(), conv->filter_size(),
                                 conv->padding(), conv->stride(),
                                 /* caffeMode */ true));
   config.layerConfig.set_size(conv->output_x() * conv->output_x() *
                               config.layerConfig.num_filters());
 
-  testLayerGrad(config, "mkldnn_conv", 100, trans, false);
+  testLayerGrad(config, "mkldnn_conv", 128, trans, useGpu);
   // Use small batch_size and useWeight=true to test biasGrad
-  testLayerGrad(config, "mkldnn_conv", 2, trans, false, true, 0.02);
+  LOG(INFO) <<"------------------------------------------------13";
+  testLayerGrad(config, "mkldnn_conv", 2, trans, useGpu, true, 0.02);
+
+  
 }
 
 TEST(Layer, convLayer) {
-  testConvLayer(/* trans= */ false);
+//  testConvLayer();
 }
 
 void testFcLayer(string format, size_t nnz) {
@@ -90,53 +95,101 @@ void testFcLayer(string format, size_t nnz) {
 
 TEST(Layer, fcLayer) {
   testFcLayer("", 4096 * 4096 * 2);
-  testFcLayer("csc", 4096 * 40);
-  testFcLayer("csr", 4096 * 40);
+//  testFcLayer("csc", 4096 * 40);
+//  testFcLayer("csr", 4096 * 40);
 }
 
-void setPoolConfig(TestConfig* config, PoolConfig* pool,
-                   const string& poolType) {
-  (*config).biasSize = 0;
-  (*config).layerConfig.set_type("mkldnn_pool");
-  (*config).layerConfig.set_num_filters(16);
 
-  int kw = 3, kh = 3;
-  int pw = 0, ph = 0;
-  int sw = 2, sh = 2;
-  pool->set_pool_type(poolType);
-  pool->set_channels(16);
-  pool->set_size_x(kw);
-  pool->set_size_y(kh);
-  pool->set_start(0);
-  pool->set_padding(pw);
-  pool->set_padding_y(ph);
-  pool->set_stride(sw);
-  pool->set_stride_y(sh);
+struct test_pool_desc_t {
+    int bs, cl;
+    int ih, iw;
+    int oh, ow;
+    int kh, kw;
+    int ph, pw;
+    int sh, sw;
+};
 
-  int ow = outputSize(pool->img_size(), kw, pw, sw, /* caffeMode */ false);
-  int oh = outputSize(pool->img_size_y(), kh, ph, sh, /* caffeMode */ false);
-  pool->set_output_x(ow);
-  pool->set_output_y(oh);
-}
-
-void testPoolLayer(const string& poolType, bool trans) {
+void testPoolLayer(const string& poolType, const test_pool_desc_t pm) {
+  bool trans = false;
   TestConfig config;
-  config.inputDefs.push_back({INPUT_DATA, "layer_0", 3136, 0});
+  config.inputDefs.push_back({INPUT_DATA, "layer_0",
+    size_t(pm.ih * pm.iw * pm.cl), 0});
   LayerInputConfig* input = config.layerConfig.add_inputs();
   PoolConfig* pool = input->mutable_pool_conf();
 
-  pool->set_img_size(14);
-  pool->set_img_size_y(14);
-  setPoolConfig(&config, pool, poolType);
+  config.biasSize = 0;
+  config.layerConfig.set_type("mkldnn_pool");
+  config.layerConfig.set_num_filters(pm.cl);
+  pool->set_pool_type(poolType);
+  pool->set_img_size(pm.iw);
+  pool->set_img_size_y(pm.ih);
+  pool->set_channels(pm.cl);
+  pool->set_size_x(pm.kw);
+  pool->set_size_y(pm.kh);
+  pool->set_start(0);
+  pool->set_padding(pm.pw);
+  pool->set_padding_y(pm.ph);
+  pool->set_stride(pm.sw);
+  pool->set_stride_y(pm.sh);
+
+  bool caffeMode = false;
+  int oh = outputSize(pm.ih, pm.kh, pm.ph, pm.sh, caffeMode);
+  int ow = outputSize(pm.iw, pm.kw, pm.pw, pm.sw, caffeMode);
+  CHECK(oh == pm.oh && ow == pm.ow)
+    << "double check output size, " << oh << " vs " << pm.oh;
+  pool->set_output_x(ow);
+  pool->set_output_y(oh);
+
   config.layerConfig.set_size(pool->output_x() * pool->output_y() *
                               pool->channels());
-
-  testLayerGrad(config, "mkldnn_pool", 100, trans, false);
+  // TODO(TJ): use {0, 1} if AddToMode ready 
+  for (auto addSize : {0}) {
+    config.layerConfig.set_add_size(addSize);
+    testLayerGrad(config, "mkldnn_pool", pm.bs, trans, false);
+  }
+  // TODO(TJ): add comparation with cpu pooling
 }
 
 TEST(Layer, PoolLayer) {
-  testPoolLayer("max-projection", /* trans= */ false);
-//  testPoolLayer("avg-projection", /* trans= */ false);
+  testPoolLayer("max-projection", {10, 64, 32, 32, 16, 16, 2, 2, 0, 0, 2, 2});
+  testPoolLayer("max-projection", {100, 16, 14, 14, 7, 7, 3, 3, 0, 0, 2, 2});
+//  testPoolLayer("avg-projection");
+
+}
+
+void testBatchNormLayer() {
+  bool trans = false;
+  bool useGpu = false;
+  TestConfig config;
+  const int CHANNELS = 10;
+  const int IMG_SIZE = 16;
+  config.layerConfig.set_type("mkldnn_batch_norm");
+  config.layerConfig.set_size(CHANNELS * IMG_SIZE * IMG_SIZE);
+  config.layerConfig.set_active_type("mkldnn_relu");
+  config.biasSize = CHANNELS;
+  config.inputDefs.push_back({INPUT_DATA, "layer_0",
+                              /* dim= */ IMG_SIZE * IMG_SIZE * CHANNELS,
+                              /* paraSize= */ CHANNELS});
+
+  config.inputDefs.push_back({INPUT_DATA, "layer_1_running_mean", 1, CHANNELS});
+  config.inputDefs.back().isStatic = true;
+  config.inputDefs.push_back({INPUT_DATA, "layer_2_running_var", 1, CHANNELS});
+  config.inputDefs.back().isStatic = true;
+
+  LayerInputConfig* input = config.layerConfig.add_inputs();
+  config.layerConfig.add_inputs();
+  config.layerConfig.add_inputs();
+
+  ImageConfig* img_conf = input->mutable_image_conf();
+  img_conf->set_channels(CHANNELS);
+  img_conf->set_img_size(IMG_SIZE);
+
+  testLayerGrad(config, "mkldnn_batch_norm", 64, /* trans= */ trans, useGpu,
+                /* useWeight */ true);
+}
+
+TEST(Layer, BatchNormalizationLayer) {
+//  testBatchNormLayer();
 }
 
 int main(int argc, char** argv) {

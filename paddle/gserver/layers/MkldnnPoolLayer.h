@@ -18,7 +18,6 @@ namespace paddle {
 class MkldnnPoolLayer : public MkldnnLayer {
 protected:
   std::shared_ptr<mkldnn::pooling_forward> fwd_;
-  std::shared_ptr<mkldnn::pooling_forward::primitive_desc> fwdPD_;
   std::shared_ptr<mkldnn::pooling_backward> bwd_;
 
   std::shared_ptr<mkldnn::memory> workspace_;
@@ -34,7 +33,6 @@ public:
   explicit MkldnnPoolLayer(const LayerConfig& config)
     : MkldnnLayer(config),
       fwd_(nullptr),
-      fwdPD_(nullptr),
       bwd_(nullptr),
       workspace_(nullptr)
     {}
@@ -61,7 +59,6 @@ public:
   void submitDnnBwd(const UpdateCallback& callback);
 
 private:
-  void myFwd(PassType passType);
   void exFwd(PassType passType);
   void exBwd(const UpdateCallback &callback);
 

@@ -1505,8 +1505,11 @@ class MultiClassCrossEntropySelfNormCostLayer(LayerBase):
 
 @config_layer('fc')
 class FCLayer(LayerBase):
-    layer_type = 'mkldnn_fc' # 'fc'
+    layer_type = 'fc'
     def __init__(self, name, size, inputs, bias=True, **xargs):
+        use_mkldnn = bool(g_command_config_args.get("use_mkldnn", 0))
+        if use_mkldnn:
+            self.layer_type = "mkldnn_fc"
         super(FCLayer, self).__init__(name, self.layer_type, size, inputs=inputs, **xargs)
         for input_index in xrange(len(self.inputs)):
             input_layer = self.get_input_layer(input_index)
@@ -1666,21 +1669,24 @@ class ConvLayerBase(LayerBase):
         if num_filters is not None:
             self.config.num_filters = num_filters
 
+        use_mkldnn = bool(g_command_config_args.get("use_mkldnn", 0))
         use_gpu = int(g_command_config_args.get("use_gpu", 0))
         parallel_nn = int(g_command_config_args.get("parallel_nn", 0))
 
-        # Automatically select cudnn_type for GPU and exconv for CPU
+        # Automatically select cudnn_type for GPU
+        # and exconv(or mkldnn_conv) for CPU
         # if set type=conv, but still reserve the way user specify
-        # exconv or cudnn_conv manually.
+        # exconv, mkldnn_conv or cudnn_conv manually.
         if self.layer_type == "cudnn_conv":
             config_assert(use_gpu, "cudnn_conv only support GPU")
+        if use_mkldnn:
+            self.layer_type = "mkldnn_conv"
 
         if (use_gpu == 1 and self.layer_type != "exconv" and
             self.layer_type != "mkldnn_conv" and
             (parallel_nn == 0 or self.config.device > -1)):
             self.layer_type = "cudnn_conv"
-        else:
-            self.layer_type = "mkldnn_conv" # "exconv"
+
         # need to specify layer in config
         self.config.type = self.layer_type
 
@@ -1794,8 +1800,11 @@ class NormLayer(LayerBase):
 
 @config_layer('pool')
 class PoolLayer(LayerBase):
-    layer_type = 'mkldnn_pool' # 'pool'
+    layer_type = 'pool'
     def __init__(self, name, inputs, device=None):
+        use_mkldnn = bool(g_command_config_args.get("use_mkldnn", 0))
+        if use_mkldnn:
+            self.layer_type = "mkldnn_pool"
         super(PoolLayer, self).__init__(
             name, self.layer_type, 0, inputs=inputs, device=device)
         for input_index in xrange(len(self.inputs)):
@@ -1830,7 +1839,7 @@ class SpatialPyramidPoolLayer(LayerBase):
 
 @config_layer('batch_norm')
 class BatchNormLayer(LayerBase):
-    layer_type = 'mkldnn_batch_norm' # 'batch_norm'
+    layer_type = 'batch_norm'
     def __init__(self,
                  name,
                  inputs,
@@ -1853,6 +1862,9 @@ class BatchNormLayer(LayerBase):
         # If not use is_static, even set learning_rate = 0, decay_rate = 0,
         # these paras will change if set average_window in configure.
         use_gpu = bool(int(g_command_config_args.get("use_gpu", 0)))
+        use_mkldnn = bool(g_command_config_args.get("use_mkldnn", 0))
+        if use_mkldnn:
+            self.layer_type = "mkldnn_batch_norm"
         is_shared = True if not use_gpu else False
         for i in xrange(2):
             inputs.append(
@@ -1871,7 +1883,9 @@ class BatchNormLayer(LayerBase):
             batch_norm_type != "mkldnn_batch_norm" and \
             ((not parallel_nn) or self.config.device > -1) and \
             cudnn_version >= 4007
-        self.layer_type = "cudnn_batch_norm" if use_cudnn else "mkldnn_batch_norm" # "batch_norm"
+        if use_cudnn:
+            self.layer_type = "cudnn_batch_norm"
+
         super(BatchNormLayer, self).__init__(
             name,
             self.layer_type,
@@ -2090,8 +2104,11 @@ class NCELayer(LayerBase):
 
 @config_layer('addto')
 class AddToLayer(LayerBase):
-    layer_type = 'mkldnn_addto' # 'addto'
+    layer_type = 'addto'
     def __init__(self, name, inputs, bias=True, **xargs):
+        use_mkldnn = bool(g_command_config_args.get("use_mkldnn", 0))
+        if use_mkldnn:
+            self.layer_type = "mkldnn_addto"
         super(AddToLayer, self).__init__(
             name, self.layer_type, 0, inputs=inputs, **xargs)
         config_assert(len(inputs) > 0, 'inputs cannot be empty for AddToLayer')
@@ -2744,10 +2761,13 @@ def ExpressionLayer(name, inputs, **xargs):
 
 @config_layer('concat')
 class ConcatenateLayer(LayerBase):
-    layer_type = 'mkldnn_concat' # 'concat'
+    layer_type = 'concat'
     def __init__(self, name, inputs, bias=False, **xargs):
         config_assert(inputs, 'inputs cannot be empty')
         config_assert(not bias, 'ConcatenateLayer cannot support bias.')
+        use_mkldnn = bool(g_command_config_args.get("use_mkldnn", 0))
+        if use_mkldnn:
+            self.layer_type = "mkldnn_concat"
         super(ConcatenateLayer, self).__init__(
             name, self.layer_type, 0, inputs=inputs, **xargs)
         size = 0

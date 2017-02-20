@@ -256,7 +256,7 @@ void MkldnnBatchNormLayer::resetDnn(PassType passType) {
   if (passType == PASS_TEST && config_.has_use_global_stats()) {
     useGlobalStats_ = config_.use_global_stats();
   }
-  if (passType == PASS_TRAIN && useGlobalStats_ == true) {
+  if (passType != PASS_TEST && useGlobalStats_ == true) {
     LOG(WARNING) << "use_global_stats is invalid setting in training phase";
     useGlobalStats_ = false;
   }
@@ -272,13 +272,13 @@ void MkldnnBatchNormLayer::resetDnn(PassType passType) {
     flags = (flags | batch_normalization_flag::use_scale_shift);
 
   /// init mkldnn forward ******************************************************
-  // create mkldnn data buffer
+  // 1. create mkldnn data buffer
   dataBot_.reset(new MkldnnBuffer());
   dataTop_.reset(new MkldnnBuffer());
   if (useScaleShift_) {    
     dataScaleShift_.reset(new MkldnnBuffer());
   }
-  if (useGlobalStats_ || passType == PASS_TRAIN) {
+  if (useGlobalStats_ || passType != PASS_TEST) {
     mean_.reset(new MkldnnBuffer());
     var_.reset(new MkldnnBuffer());
   }
@@ -286,7 +286,6 @@ void MkldnnBatchNormLayer::resetDnn(PassType passType) {
     localMean_->copyFrom(*(movingMean_->getW()));
     localVar_->copyFrom(*(movingVar_->getW()));
   }
-
   // create dim structure that describes user data.
   memory::dims botDims, ssDims, topDims;
   memory::format fmtnchw, fmtx, fmtss;
@@ -298,43 +297,39 @@ void MkldnnBatchNormLayer::resetDnn(PassType passType) {
   fmtss = memory::format::nc;
   real *botData = getPrev(0)->getOutputValue()->getData();
   real *topData = getOutputValue()->getData();
-
-  // prepare bottom data if use prv input
+  // 2. init user
+  dataTop_->initUser(topData, topDims, fmtnchw, eg);
   const std::shared_ptr<memory::desc> prvMD = getPrev(0)->getTopDataMD();
   if (prvMD) {
-    dataBot_->initUser(botData, *prvMD, eg);
+    dataBot_->resetUser(botData, *prvMD, eg);
     bool isNC = dataBot_->getUserFmt() == memory::format::nc;
     if (isNC) {
       CHECK(ih_[0] == iw_[0] && ih_[0] == 1)
         << "iw, ih must be 1 with nc input";
       // do not support nc input, so change to nchw
-      dataBot_->initUser(botData, botDims, fmtnchw, eg);
+      dataBot_->resetUser(botData, botDims, fmtnchw, eg);
       LOG(INFO) << "use nchw format";
     } else {
-      LOG(INFO) << "use prev format: " << DNN_FORMAT[dataBot_->getUserFmt()];
+      LOG(INFO) << "use prev format: " << DNN_FMTS[dataBot_->getUserFmt()];
     }
   } else {
     dataBot_->initUser(botData, botDims, fmtnchw, eg);
   }
-  
-  /// create fwd desc
+  // 3. create fwd desc
   std::shared_ptr<batch_normalization_forward::desc> fwdDesc;
   std::shared_ptr<batch_normalization_forward::primitive_desc> fwdPD;
   fwdDesc.reset(new batch_normalization_forward::desc(fwdpk, 
     dataBot_->getUserMD(), EPS, flags));
   fwdPD.reset(new batch_normalization_forward::primitive_desc(*fwdDesc, eg));
-
-  /// init mkldnn buffer and conversion
+  // 4. init  conversion
   // src_primitive_desc == dst_primitive_desc in batch_normalization_forward
-  dataBot_->initIntlCvt(fwdPD->dst_primitive_desc(), dnnCvtUser2Intl);
+  dataBot_->initCvt(fwdPD->dst_primitive_desc(), dnnCvtUser2Intl);
   if (setDnnTopDataFmt_) {
-    dataTop_->initUser(topData, fwdPD->dst_primitive_desc());
+    dataTop_->resetUser(topData, fwdPD->dst_primitive_desc());
     setTopDataMD(dataTop_->getUserMD());
-    LOG(INFO) << "set next format: " << DNN_FORMAT[dataTop_->getUserFmt()];
-  } else {
-    dataTop_->initUser(topData, topDims, fmtnchw, eg);
+    LOG(INFO) << "set next format: " << DNN_FMTS[dataTop_->getUserFmt()];
   }
-  dataTop_->initIntlCvt(fwdPD->dst_primitive_desc(), dnnCvtIntl2User);
+  dataTop_->initCvt(fwdPD->dst_primitive_desc(), dnnCvtIntl2User);
   // weight(scale) and bias(shift)
   if (useScaleShift_) {
     real *ssData = usePaddleFmt_ ? selfScaleShiftData_->getData()
@@ -342,13 +337,13 @@ void MkldnnBatchNormLayer::resetDnn(PassType passType) {
     dataScaleShift_->initUser(ssData, ssDims, fmtss, eg);
     CHECK(dataScaleShift_->getUserPD() == fwdPD->weights_primitive_desc())
       << "scaleshiftPD should be {2,oc} with nc format, check mkldnn version.";
-    dataScaleShift_->initIntlCvt(
+    dataScaleShift_->initCvt(
       fwdPD->weights_primitive_desc(), dnnCvtUser2Intl);
   } else {
     LOG(WARNING) << "Are you sure do not need scale and shift???";
   }
   // mean and var
-  if (useGlobalStats_ || passType == PASS_TRAIN) {
+  if (useGlobalStats_ || passType != PASS_TEST) {
     MkldnnBufferPtr tmppd(new MkldnnBuffer());
     tmppd->initUser(localMean_->getData(), {oc_}, fmtx, eg);
     CHECK(tmppd->getUserPD() == fwdPD->mean_primitive_desc()
@@ -356,11 +351,11 @@ void MkldnnBatchNormLayer::resetDnn(PassType passType) {
       << "assert both mean and var size are {oc_}";
     // use exactly the same size and format of mean and var in mkldnn
     mean_->initUser(localMean_->getData(), fwdPD->mean_primitive_desc());
-    mean_->initIntlCvt(fwdPD->mean_primitive_desc(), dnnCvtNoNeed);
+    mean_->initCvt(fwdPD->mean_primitive_desc(), dnnCvtNoNeed);
     var_->initUser(localVar_->getData(), fwdPD->variance_primitive_desc());
-    var_->initIntlCvt(fwdPD->variance_primitive_desc(), dnnCvtNoNeed);
+    var_->initCvt(fwdPD->variance_primitive_desc(), dnnCvtNoNeed);
   }
-  /// create fwd handle
+  // 5. create fwd handle
   if (passType == PASS_TEST) {
     if (useGlobalStats_) {
       fwd_.reset(useScaleShift_
@@ -392,10 +387,10 @@ void MkldnnBatchNormLayer::resetDnn(PassType passType) {
           *mean_->getIntlMem(), *var_->getIntlMem()));
   }
   LOG(INFO) << "data format flow --- "
-    << DNN_FORMAT[dataBot_->getUserFmt()] << " >>> ("
-    << DNN_FORMAT[dataBot_->getIntlFmt()] << " >>> "
-    << DNN_FORMAT[dataTop_->getIntlFmt()] << ") >>> "
-    << DNN_FORMAT[dataTop_->getUserFmt()];
+    << DNN_FMTS[dataBot_->getUserFmt()] << " >>> ("
+    << DNN_FMTS[dataBot_->getIntlFmt()] << " >>> "
+    << DNN_FMTS[dataTop_->getIntlFmt()] << ") >>> "
+    << DNN_FMTS[dataTop_->getUserFmt()];
 
   /// init mkldnn backward *****************************************************
   if (passType == PASS_TEST)
@@ -404,32 +399,32 @@ void MkldnnBatchNormLayer::resetDnn(PassType passType) {
   if (NULL == prevLayer->getOutputGrad()) {
     LOG(FATAL) << "maybe do not set batchnorm after data layer!!!";
   }
-  // create mkldnn diff buffer
+  // 1. create mkldnn diff buffer
   diffBot_.reset(new MkldnnBuffer());
   diffTop_.reset(new MkldnnBuffer());
   if (useScaleShift_) {    
     diffScaleShift_.reset(new MkldnnBuffer());
   }
-  // prepare top diff if use dnn input
+  // 2. init user, prepare top diff if use dnn input
   real* botDiff = prevLayer->getOutputGrad()->getData();  
   real *topDiff = getOutputGrad()->getData();
+  diffBot_->initUser(botDiff, botDims, fmtnchw, eg);
+  diffTop_->initUser(topDiff, topDims, fmtnchw, eg);
   const std::shared_ptr<mkldnn::memory::desc> inputDiffMD = getTopDiffMD();
   if (inputDiffMD) {
-    diffTop_->initUser(topDiff, *inputDiffMD, eg);
+    diffTop_->resetUser(topDiff, *inputDiffMD, eg);
     bool isNC = diffTop_->getUserFmt() == memory::format::nc;
     if (isNC) {
       CHECK(oh_[0] == ow_[0] && oh_[0] == 1)
         << "ow, oh must be 1 with nc input";
       // do not support nc input, so change to nchw
-      diffTop_->initUser(topDiff, topDims, fmtnchw, eg);
+      diffTop_->resetUser(topDiff, topDims, fmtnchw, eg);
       LOG(INFO) << "use nchw format";
     } else {
-      LOG(INFO) << "use prev format: " << DNN_FORMAT[dataBot_->getUserFmt()];
+      LOG(INFO) << "use prev format: " << DNN_FMTS[dataBot_->getUserFmt()];
     }
-  } else {
-    diffTop_->initUser(topDiff, topDims, fmtnchw, eg);
   }
-  // create backward desc ----------------------------------------
+  // 3. create backward desc ----------------------------------------
   std::shared_ptr<batch_normalization_backward::desc> bwdDesc;
   std::shared_ptr<batch_normalization_backward::primitive_desc> bwdPD;
   bwdDesc.reset(new batch_normalization_backward::desc(prop_kind::backward,
@@ -440,8 +435,14 @@ void MkldnnBatchNormLayer::resetDnn(PassType passType) {
   CHECK(bwdPD->weights_primitive_desc() == fwdPD->weights_primitive_desc());
   CHECK(bwdPD->mean_primitive_desc() == fwdPD->mean_primitive_desc());
   CHECK(bwdPD->variance_primitive_desc() == fwdPD->variance_primitive_desc());
-  /// init mkldnn buffer and conversion
-  diffTop_->initIntlCvt(dataBot_->getIntlPD(), dnnCvtUser2Intl);
+  // 4. init conversion
+  diffTop_->initCvt(dataBot_->getIntlPD(), dnnCvtUser2Intl);
+  diffBot_->initCvt(dataBot_->getIntlPD(), dnnCvtIntl2User);
+  if (setDnnBotDiffFmt_[0]) {
+    diffBot_->initUser(botDiff, dataBot_->getIntlPD());
+    prevLayer->setTopDiffMD(diffBot_->getUserMD());
+    LOG(INFO) << "set prev diff format: " << DNN_FMTS[diffBot_->getUserFmt()];
+  }
   // weight(scale) and bias(shift)
   if (useScaleShift_) {
     real *ssDiff = usePaddleFmt_ ? selfScaleShiftDiff_->getData()
@@ -449,18 +450,10 @@ void MkldnnBatchNormLayer::resetDnn(PassType passType) {
     diffScaleShift_->initUser(ssDiff, ssDims, fmtss, eg);
     CHECK(diffScaleShift_->getUserPD() == bwdPD->diff_weights_primitive_desc())
       << "scaleshiftPD should be {2,oc} with nc format, check mkldnn version.";
-    diffScaleShift_->initIntlCvt(
+    diffScaleShift_->initCvt(
       bwdPD->diff_weights_primitive_desc(), dnnCvtIntl2User);
   }
-  if (setDnnBotDiffFmt_[0]) {
-    diffBot_->initUser(botDiff, dataBot_->getIntlPD());
-    prevLayer->setTopDiffMD(diffBot_->getUserMD());
-    LOG(INFO) << "set prev diff format: " << DNN_FORMAT[diffBot_->getUserFmt()];
-  } else {
-    diffBot_->initUser(botDiff, botDims, fmtnchw, eg);
-  }
-  diffBot_->initIntlCvt(dataBot_->getIntlPD(), dnnCvtIntl2User);
-  /// create bwd data and weight handle
+  // 5. create bwd data and weight handle
   bwd_.reset(useScaleShift_
     ? new batch_normalization_backward(*bwdPD,
         *dataBot_->getIntlMem(),
@@ -471,6 +464,11 @@ void MkldnnBatchNormLayer::resetDnn(PassType passType) {
         *dataBot_->getIntlMem(),
         *mean_->getIntlMem(), *var_->getIntlMem(),
         *diffTop_->getIntlMem(), *diffBot_->getIntlMem()));
+  LOG(INFO) << "diff format flow --- "
+  << DNN_FMTS[diffBot_->getUserFmt()] << " <<< ("
+  << DNN_FMTS[diffBot_->getIntlFmt()] << " <<< "
+  << DNN_FMTS[diffTop_->getIntlFmt()] << ") <<< "
+  << DNN_FMTS[diffTop_->getUserFmt()];
 }
 
 void MkldnnBatchNormLayer::myFwd(PassType passType) {
@@ -505,7 +503,7 @@ void MkldnnBatchNormLayer::myFwd(PassType passType) {
   stream(stream::kind::eager).submit(pipeline).wait();
 
   // calculating and saving moving mean and variance
-  if (passType == PASS_TRAIN) {
+  if (passType != PASS_TEST) {
     // LOG(INFO) << "cal moving .............. should not in testing";
     CHECK(useGlobalStats_ == false);
     MatrixPtr movingMean = movingMean_->getW();

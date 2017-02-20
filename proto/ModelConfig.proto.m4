@@ -413,6 +413,15 @@ sinclude(`ModelConfigLayer.proto.m4')
   // to string and reinterpreted in the user's own layer implementation.  
   optional string user_arg = 49;
 
+  // MKLDNN layers has two mode: AddToMode and WriteToMode.
+  // WriteToMode will be used if this parameter is zero
+  // Otherwise use AddTomode
+  optional uint32 add_size = 50 [default = 0];
+
+  // MKLDNN weight supports both paddle's CPU format and MKLDNN format
+  // use MKLDNN format will get better performance, but the weight will not
+  // be compatible with none-MKLDNN CPU layers
+  optional bool use_mkldnn_fmt = 51 [default = false];
 }
 
 message EvaluatorConfig {

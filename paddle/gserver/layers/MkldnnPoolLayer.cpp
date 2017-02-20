@@ -39,7 +39,12 @@ bool MkldnnPoolLayer::initDnn(const LayerMap &layerMap,
   } else {
     LOG(FATAL) << "unknow pooling type!";
   }
-
+  if (config_.has_add_size()) {
+    addSize_ = config_.add_size();
+  }
+  if (config_.has_use_mkldnn_fmt()) {
+    useMkldnnFmt_ = config_.use_mkldnn_fmt();
+  }
   ic_.push_back(conf.channels());
   iw_.push_back(conf.img_size());
   ow_.push_back(conf.output_x());
@@ -83,116 +88,110 @@ void MkldnnPoolLayer::resetDnn(PassType passType) {
   CHECK(bs_ == getInput(0).getBatchSize())
     << "Assert batchsize of input layers are equal";
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
+  prop_kind pk = (passType == PASS_TEST) ? prop_kind::forward_scoring :
+    prop_kind::forward_training;
   // create dim structure that describes user data.
   memory::dims botDims = {bs_, ic_[0], ih_[0], iw_[0]};
   memory::dims kernel = {fh_, fw_};
   memory::dims strides = {sh_, sw_};
   memory::dims padding = {ph_, pw_};
   memory::dims topDims = {bs_, oc_, oh_[0], ow_[0]};
+  padding_kind padKind = padding_kind::zero;
+  memory::format fmt = memory::format::nchw;
   std::vector<int> padR = {ph_, pw_};
   for (int k = 0; k < 2; ++k) {
     if ((ih_[0] + ph_ + padR[0] - fh_)/sh_ + 1 != oh_[0]) ++padR[0];
     if ((iw_[0] + pw_ + padR[1] - fw_)/sw_ + 1 != ow_[0]) ++padR[1];
   }
-
+  // 1. create buffer
   dataBot_.reset(new MkldnnBuffer());
   dataTop_.reset(new MkldnnBuffer());
-
-  // init user memory of bottom, weights and bias
+  // 2. init user
   real *botData = getPrev(0)->getOutputValue()->getData();
   real *topData = getOutputValue()->getData();
+  dataBot_->initUser(botData, botDims, fmt, eg);
+  dataTop_->initUser(topData, topDims, fmt, eg);
   const std::shared_ptr<memory::desc> prvMD = getPrev(0)->getTopDataMD();
   if (prvMD) {
-    dataBot_->initUser(botData, *prvMD, eg);
-    LOG(INFO) << "use prev format: " << DNN_FORMAT[dataBot_->getUserFmt()];
-  } else {
-    dataBot_->initUser(botData, botDims, memory::format::nchw, eg);
+    dataBot_->resetUser(botData, *prvMD, eg);
+    LOG(INFO) << "use prev data format: " << DNN_FMTS[dataBot_->getUserFmt()];
   }
-
-  // create pool desc from internal desc
+  // 3. create forward PD
   std::shared_ptr<pooling_forward::desc> fwdDesc;
-  prop_kind pk = (passType == PASS_TEST) ? prop_kind::forward_scoring :
-    prop_kind::forward_training;
-
+  std::shared_ptr<mkldnn::pooling_forward::primitive_desc> fwdPD;
   fwdDesc.reset(new pooling_forward::desc(pk, poolAlgo_,
-                    prvMD ? dataBot_->getUserMD() : getAnyMD(botDims),
+                    dataBot_->getUserMD(),
                     getAnyMD(topDims),
                     strides, kernel, padding, padR,
-                    padding_kind::zero));
-  // init cvt
-  dataBot_->initIntlCvt(dataBot_->getUserPD(), dnnCvtNoNeed);
-  
-  fwdPD_.reset(new pooling_forward::primitive_desc(*fwdDesc, eg));
-
-  // init top user memory and cvt
+                    padKind));
+  fwdPD.reset(new pooling_forward::primitive_desc(*fwdDesc, eg));
+  // 4. init cvt
+  dataBot_->initCvt();  // dnnCvtNoNeed
+  // set topdata dnn MemDesc if next is also mkldnn
   if (setDnnTopDataFmt_) {
-    dataTop_->initUser(topData, fwdPD_->dst_primitive_desc());
+    dataTop_->resetUser(topData, fwdPD->dst_primitive_desc());
     setTopDataMD(dataTop_->getUserMD());
-    LOG(INFO) << "set next format: " << DNN_FORMAT[dataTop_->getUserFmt()];
-  } else {
-    dataTop_->initUser(topData, topDims, memory::format::nchw, eg);
+    LOG(INFO) << "set next data format: " << DNN_FMTS[dataTop_->getUserFmt()];
   }
-  if (dataTop_->initIntlCvt(fwdPD_->dst_primitive_desc(), dnnCvtIntl2User)) {
-    LOG(INFO) << "need reorder --- top data: "
-      << DNN_FORMAT[dataTop_->getIntlFmt()]
-      << " >>>>> "
-      << DNN_FORMAT[dataTop_->getUserFmt()];
-  }
-
-  withWorkspace_ = passType != PASS_TEST && poolAlgo_ != algorithm::pooling_avg;
+  dataTop_->initCvt(fwdPD->dst_primitive_desc(), dnnCvtIntl2User);
+  withWorkspace_ = (passType != PASS_TEST
+      && poolAlgo_ != algorithm::pooling_avg);
   if (withWorkspace_) {
-    workspace_.reset(new memory(fwdPD_->workspace_primitive_desc()));
+    workspace_.reset(new memory(fwdPD->workspace_primitive_desc()));
   } else {
     auto p_workspace_desc = memory::primitive_desc(
       {{}, memory::data_type::f32, memory::format(dataTop_->getIntlFmt())},
       eg);
     workspace_.reset(new memory(p_workspace_desc));
   }
+  // 5. create handle
   if (withWorkspace_) {
-    fwd_.reset(new pooling_forward(*fwdPD_,
+    fwd_.reset(new pooling_forward(*fwdPD,
       *(dataBot_->getIntlMem()), *(dataTop_->getIntlMem()),
       *workspace_));
   } else {
-    fwd_.reset(new pooling_forward(*fwdPD_,
+    fwd_.reset(new pooling_forward(*fwdPD,
       *(dataBot_->getIntlMem()), *(dataTop_->getIntlMem())));
   }
   LOG(INFO) << "data format flow --- "
-    << DNN_FORMAT[dataBot_->getUserFmt()] << " >>> ("
-    << DNN_FORMAT[dataBot_->getIntlFmt()] << " >>> "
-    << DNN_FORMAT[dataTop_->getIntlFmt()] << ") >>> "
-    << DNN_FORMAT[dataTop_->getUserFmt()];
+    << DNN_FMTS[dataBot_->getUserFmt()] << " >>> ("
+    << DNN_FMTS[dataBot_->getIntlFmt()] << " >>> "
+    << DNN_FMTS[dataTop_->getIntlFmt()] << ") >>> "
+    << DNN_FMTS[dataTop_->getUserFmt()];
 
-  if (passType != PASS_TEST) {
+  /// init mkldnn backward ***************************************************
+  if (passType == PASS_TEST)
+    return;
+  // 1. create buffer
   diffBot_.reset(new MkldnnBuffer());
   diffTop_.reset(new MkldnnBuffer());
-
-  // init top diff user
+  // 2. init user
   real *topDiff = getOutputGrad()->getData();
   real* botDiff = getPrev(0)->getOutputGrad()->getData();
+  diffBot_->initUser(botDiff, dataBot_->getUserMD(), eg);
+  diffTop_->initUser(topDiff, dataTop_->getUserMD(), eg);
   const std::shared_ptr<mkldnn::memory::desc> inputDiffMD = getTopDiffMD();
   if (inputDiffMD) {
-    diffTop_->initUser(topDiff, *inputDiffMD, eg);
-  } else {
-    memory::dims topDims = {bs_, oc_, oh_[0], ow_[0]};
-    diffTop_->initUser(topDiff, topDims, memory::format::nchw, eg);
+    diffTop_->resetUser(topDiff, *inputDiffMD, eg);
+    LOG(INFO) << "use prev diff format: " << DNN_FMTS[diffTop_->getUserFmt()];
   }
   if (setDnnBotDiffFmt_[0]) {
-    diffBot_->initUser(botDiff, dataBot_->getIntlPD());
+    diffBot_->resetUser(botDiff, dataBot_->getIntlPD());
     getPrev(0)->setTopDiffMD(diffBot_->getUserMD());
-  } else {
-    memory::dims botDims = {bs_, ic_[0], ih_[0], iw_[0]};
-    diffBot_->initUser(botDiff, botDims, memory::format::nchw, eg);
+    LOG(INFO) << "set next diff format: " << DNN_FMTS[diffBot_->getUserFmt()];
   }
-  diffTop_->initIntlCvt(dataTop_->getIntlPD(), dnnCvtUser2Intl);
-  diffBot_->initIntlCvt(dataBot_->getIntlPD(), dnnCvtIntl2User);
-
+  // 3. create bwd PD
   std::shared_ptr<pooling_backward::desc> bwdDesc;
   std::shared_ptr<pooling_backward::primitive_desc> bwdPD;
   bwdDesc.reset(new pooling_backward::desc(
-    poolAlgo_, dataBot_->getIntlMD(), dataTop_->getIntlMD(),
-    strides, kernel, padding, padR, padding_kind::zero));
+    poolAlgo_, diffBot_->getUserMD(), diffTop_->getUserMD(),
+    strides, kernel, padding, padR, padKind));
   bwdPD.reset(new pooling_backward::primitive_desc(
-    *bwdDesc, eg, *fwdPD_));
+    *bwdDesc, eg, *fwdPD));
+  // 4. init cvt
+  diffTop_->initCvt();
+  diffBot_->initCvt();
+  // 5. create bwd handle
   if (withWorkspace_) {
     bwd_.reset(new pooling_backward(*bwdPD,
       *(diffTop_->getIntlMem()), *workspace_, *(diffBot_->getIntlMem())));
@@ -201,31 +200,11 @@ void MkldnnPoolLayer::resetDnn(PassType passType) {
       *(diffTop_->getIntlMem()), *(diffBot_->getIntlMem())));
   }
   LOG(INFO) << "diff format flow --- "
-    << DNN_FORMAT[diffBot_->getUserFmt()] << " <<< ("
-    << DNN_FORMAT[diffBot_->getIntlFmt()] << " <<< "
-    << DNN_FORMAT[diffTop_->getIntlFmt()] << ") <<< "
-    << DNN_FORMAT[diffTop_->getUserFmt()];
-  }
-}
-
-void MkldnnPoolLayer::myFwd(PassType passType) {
-  real *botdata = getPrev(0)->getOutputValue()->getData();
-  real *topdata = getOutputValue()->getData();
-
-  std::vector<primitive> pipeline;
-  dataBot_->submitCvt(pipeline, botdata);
-
-  pipeline.push_back(*fwd_);
-  dataTop_->submitCvt(pipeline, topdata);
-
-  // start forward
-  REGISTER_TIMER_INFO("mkldnnPoolFwd", getName().c_str());
-  stream(stream::kind::eager).submit(pipeline).wait();
-//  LOG(INFO) << "------------" << topdata[0];
-// << "," << topdata[1] << "," << topdata[2];
-
-// TODO(TJ): no activation???
-//  forwardActivation();
+    << DNN_FMTS[diffBot_->getUserFmt()] << " <<< ("
+    << DNN_FMTS[diffBot_->getIntlFmt()] << " <<< "
+    << DNN_FMTS[diffTop_->getIntlFmt()] << ") <<< "
+    << DNN_FMTS[diffTop_->getUserFmt()];
+  
 }
 
 void MkldnnPoolLayer::exFwd(PassType passType) {
@@ -236,15 +215,27 @@ void MkldnnPoolLayer::exFwd(PassType passType) {
   MatrixPtr outV = out.value;
   outV->maxPoolForward(*inputV, ih_[0], iw_[0], ic_[0], fw_, fh_,
                        sh_, sw_, oh_[0], ow_[0], ph_, pw_);
-
-//  real *topdata = getOutputValue()->getData();
-//  LOG(INFO) << "------------" << topdata[0];
-// << "," << topdata[1] << "," << topdata[2];
+  
 }
 
 void MkldnnPoolLayer::submitDnnFwd(PassType passType) {
 //  exFwd(passType);
-  myFwd(passType);
+
+  real *botdata = getPrev(0)->getOutputValue()->getData();
+  real *topdata = getOutputValue()->getData();
+
+  std::vector<primitive> pipeline;
+  dataBot_->submitCvt(pipeline, botdata);
+  pipeline.push_back(*fwd_);
+  dataTop_->submitCvt(pipeline, topdata);
+
+//  LOG(INFO) << "------------ ex top data:" << topdata[0] << "," << topdata[1];
+
+  stream(stream::kind::eager).submit(pipeline).wait();
+//  LOG(INFO) << "------------ my top data:" << topdata[0]<< "," << topdata[1];
+
+// TODO(TJ): no activation???
+//  forwardActivation();
 }
 
 void MkldnnPoolLayer::exBwd(const UpdateCallback &callback) {
@@ -255,7 +246,7 @@ void MkldnnPoolLayer::exBwd(const UpdateCallback &callback) {
   MatrixPtr outV = getOutputValue();
   MatrixPtr inputGrad = in.grad;
 
-  if (NULL == getInputGrad(0)) {
+  if (nullptr == getInputGrad(0)) {
     return;
   }
 
@@ -269,21 +260,34 @@ void MkldnnPoolLayer::submitDnnBwd(const UpdateCallback &callback) {
 
 //  exBwd(nullptr);
 
-  if (NULL == getInputGrad(0)) {
+  if (nullptr == getInputGrad(0)) {
     return;
   }
 
   real* botdiff = getInputGrad(0)->getData();
   real* topdiff = getOutputGrad()->getData();
+
+  MatrixPtr ex = Matrix::create(getInputGrad(0)->getHeight(), getInputGrad(0)->getWidth(),false);
+  ex->copyFrom(*getInputGrad(0));
+  real* exdiff = ex->getData();
   
-//  LOG(INFO) << "--------------------ex data diff: "<< botdiff[0] << "," << botdiff[10];
+  LOG(INFO) << "--------------------ex bot diff: "<< exdiff[10] << "," << exdiff[11];
   std::vector<primitive> pipeline;
   diffTop_->submitCvt(pipeline, topdiff);
   pipeline.push_back(*bwd_);
   diffBot_->submitCvt(pipeline, botdiff);
   stream(stream::kind::eager).submit(pipeline).wait();
-//  LOG(INFO) << "--------------------my data diff: "<< botdiff[0] << "," << botdiff[10];
-  
+  LOG(INFO) << "--------------------my bot diff: "<< botdiff[10] << "," << botdiff[11];
+  real sum=0;
+  real mx=0;
+  size_t cnt = ex->getElementCnt();
+  for (size_t i=0; i<cnt; ++i) {
+    real tmp = abs(exdiff[i]-botdiff[i]);
+    sum += tmp;
+    mx = std::max(tmp, mx);
+  }
+  LOG(INFO) << "cnt:" << cnt << "max:"<<mx;
+  LOG(INFO) <<"--------------absf diff sum:"<<sum/cnt;
 }
 
 }  // namespace paddle

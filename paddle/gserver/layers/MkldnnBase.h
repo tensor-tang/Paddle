@@ -6,7 +6,7 @@
 
 namespace paddle {
 
-static const std::string DNN_FORMAT[] = {
+static const std::string DNN_FMTS[] = {
   "undef", "any", "blocked", "x", "nc", "nchw", "nhwc", "chwn", "nChw8c",
   "nChw16c", "oi", "io", "oihw", "ihwo", "OIhw8i8o", "OIhw16i16o", "OIhw8o8i",
   "Ohwi8o", "Ohwi16o", "goihw", "gOIhw8i8o", "gOIhw16i16o",

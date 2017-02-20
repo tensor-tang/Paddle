@@ -62,6 +62,21 @@ public:
     pUser_.reset(new mkldnn::memory(pd, pdata));
   }
 
+  void resetUser(void *pd,
+    mkldnn::memory::dims dm, mkldnn::memory::format fmt, mkldnn::engine eg,
+    mkldnn::memory::data_type tp = mkldnn::memory::data_type::f32) {
+    initUser(pd, mkldnn::memory::desc({dm}, tp, fmt), eg);
+  }
+
+  void resetUser(void *pd, mkldnn::memory::desc md, mkldnn::engine eg) {
+    pUser_.reset(
+      new mkldnn::memory(mkldnn::memory::primitive_desc(md, eg), pd));
+  }
+
+  void resetUser(void *pdata, mkldnn::memory::primitive_desc pd) {
+    pUser_.reset(new mkldnn::memory(pd, pdata));
+  }
+
   std::shared_ptr<mkldnn::memory> getIntlMem() {
      return this->pIntl_;
   }
@@ -78,7 +93,7 @@ public:
 
   // internal primitive desc
   mkldnn::memory::primitive_desc getIntlPD() {
-    CHECK(pIntl_) << "haven't init internal layout, call initIntlCvt firstly";
+    CHECK(pIntl_) << "haven't init internal layout, call initCvt firstly";
     return pIntl_->get_primitive_desc();
   }
 
@@ -94,6 +109,11 @@ public:
     return getUserMD().data.format;
   }
 
+  // get format from PD
+  int getFmt(mkldnn::memory::primitive_desc &pd) {
+    return pd.desc().data.format;
+  }
+
   // get user memory format
   int getIntlFmt() {
     CHECK(pIntl_) << "haven't init user layout";
@@ -101,7 +121,7 @@ public:
   }
 
   mkldnn::memory::desc getIntlMD() {
-    CHECK(pIntl_) << "haven't init internal layout, call initIntlCvt firstly";
+    CHECK(pIntl_) << "haven't init internal layout, call initCvt firstly";
     return pIntl_->get_primitive_desc().desc();
   }
 
@@ -109,15 +129,15 @@ public:
     hasCvted_ = false;
   }
 
-  // init internal and conversion(reorder)
+  // init conversion(reorder), will create internal buffer if needed 
   // return true if need cvt.
-  bool initIntlCvt(mkldnn::memory::primitive_desc intlPD, int cvtType) {
+  bool initCvt(mkldnn::memory::primitive_desc intlPD, int cvtType) {
     CHECK(cvtType == dnnCvtUser2Intl || cvtType == dnnCvtIntl2User
       || cvtType == dnnCvtNoNeed) << "please specify one type of conversion";
     CHECK(pUser_)
       << "call initUser before init internal layout and conversion";
     CHECK(pIntl_ == NULL)
-      << "internal memory should be empty before initIntlCvt";
+      << "internal memory should be empty before initCvt";
     pIntl_ = pUser_;
     type_ = cvtType;
     clearCvtFlag();
@@ -135,6 +155,18 @@ public:
       }
       return true;
     }
+  }
+
+  // init with dnnCvtNoNeed
+  bool initCvt() {
+    CHECK(pUser_)
+      << "call initUser before init internal layout and conversion";
+    CHECK(pIntl_ == NULL)
+      << "internal memory should be empty before initCvt";
+    pIntl_ = pUser_;
+    type_ = dnnCvtNoNeed;
+    clearCvtFlag();
+    return false;
   }
 
   bool needCvt() {

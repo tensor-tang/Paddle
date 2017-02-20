@@ -48,6 +48,10 @@ protected:
   /// If shared_biases is ture shape of bias: (oc, 1)
   std::unique_ptr<Weight> biases_;
   bool hasRelu_;
+  bool hasCvtTopData_;
+  bool hasCvtTopDiff_;
+  bool hasCvtBiasData_;
+  bool hasCvtBiasDiff_;
   bool useConvRelu_;
   double negativeSlope_;
 
@@ -62,6 +66,10 @@ public:
       diffWgt_(nullptr),
       diffBias_(nullptr),
       hasRelu_(false),
+      hasCvtTopData_(false),
+      hasCvtTopDiff_(false),
+      hasCvtBiasData_(false),
+      hasCvtBiasDiff_(false),
       useConvRelu_(false),
       negativeSlope_(-0.0)
     {}
@@ -94,25 +102,16 @@ public:
 
   void clearDataDiff();
 
-
-
   // return false if donot need reshape
   bool reshapeOutput();
 
   void resetDnn(PassType passType);
 
-  /* forward data
-   * input: botdata, wgtdata, biasdata
-   * output topdata
-   */
-  void submitFwdOnce(PassType passType, int inputIdx,
-    const MatrixPtr& botVal, const MatrixPtr& topVal);
-
   void submitDnnFwd(PassType passType);
 
-  void submitBwdData(int inputIdx);
+  void submitBwdData(int idx);
 
-  void submitBwdWgts(int inputIdx);
+  void submitBwdWgts(int idx);
 
   void submitDnnBwd(const UpdateCallback& callback);
 

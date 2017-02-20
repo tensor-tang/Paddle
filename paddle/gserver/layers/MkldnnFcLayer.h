@@ -29,7 +29,6 @@ protected:
   /// diff buffer
   MkldnnBufferPtr diffWgt_;
   MkldnnBufferPtr diffBias_;
-  bool hasBias_;
 
   // fc
   WeightList weights_;
@@ -41,6 +40,10 @@ protected:
 
   // use paddle weight format
   bool usePaddleFmt_;
+  bool hasCvtTopData_;
+  bool hasCvtTopDiff_;
+  bool hasCvtBiasData_;
+  bool hasCvtBiasDiff_;
 
   // input size (== ic*ih*iw) by batch size
   std::vector<size_t> inputSizeByBS_;
@@ -54,8 +57,10 @@ public:
       dataBias_(nullptr),
       diffWgt_(nullptr),
       diffBias_(nullptr),
-//      bwdWgtPD_(nullptr)
-      hasBias_(false)
+      hasCvtTopData_(false),
+      hasCvtTopDiff_(false),
+      hasCvtBiasData_(false),
+      hasCvtBiasDiff_(false)
     {}
 
   ~MkldnnFcLayer() {}
@@ -93,7 +98,6 @@ public:
 private:
   Weight& getWeight(int idx) { return *weights_[idx]; }
 
-  void myFwd(PassType passType);
   void exFwd(PassType passType);
   void exBwd(const UpdateCallback &callback);
 

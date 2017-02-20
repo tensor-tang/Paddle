@@ -21,7 +21,7 @@ function run() {
     log="log_${task}_${prefix}_bs${bs}.log"
     rm -f $log
     
-    args="batch_size=${bs},is_test=${is_test},use_dummy=${use_dummy}"
+    args="use_mkldnn=1,batch_size=${bs},is_test=${is_test},use_dummy=${use_dummy}"
     paddle train --job=$task \
     --config=$cfg \
     --use_gpu=False \

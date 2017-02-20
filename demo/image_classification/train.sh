@@ -26,6 +26,7 @@ paddle train \
 --trainer_count=1 \
 --num_passes=2 \
 --save_dir=$output \
+--config_args="use_mkldnn=1" \
 2>&1 | tee $log
 
 python -m paddle.utils.plotcurve -i $log > plot.png

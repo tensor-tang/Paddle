@@ -33,7 +33,7 @@ paddle train \
 --trainer_count=1 \
 --num_passes=2 \
 --save_dir=$output \
---config_args="use_dummy=0,batch_size=32" \
+--config_args="use_mkldnn=1,use_dummy=0,batch_size=32" \
 2>&1 | tee $log
 
 #--saving_period_by_batches=3 \  // not work

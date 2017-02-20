@@ -41,6 +41,15 @@ public:
   bool setDnnTopDataFmt_;
   std::vector<bool> setDnnBotDiffFmt_;
 
+  // each MKLDNN layers has WriteToMode and AddToMode
+  // use WriteToMode if addSize_ == 0, otherwise use AddToMode
+  int addSize_;
+
+  // layers with weight have an option to choose
+  // whether use mkldnn format to get a better performance
+  // sacrificing the compatibility with original CPU layers
+  bool useMkldnnFmt_;
+
 public:
   explicit MkldnnLayer(const LayerConfig& config)
     : Layer(config),
@@ -48,7 +57,9 @@ public:
       dataTop_(nullptr),
       diffBot_(nullptr),
       diffTop_(nullptr),
-      setDnnTopDataFmt_(false)
+      setDnnTopDataFmt_(false),
+      addSize_(0),
+      useMkldnnFmt_(false)
     {}
 
   ~MkldnnLayer() {}

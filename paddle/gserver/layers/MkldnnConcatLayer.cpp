@@ -89,7 +89,7 @@ void MkldnnConcatLayer::resetDnn(PassType passType) {
     if (prvMD) {
       dataBottoms_[i]->initUser(botData, *prvMD, eg);
       LOG(INFO) << "use prev format: "
-        << DNN_FORMAT[dataBottoms_[i]->getUserFmt()];
+        << DNN_FMTS[dataBottoms_[i]->getUserFmt()];
       prvs.push_back(prvMD);
     } else {
       dataBottoms_[i]->initUser(botData, botDims, botFmt, eg);
@@ -97,7 +97,7 @@ void MkldnnConcatLayer::resetDnn(PassType passType) {
     botPDs.push_back(dataBottoms_[i]->getUserPD());
 
     // init bot cvt
-    dataBottoms_[i]->initIntlCvt(dataBottoms_[i]->getUserPD(), dnnCvtNoNeed);
+    dataBottoms_[i]->initCvt(dataBottoms_[i]->getUserPD(), dnnCvtNoNeed);
     srcs.push_back(*(dataBottoms_[i]->getIntlMem()));
   }
 
@@ -118,7 +118,7 @@ void MkldnnConcatLayer::resetDnn(PassType passType) {
     dataTop_->initUser(topData, topDims,
       memory::format(dataBottoms_[0]->getUserFmt()), eg);
     setTopDataMD(dataTop_->getUserMD());
-    LOG(INFO) << "set next format: " << DNN_FORMAT[dataTop_->getUserFmt()];
+    LOG(INFO) << "set next format: " << DNN_FMTS[dataTop_->getUserFmt()];
   } else {
     dataTop_->initUser(topData, topDims, topFmt, eg);
   }
@@ -127,19 +127,19 @@ void MkldnnConcatLayer::resetDnn(PassType passType) {
     dataTop_->getUserMD(), concat_dimension, botPDs));
 
   // init top cvt
-  if (dataTop_->initIntlCvt(
+  if (dataTop_->initCvt(
     fwdPD->dst_primitive_desc(), dnnCvtIntl2User)) {
     LOG(INFO) << "need reorder --- top data: "
-      << DNN_FORMAT[dataTop_->getIntlFmt()]
+      << DNN_FMTS[dataTop_->getIntlFmt()]
       << " >>>>> "
-      << DNN_FORMAT[dataTop_->getUserFmt()];
+      << DNN_FMTS[dataTop_->getUserFmt()];
   }
   fwd_.reset(new concat(*fwdPD, srcs, *(dataTop_->getIntlMem())));
   LOG(INFO) << "data format flow --- "
-    << DNN_FORMAT[dataBottoms_[0]->getUserFmt()] << " >>> ("
-    << DNN_FORMAT[dataBottoms_[0]->getIntlFmt()] << " >>> "
-    << DNN_FORMAT[dataTop_->getIntlFmt()] << ") >>> "
-    << DNN_FORMAT[dataTop_->getUserFmt()];
+    << DNN_FMTS[dataBottoms_[0]->getUserFmt()] << " >>> ("
+    << DNN_FMTS[dataBottoms_[0]->getIntlFmt()] << " >>> "
+    << DNN_FMTS[dataTop_->getIntlFmt()] << ") >>> "
+    << DNN_FMTS[dataTop_->getUserFmt()];
 }
 
 void MkldnnConcatLayer::myFwd(PassType passType) {

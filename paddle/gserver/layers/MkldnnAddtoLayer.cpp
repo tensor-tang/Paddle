@@ -100,7 +100,7 @@ void MkldnnAddtoLayer::resetDnn(PassType passType) {
     if (prvMD) {
       dataBottoms_[i]->initUser(botData, *prvMD, eg);
       LOG(INFO) << "use prev format: "
-        << DNN_FORMAT[dataBottoms_[i]->getUserFmt()];
+        << DNN_FMTS[dataBottoms_[i]->getUserFmt()];
       prvs.push_back(prvMD);
     } else {
       dataBottoms_[i]->initUser(botData, botDims, botFmt, eg);
@@ -110,7 +110,7 @@ void MkldnnAddtoLayer::resetDnn(PassType passType) {
     scales_.push_back(1.0);  // no scale here
 
     // init bot cvt
-    dataBottoms_[i]->initIntlCvt(dataBottoms_[i]->getUserPD(), dnnCvtNoNeed);
+    dataBottoms_[i]->initCvt(dataBottoms_[i]->getUserPD(), dnnCvtNoNeed);
   }
   // inputs format should be all the same
   CHECK(prvs.size() == 0 || prvs.size() == inputLayers_.size())
@@ -132,24 +132,24 @@ void MkldnnAddtoLayer::resetDnn(PassType passType) {
     // fwdPD_ should be init with any type before, if in here.
     dataTop_->initUser(topData, fwdPD_->dst_primitive_desc());
     setTopDataMD(dataTop_->getUserMD());
-    LOG(INFO) << "set next format: " << DNN_FORMAT[dataTop_->getUserFmt()];
+    LOG(INFO) << "set next format: " << DNN_FMTS[dataTop_->getUserFmt()];
   } else {
     dataTop_->initUser(topData, topDims, topFmt, eg);
   }
 
   // init top cvt
-  if (dataTop_->initIntlCvt(
+  if (dataTop_->initCvt(
     fwdPD_->dst_primitive_desc(), dnnCvtIntl2User)) {
     LOG(INFO) << "need reorder --- top data: "
-      << DNN_FORMAT[dataTop_->getIntlFmt()]
+      << DNN_FMTS[dataTop_->getIntlFmt()]
       << " >>>>> "
-      << DNN_FORMAT[dataTop_->getUserFmt()];
+      << DNN_FMTS[dataTop_->getUserFmt()];
   }
   LOG(INFO) << "data format flow --- "
-    << DNN_FORMAT[dataBottoms_[0]->getUserFmt()] << " >>> ("
-    << DNN_FORMAT[dataBottoms_[0]->getIntlFmt()] << " >>> "
-    << DNN_FORMAT[dataTop_->getIntlFmt()] << ") >>> "
-    << DNN_FORMAT[dataTop_->getUserFmt()];
+    << DNN_FMTS[dataBottoms_[0]->getUserFmt()] << " >>> ("
+    << DNN_FMTS[dataBottoms_[0]->getIntlFmt()] << " >>> "
+    << DNN_FMTS[dataTop_->getIntlFmt()] << ") >>> "
+    << DNN_FMTS[dataTop_->getUserFmt()];
 }
 
 void MkldnnAddtoLayer::myFwd(PassType passType) {
