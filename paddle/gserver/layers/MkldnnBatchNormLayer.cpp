@@ -437,12 +437,12 @@ void MkldnnBatchNormLayer::resetDnn(PassType passType) {
   CHECK(bwdPD->variance_primitive_desc() == fwdPD->variance_primitive_desc());
   // 4. init conversion
   diffTop_->initCvt(dataBot_->getIntlPD(), dnnCvtUser2Intl);
-  diffBot_->initCvt(dataBot_->getIntlPD(), dnnCvtIntl2User);
   if (setDnnBotDiffFmt_[0]) {
-    diffBot_->initUser(botDiff, dataBot_->getIntlPD());
+    diffBot_->resetUser(botDiff, dataBot_->getIntlPD());
     prevLayer->setTopDiffMD(diffBot_->getUserMD());
     LOG(INFO) << "set prev diff format: " << DNN_FMTS[diffBot_->getUserFmt()];
   }
+  diffBot_->initCvt(dataBot_->getIntlPD(), dnnCvtIntl2User);
   // weight(scale) and bias(shift)
   if (useScaleShift_) {
     real *ssDiff = usePaddleFmt_ ? selfScaleShiftDiff_->getData()
