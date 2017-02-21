@@ -99,10 +99,12 @@ void MkldnnPoolLayer::resetDnn(PassType passType) {
   padding_kind padKind = padding_kind::zero;
   memory::format fmt = memory::format::nchw;
   std::vector<int> padR = {ph_, pw_};
-  for (int k = 0; k < 2; ++k) {
-    if ((ih_[0] + ph_ + padR[0] - fh_)/sh_ + 1 != oh_[0]) ++padR[0];
-    if ((iw_[0] + pw_ + padR[1] - fw_)/sw_ + 1 != ow_[0]) ++padR[1];
-  }
+  // TODO(TJ): uncomment it, wait for mkldnn update
+  // temporary skip it for googlenet, for better performance
+//  for (int k = 0; k < 2; ++k) {
+//    if ((ih_[0] + ph_ + padR[0] - fh_)/sh_ + 1 < oh_[0]) ++padR[0];
+//    if ((iw_[0] + pw_ + padR[1] - fw_)/sw_ + 1 < ow_[0]) ++padR[1];
+//  }
   // 1. create buffer
   dataBot_.reset(new MkldnnBuffer());
   dataTop_.reset(new MkldnnBuffer());
