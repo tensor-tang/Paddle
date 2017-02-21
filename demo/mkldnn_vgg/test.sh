@@ -23,13 +23,41 @@ export MKL_NUM_THREADS=$use_num
 config=vgg_19.py
 log=log_test.log
 model=models_vgg_19/pass-00001/
-
+train_list="data/train.list"
+test_list="data/test.list"
+use_dummy=1
+is_test=1
+if [ ! -d "data" ]; then
+    mkdir -p data
+fi
+if [ ! -f $train_list ]; then
+    if [ $use_dummy -eq 1 ]; then
+        echo " " > $train_list
+    else
+        echo "$train_list does not exist!"
+        exit 0
+    fi
+fi
+if [ ! -f $test_list ]; then
+    if [ $use_dummy -eq 1 ]; then
+        echo " " > $test_list
+    else
+        echo "$test_list does not exist!"
+        exit 0
+    fi
+fi
+if [ $is_test -eq 1 ] ; then
+    if [ ! -d $model ]; then
+      echo "model does not exist!"
+    fi
+fi
+# run paddle
 paddle train \
 --config=$config \
 --log_period=1 \
 --init_model_path=$model \
 --job=test \
 --use_gpu=0 \
---config_args="use_mkldnn=1,is_test=1,use_dummy=1,batch_size=64" \
+--config_args="use_mkldnn=1,is_test=${is_test},use_dummy=${use_dummy},batch_size=64" \
 2>&1 | tee $log
 

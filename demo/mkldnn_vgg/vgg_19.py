@@ -26,7 +26,7 @@ data_size = 3 * crop_size * crop_size
 num_classes = 1000
 if not is_predict and data_provider:
     train_list = 'data/train.list' if not is_test else None
-    test_list = 'data/train.list'
+    test_list = 'data/test.list'
     args = {
         # mean_path or mean_value only choose one
         'mean_value': [103.939, 116.779, 123.68],
