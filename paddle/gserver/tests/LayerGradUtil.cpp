@@ -27,6 +27,13 @@ real getCostSum(LayerPtr& testLayer, MatrixPtr weights) {
   }
   return Argument::sumCosts(outArgs);
 }
+#ifdef PADDLE_USE_MKLDNN
+bool isMkldnnLayer(const LayerConfig& config) {
+  // if type started with "mkldnn"
+  const std::string dnn("mkldnn");
+  return config.type().compare(0, dnn.length(), dnn) == 0 ? true : false;
+}
+#endif
 
 real getDiffAndPrint(real newCost1, real newCost2, real callbackCount,
                      char fill, string testLayerName, string name, real step,
@@ -462,6 +469,11 @@ void testPerturbParameter(TestConfig testConf, const MatrixPtr weights,
     vector<real> d(dim);
 
     double delta = genPerturbation(cpuGrad.getData(), &d[0], dim);
+#ifdef PADDLE_USE_MKLDNN
+    if (isMkldnnLayer(testConf.layerConfig)
+      && testConf.layerConfig.add_size() == 0)
+      delta *= 2;
+#endif
     // use a step such that delta / cost is FLAGS_checkgrad_eps
     real step =
         (delta != 0) ? cost / delta * FLAGS_checkgrad_eps : FLAGS_checkgrad_eps;
@@ -520,6 +532,11 @@ void testPerturbInput(TestConfig testConf, const MatrixPtr weights,
     real* data = d.getData();
 
     double delta = genPerturbation(cpuGrad.getData(), data, dim);
+#ifdef PADDLE_USE_MKLDNN
+    if (isMkldnnLayer(testConf.layerConfig)
+      && testConf.layerConfig.add_size() == 0)
+      delta *= 2;
+#endif
     // use a step such that delta / cost is FLAGS_checkgrad_eps
     real step =
         (delta != 0) ? cost / delta * FLAGS_checkgrad_eps : FLAGS_checkgrad_eps;
@@ -579,7 +596,7 @@ void testLayerGradKernel(TestConfig testConf, string testLayerName,
     testLayer->resetState();
     testLayer->setState(state);
   }
-
+  
   testLayer->forward(PASS_GC);
   if (useWeight && weights == nullptr) {
     weights = testLayer->getOutput().value->clone(0, 0, useGpu);
@@ -645,6 +662,12 @@ void testLayerGrad(TestConfig testConf, string testLayerName, size_t batchSize,
                    bool trans, bool useGpu, bool useWeight, float epsilon) {
   testLayerGradKernel(testConf, testLayerName, batchSize, trans, useGpu,
                       useWeight, epsilon);
+#ifdef PADDLE_USE_MKLDNN
+// mkldnn donot support static
+  if (isMkldnnLayer(testConf.layerConfig))
+    return;
+#endif
+
   bool isStaticTest = false;
   LayerConfig testConfig = testConf.layerConfig;
   for (size_t i = 0; i < testConf.inputDefs.size(); i++) {

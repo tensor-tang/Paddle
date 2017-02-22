@@ -79,6 +79,11 @@ struct InputDef {
     dim = dimIn;
     paraSize = sizeIn;
     sparse = sparseIn;
+#ifdef PADDLE_USE_MKLDNN
+// TODO(TJ): placeholder for sparse test of mkldnn
+//    if (mkldnntype)
+//      isStatic = false;
+#endif
   }
 };
 

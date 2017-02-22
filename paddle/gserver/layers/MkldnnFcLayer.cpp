@@ -77,7 +77,7 @@ bool MkldnnFcLayer::initDnn(const LayerMap &layerMap,
   return true;
 }
 
-// keep for paddle
+// keep for paddle parameter server
 void MkldnnFcLayer::prefetch() {
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     auto* sparseParam =

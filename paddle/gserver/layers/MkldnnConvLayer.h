@@ -124,13 +124,12 @@ private:
   void printInfo() {
     for (size_t i = 0; i < iw_.size(); ++i) {
       LOG(INFO)
-        << "ih: " << ih_[i] << ", iw: " << iw_[i]
-        << ", ic: " << ic_[i] << ", gp: " << gp_[i]
-        << ", oh: " << oh_[i] << ", ow: " << ow_[i]
+        << "gp: " << gp_[i]
+        << ", ic: " << ic_[i] << ", ih: " << ih_[i] << ", iw: " << iw_[i]
+        << ", oc: " << oc_    << ", oh: " << oh_[i] << ", ow: " << ow_[i]
         << ", fh: " << fh_[i] << ", fw: " << fw_[i]
         << ", ph: " << ph_[i] << ", pw: " << pw_[i]
-        << ", sh: " << sh_[i] << ", sw: " << sw_[i]
-        << ", oc: " << oc_;
+        << ", sh: " << sh_[i] << ", sw: " << sw_[i];
     }
   }
 };

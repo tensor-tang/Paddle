@@ -33,74 +33,89 @@ P_DECLARE_double(checkgrad_eps);
 P_DECLARE_bool(thread_local_rand_use_global_seed);
 P_DECLARE_bool(prev_batch_state);
 
+struct testConvDesc {
+    int bs, gp;
+    int ic, ih, iw;
+    int oc, oh, ow;
+    int kh, kw;
+    int ph, pw;
+    int sh, sw;
+};
 
-void testConvLayer() {
+void testConvLayer(const testConvDesc& pm) {
   bool trans = false;
   bool useGpu = false;
   TestConfig config;
-  config.biasSize = 64;
+  config.biasSize = pm.oc;
   config.layerConfig.set_type("mkldnn_conv");
-  config.layerConfig.set_num_filters(64);
+  config.layerConfig.set_num_filters(pm.oc);
   config.layerConfig.set_partial_sum(1);
   config.layerConfig.set_shared_biases(true);
-
-  config.inputDefs.push_back({INPUT_DATA, "layer_0", 3072, 1728});
+  config.inputDefs.push_back({INPUT_DATA, "layer_0", 
+    size_t(pm.ih * pm.iw * pm.ic),  // size of input layer
+    size_t(pm.kw * pm.kh * pm.oc * pm.ic / pm.gp)});  // param size
   LayerInputConfig* input = config.layerConfig.add_inputs();
   ConvConfig* conv = input->mutable_conv_conf();
-  conv->set_filter_size(3);
-  conv->set_filter_size_y(3);
-  conv->set_channels(3);
-  conv->set_padding(1);
-  conv->set_padding_y(1);
-  conv->set_stride(1);
-  conv->set_stride_y(1);
-  conv->set_groups(1);
+  conv->set_filter_size(pm.kw);
+  conv->set_filter_size_y(pm.kh);
+  conv->set_channels(pm.ic);
+  conv->set_padding(pm.pw);
+  conv->set_padding_y(pm.ph);
+  conv->set_stride(pm.sw);
+  conv->set_stride_y(pm.sh);
+  conv->set_groups(pm.gp);
   conv->set_filter_channels(conv->channels() / conv->groups());
-  conv->set_img_size(32);
-  conv->set_output_x(outputSize(conv->img_size(), conv->filter_size(),
-                                conv->padding(), conv->stride(),
-                                /* caffeMode */ true));
+  conv->set_img_size(pm.iw);
+  CHECK(conv->filter_channels() * pm.gp == conv->channels())
+    << "has float??";
+  bool caffeMode = true;
+  int ow = outputSize(pm.iw, pm.kw, pm.pw, pm.sw, caffeMode);
+  CHECK(ow == pm.ow)
+    << "double check output size, " << ow << " vs " << pm.ow;
+  conv->set_output_x(ow);
   config.layerConfig.set_size(conv->output_x() * conv->output_x() *
                               config.layerConfig.num_filters());
 
-  testLayerGrad(config, "mkldnn_conv", 128, trans, useGpu);
+  testLayerGrad(config, "mkldnn_conv", pm.bs, trans, useGpu);
   // Use small batch_size and useWeight=true to test biasGrad
-  LOG(INFO) <<"------------------------------------------------13";
   testLayerGrad(config, "mkldnn_conv", 2, trans, useGpu, true, 0.02);
 
-  
 }
 
 TEST(Layer, convLayer) {
-//  testConvLayer();
+  testConvLayer({128, 1, 3, 32, 32, 64, 32, 32, 3, 3, 1, 1, 1, 1});
+//  testConvLayer({128, 2, 4, 32, 32, 64, 32, 32, 3, 3, 1, 1, 1, 1});
 }
 
-void testFcLayer(string format, size_t nnz) {
+struct testFCDesc {
+    int bs;
+    int ic;
+    int oc;
+    int ih, iw;  // oh == ow == 1
+};
+
+void testFcLayer(const testFCDesc& pm) {
   TestConfig config;
-  config.biasSize = 4096;
+  config.biasSize = pm.oc;
   config.layerConfig.set_type("mkldnn_fc");
-  config.layerConfig.set_size(4096);
+  config.layerConfig.set_size(pm.oc);
   config.layerConfig.set_active_type("sigmoid");
   config.layerConfig.set_drop_rate(0.1);
 
-  config.inputDefs.push_back(
-      {INPUT_DATA, "layer_0", 8192, nnz, ParaSparse(format)});
+  config.inputDefs.push_back({INPUT_DATA, "layer_0",
+      size_t(pm.ic * pm.ih * pm.iw),  // size of input layer
+      size_t(pm.ic * pm.oc)});  // size of weight
   config.layerConfig.add_inputs();
 
-  LOG(INFO) << config.inputDefs[0].sparse.sparse << " "
-            << config.inputDefs[0].sparse.format;
-
-  testLayerGrad(config, "mkldnn_fc", 100, false, false, true);
+  testLayerGrad(config, "mkldnn_fc", pm.bs, false, false, true);
 }
 
 TEST(Layer, fcLayer) {
-  testFcLayer("", 4096 * 4096 * 2);
-//  testFcLayer("csc", 4096 * 40);
-//  testFcLayer("csr", 4096 * 40);
+  testFcLayer({100, 512, 128, 1, 1});
+// do not support sparse yet 
 }
 
-
-struct test_pool_desc_t {
+struct testPoolDesc {
     int bs, cl;
     int ih, iw;
     int oh, ow;
@@ -109,7 +124,7 @@ struct test_pool_desc_t {
     int sh, sw;
 };
 
-void testPoolLayer(const string& poolType, const test_pool_desc_t pm) {
+void testPoolLayer(const string& poolType, const testPoolDesc& pm) {
   bool trans = false;
   TestConfig config;
   config.inputDefs.push_back({INPUT_DATA, "layer_0",
@@ -152,9 +167,9 @@ void testPoolLayer(const string& poolType, const test_pool_desc_t pm) {
 
 TEST(Layer, PoolLayer) {
   testPoolLayer("max-projection", {10, 64, 32, 32, 16, 16, 2, 2, 0, 0, 2, 2});
-  testPoolLayer("max-projection", {100, 16, 14, 14, 7, 7, 3, 3, 0, 0, 2, 2});
+//  testPoolLayer("max-projection", {100, 16, 14, 14, 7, 7, 3, 3, 0, 0, 2, 2});
+//  testPoolLayer("max-projection", {64, 192, 56, 56, 28, 28, 3, 3, 0, 0, 2, 2});
 //  testPoolLayer("avg-projection");
-
 }
 
 void testBatchNormLayer() {
