@@ -1655,7 +1655,6 @@ class ParameterReluLayer(LayerBase):
 @config_layer('conv')
 class ConvLayerBase(LayerBase):
     layer_type = 'conv'
-
     def __init__(self,
                  name,
                  inputs=[],
@@ -1686,6 +1685,9 @@ class ConvLayerBase(LayerBase):
             self.layer_type != "mkldnn_conv" and
             (parallel_nn == 0 or self.config.device > -1)):
             self.layer_type = "cudnn_conv"
+
+        if self.layer_type == "conv":
+            self.layer_type = "exconv"
 
         # need to specify layer in config
         self.config.type = self.layer_type
