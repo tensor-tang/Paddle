@@ -395,12 +395,15 @@ void MkldnnFcLayer::exFwd(PassType passType) {
   if (biases_.get() != NULL) {
     outV->addBias(*(biases_->getW()), 1);
   }
-/*  real *topdata = outV->getData();
-  LOG(INFO) << "ex ------------" << topdata[0] << "," << topdata[1] << "," << topdata[2];*/
+ // real *topdata = outV->getData();
+ // LOG(INFO) << "ex ------------ " << topdata[0] << "," << topdata[1];
 
 }
 
 void MkldnnFcLayer::submitDnnFwd(PassType passType) {
+
+//  exFwd(passType);
+
   real *topdata = getOutputValue()->getData();
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     CHECK(getInput(i).value) << "The input of 'fc' layer must be matrix";
@@ -415,11 +418,9 @@ void MkldnnFcLayer::submitDnnFwd(PassType passType) {
     pipeline.push_back(*fwd_);
     dataTop_->submitCvt(pipeline, topdata);
     stream(stream::kind::eager).submit(pipeline).wait();
-    //  LOG(INFO) << "my-" << topdata[0] << "," << topdata[1] << "," << topdata[2];
+//    LOG(INFO) << "my ------------ " << topdata[0] << "," << topdata[1];
   }
 
-//  exFwd(passType);
-// activation
   forwardActivation();
 }
 

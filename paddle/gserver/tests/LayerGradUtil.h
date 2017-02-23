@@ -228,4 +228,10 @@ void testProjectionGrad(ProjectionConfig conf, InputType inputType,
 void testOperatorGrad(TestConfig& config, OperatorConfig& operatorConf,
                       size_t batchSize, bool useGpu, bool testState = false);
 
+#ifdef PADDLE_USE_MKLDNN
+void testLayerFunc(std::vector<TestConfig>& config, size_t batchSize,
+                           float epsilon = 0.001);
+
+#endif
+
 }  //  namespace paddle

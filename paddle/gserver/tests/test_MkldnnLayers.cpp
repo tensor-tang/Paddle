@@ -51,6 +51,7 @@ void testConvLayer(const testConvDesc& pm) {
   config.layerConfig.set_num_filters(pm.oc);
   config.layerConfig.set_partial_sum(1);
   config.layerConfig.set_shared_biases(true);
+  config.layerConfig.set_use_mkldnn_fmt(false);
   config.inputDefs.push_back({INPUT_DATA, "layer_0", 
     size_t(pm.ih * pm.iw * pm.ic),  // size of input layer
     size_t(pm.kw * pm.kh * pm.oc * pm.ic / pm.gp)});  // param size
@@ -75,11 +76,23 @@ void testConvLayer(const testConvDesc& pm) {
   conv->set_output_x(ow);
   config.layerConfig.set_size(conv->output_x() * conv->output_x() *
                               config.layerConfig.num_filters());
+  // TODO(TJ): use {0, 1} if AddToMode ready 
+  for (auto addSize : {0}) {
+    config.layerConfig.set_add_size(addSize);
+    testLayerGrad(config, "mkldnn_conv", pm.bs, trans, useGpu);
+    // Use small batch_size and useWeight=true to test biasGrad
+    testLayerGrad(config, "mkldnn_conv", 2, trans, useGpu, true, 0.02);
+  }
 
-  testLayerGrad(config, "mkldnn_conv", pm.bs, trans, useGpu);
-  // Use small batch_size and useWeight=true to test biasGrad
-  testLayerGrad(config, "mkldnn_conv", 2, trans, useGpu, true, 0.02);
-
+  // test comparison with exconv
+  TestConfig ref = config;
+  ref.layerConfig.set_type("exconv");
+  std::vector<TestConfig> cfg = {config, ref};
+  // TODO(TJ): use {0, 1} if AddToMode ready 
+  for (auto addSize : {0}) {
+    config.layerConfig.set_add_size(addSize);
+    testLayerFunc(cfg, pm.bs);
+  }
 }
 
 TEST(Layer, convLayer) {
@@ -99,15 +112,30 @@ void testFcLayer(const testFCDesc& pm) {
   config.biasSize = pm.oc;
   config.layerConfig.set_type("mkldnn_fc");
   config.layerConfig.set_size(pm.oc);
-  config.layerConfig.set_active_type("sigmoid");
-  config.layerConfig.set_drop_rate(0.1);
-
+  config.layerConfig.set_use_mkldnn_fmt(false);
   config.inputDefs.push_back({INPUT_DATA, "layer_0",
       size_t(pm.ic * pm.ih * pm.iw),  // size of input layer
       size_t(pm.ic * pm.oc)});  // size of weight
   config.layerConfig.add_inputs();
 
-  testLayerGrad(config, "mkldnn_fc", pm.bs, false, false, true);
+  // test functionality as fc
+  TestConfig ref = config;
+  ref.layerConfig.set_type("fc");
+  std::vector<TestConfig> cfg = {config, ref};
+  // TODO(TJ): use {0, 1} if AddToMode ready 
+  for (auto addSize : {0}) {
+    config.layerConfig.set_add_size(addSize);
+    testLayerFunc(cfg, pm.bs);
+  }
+
+  // test layer grad
+  config.layerConfig.set_active_type("sigmoid");
+  config.layerConfig.set_drop_rate(0.1);
+  // TODO(TJ): use {0, 1} if AddToMode ready 
+  for (auto addSize : {0}) {
+    config.layerConfig.set_add_size(addSize);
+    testLayerGrad(config, "mkldnn_fc", pm.bs, false, false, true);
+  }
 }
 
 TEST(Layer, fcLayer) {
@@ -157,12 +185,22 @@ void testPoolLayer(const string& poolType, const testPoolDesc& pm) {
 
   config.layerConfig.set_size(pool->output_x() * pool->output_y() *
                               pool->channels());
+  config.layerConfig.set_use_mkldnn_fmt(false);
   // TODO(TJ): use {0, 1} if AddToMode ready 
   for (auto addSize : {0}) {
     config.layerConfig.set_add_size(addSize);
     testLayerGrad(config, "mkldnn_pool", pm.bs, trans, false);
   }
-  // TODO(TJ): add comparation with cpu pooling
+
+  // test comparison with pool
+  TestConfig ref = config;
+  ref.layerConfig.set_type("pool");
+  std::vector<TestConfig> cfg = {config, ref};
+  // TODO(TJ): use {0, 1} if AddToMode ready 
+  for (auto addSize : {0}) {
+    config.layerConfig.set_add_size(addSize);
+    testLayerFunc(cfg, pm.bs);
+  }
 }
 
 TEST(Layer, PoolLayer) {
@@ -178,6 +216,7 @@ void testBatchNormLayer() {
   TestConfig config;
   const int CHANNELS = 10;
   const int IMG_SIZE = 16;
+  config.layerConfig.set_use_mkldnn_fmt(false);
   config.layerConfig.set_type("mkldnn_batch_norm");
   config.layerConfig.set_size(CHANNELS * IMG_SIZE * IMG_SIZE);
   config.layerConfig.set_active_type("mkldnn_relu");

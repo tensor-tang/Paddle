@@ -27,11 +27,158 @@ real getCostSum(LayerPtr& testLayer, MatrixPtr weights) {
   }
   return Argument::sumCosts(outArgs);
 }
+
 #ifdef PADDLE_USE_MKLDNN
 bool isMkldnnLayer(const LayerConfig& config) {
   // if type started with "mkldnn"
   const std::string dnn("mkldnn");
   return config.type().compare(0, dnn.length(), dnn) == 0 ? true : false;
+}
+
+double getDelta(const real* d1, const real* d2, size_t len) {
+  double delta = 0, maxDelta = 0, sum = 0;
+  for (size_t i = 0; i < len; ++i) {
+    sum += fabs(d1[i]);
+    double tmp = fabs(d1[i] - d2[i]);
+    delta += tmp;
+    maxDelta = std::max(tmp, maxDelta);
+//    LOG(INFO)<<"my: " <<d1[i] <<"; ex: " << d2[i];
+  }
+  EXPECT_TRUE(std::isnormal(sum));
+  EXPECT_FALSE(std::isnan(delta));
+  delta = delta / sum;
+  LOG(INFO) <<"dnn avg data: " << sum / len <<
+    ", avg delta: " << delta << ", max delta:" << maxDelta;
+  return std::max(delta, maxDelta);
+}
+
+double compareMatrix(const MatrixPtr& m1, const MatrixPtr& m2) {
+  CHECK_EQ(m1->getElementCnt(), m2->getElementCnt());
+  return getDelta(m1->getData(), m2->getData(), m1->getElementCnt());
+}
+
+double compareVector(const CpuVector& v1, const CpuVector& v2) {
+  CHECK_EQ(v1.getSize(), v2.getSize());
+  return getDelta(v1.getData(), v2.getData(), v1.getSize());
+}
+
+void testLayerFunc(std::vector<TestConfig>& cfg, size_t batchSize,
+                           float epsilon) {
+  CHECK(isMkldnnLayer(cfg[0].layerConfig)) << "test layer go first";
+
+  bool trans = false;
+  bool useGpu = false;
+  FLAGS_use_gpu = useGpu;
+  FLAGS_prev_batch_state = cfg[0].testBatchState;
+  vector<string> layerNames = {"tgt", "ref"};
+  CHECK_EQ(cfg.size(), 2);
+  vector<vector<DataLayerPtr>> dataLayers(2);
+  vector<LayerMap> layerMap(2);
+  vector<vector<Argument>> datas(2);
+  vector<vector<ParameterPtr>> parameters(2);
+  vector<LayerPtr> testLayer(2);
+  for (size_t i = 0; i < 2; ++i) {
+    cfg[i].layerConfig.set_name(layerNames[i]);
+    // data layer initialize
+    initDataLayer(cfg[i], &(dataLayers[i]), &(datas[i]), &(layerMap[i]), layerNames[i],
+                  batchSize, trans, useGpu);
+    initTestLayer(cfg[i], &(layerMap[i]), &(parameters[i]), &(testLayer[i]));
+    /* // spare for future support
+    LayerStatePtr state = std::make_shared<LayerState>();
+    if (cfg[i].testBatchState) {
+      initBatchState(dataLayers[i][0], testLayer[i], state, useGpu);
+      testLayer->resetState();
+      testLayer->setState(state);
+    } */
+  }
+  CHECK_EQ(dataLayers[0].size(), dataLayers[1].size());
+  LOG(INFO) << "Test functionality: "
+    << cfg[0].layerConfig.type() << " vs " << cfg[1].layerConfig.type();
+
+  size_t iter = 3;
+  vector<double> deltaFwd;
+  vector<double> deltaBwd;
+  vector<double> deltaParam;
+  // init param
+  EXPECT_EQ(parameters[0].size(), parameters[1].size());
+  for (size_t i = 0; i < parameters[0].size(); ++i) {
+    parameters[0][i]->randomize();
+    VectorPtr src = parameters[0][i]->getBuf(PARAMETER_VALUE);
+    VectorPtr dst = parameters[1][i]->getBuf(PARAMETER_VALUE);
+    dst->copyFrom(*src);
+    parameters[0][i]->getBuf(PARAMETER_GRADIENT)->zeroMem();
+    parameters[1][i]->getBuf(PARAMETER_GRADIENT)->zeroMem();
+  }
+  // clear botdiff
+  for (size_t idx = 0; idx < dataLayers[0].size(); ++idx) {
+    dataLayers[0][idx]->getOutputGrad()->zeroMem();
+    dataLayers[1][idx]->getOutputGrad()->zeroMem();
+  }
+  for (size_t i = 0; i < iter; ++i) {
+    // random test layer botdata, copy same to ref
+    for (size_t idx = 0; idx < dataLayers[0].size(); ++idx) {
+      dataLayers[0][idx]->getOutputValue()->randomizeUniform();
+      dataLayers[1][idx]->getOutputValue()->copyFrom(
+        *(dataLayers[0][idx]->getOutputValue()));
+    }
+    // fwd
+    testLayer[0]->forward(PASS_TRAIN);
+    testLayer[1]->forward(PASS_TRAIN);
+
+    // random test layer topdiff, copy same to ref
+    testLayer[0]->getOutputGrad()->randomizeUniform();
+    testLayer[1]->getOutputGrad()->copyFrom(*(testLayer[0]->getOutputGrad()));
+    // bwd
+    testLayer[0]->backward(nullptr);
+    testLayer[1]->backward(nullptr);
+
+    // get compared delta
+    // FWD: topdata, BWD: botdiff and weight ans bias
+    deltaFwd.push_back(compareMatrix(
+      testLayer[0]->getOutputValue(),
+      testLayer[1]->getOutputValue()));
+    for (size_t idx = 0; idx < dataLayers[0].size(); ++idx) {
+      MatrixPtr diffA, diffB;
+      diffA = dataLayers[0][idx]->getOutputGrad();
+      diffB = dataLayers[1][idx]->getOutputGrad();
+      deltaBwd.push_back(compareMatrix(diffA, diffB));
+    }
+    for (size_t idx = 0; idx < parameters[0].size(); ++idx) {
+      CpuVector tgt(*(parameters[0][idx]->getBuf(PARAMETER_VALUE)));
+      CpuVector ref(*(parameters[0][idx]->getBuf(PARAMETER_VALUE)));
+      deltaParam.push_back(compareVector(tgt, ref));
+    }
+
+    // if not addtoMode, clear topdata
+    if (cfg[0].layerConfig.add_size() == 0) {
+      // clear topdata
+      testLayer[0]->getOutputValue()->zeroMem();
+      testLayer[1]->getOutputValue()->zeroMem();
+      // clear botdiff
+      for (size_t idx = 0; idx < dataLayers[0].size(); ++idx) {
+        dataLayers[0][idx]->getOutputGrad()->zeroMem();
+        dataLayers[1][idx]->getOutputGrad()->zeroMem();
+      }
+      // clear param diff
+      for (size_t idx = 0; idx < parameters[0].size(); ++idx) {
+        parameters[0][idx]->getBuf(PARAMETER_GRADIENT)->zeroMem();
+        parameters[1][idx]->getBuf(PARAMETER_GRADIENT)->zeroMem();
+      }
+    }
+  }
+
+  // check Fwd delta
+  for (size_t i = 0; i < deltaFwd.size(); ++i) {
+    EXPECT_LE(fabs(deltaFwd[i]), epsilon);
+  }
+  // check Bwd delta
+  for (size_t i = 0; i < deltaBwd.size(); ++i) {
+    EXPECT_LE(fabs(deltaBwd[i]), epsilon);
+  }
+  // check Param delta
+  for (size_t i = 0; i < deltaParam.size(); ++i) {
+    EXPECT_LE(fabs(deltaParam[i]), epsilon);
+  }
 }
 #endif
 

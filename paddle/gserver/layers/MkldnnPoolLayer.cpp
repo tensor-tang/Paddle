@@ -269,27 +269,27 @@ void MkldnnPoolLayer::submitDnnBwd(const UpdateCallback &callback) {
   real* botdiff = getInputGrad(0)->getData();
   real* topdiff = getOutputGrad()->getData();
 
-  MatrixPtr ex = Matrix::create(getInputGrad(0)->getHeight(), getInputGrad(0)->getWidth(),false);
-  ex->copyFrom(*getInputGrad(0));
-  real* exdiff = ex->getData();
-  
-  LOG(INFO) << "--------------------ex bot diff: "<< exdiff[10] << "," << exdiff[11];
+//  MatrixPtr ex = Matrix::create(getInputGrad(0)->getHeight(), getInputGrad(0)->getWidth(),false);
+//  ex->copyFrom(*getInputGrad(0));
+//  real* exdiff = ex->getData();
+//  LOG(INFO) << "--------------------ex bot diff: "<< exdiff[10] << "," << exdiff[11];
   std::vector<primitive> pipeline;
   diffTop_->submitCvt(pipeline, topdiff);
   pipeline.push_back(*bwd_);
   diffBot_->submitCvt(pipeline, botdiff);
   stream(stream::kind::eager).submit(pipeline).wait();
-  LOG(INFO) << "--------------------my bot diff: "<< botdiff[10] << "," << botdiff[11];
-  real sum=0;
+//  LOG(INFO) << "--------------------my bot diff: "<< botdiff[10] << "," << botdiff[11];
+/*  real sum=0;
   real mx=0;
   size_t cnt = ex->getElementCnt();
   for (size_t i=0; i<cnt; ++i) {
-    real tmp = abs(exdiff[i]-botdiff[i]);
+    real tmp = fabs(exdiff[i]-botdiff[i]);
     sum += tmp;
     mx = std::max(tmp, mx);
   }
   LOG(INFO) << "cnt:" << cnt << "max:"<<mx;
   LOG(INFO) <<"--------------absf diff sum:"<<sum/cnt;
+*/
 }
 
 }  // namespace paddle
