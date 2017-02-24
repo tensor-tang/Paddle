@@ -68,7 +68,7 @@ void testConvLayer(const testConvDesc& pm) {
   conv->set_filter_channels(conv->channels() / conv->groups());
   conv->set_img_size(pm.iw);
   CHECK(conv->filter_channels() * pm.gp == conv->channels())
-    << "has float??";
+    << "it is indivisible";
   bool caffeMode = true;
   int ow = outputSize(pm.iw, pm.kw, pm.pw, pm.sw, caffeMode);
   CHECK(ow == pm.ow)
@@ -96,8 +96,13 @@ void testConvLayer(const testConvDesc& pm) {
 }
 
 TEST(Layer, convLayer) {
-  testConvLayer({128, 1, 3, 32, 32, 64, 32, 32, 3, 3, 1, 1, 1, 1});
-//  testConvLayer({128, 2, 4, 32, 32, 64, 32, 32, 3, 3, 1, 1, 1, 1});
+  testConvLayer({1, 1, 3, 32, 32, 64, 32, 32, 3, 3, 1, 1, 1, 1});
+  testConvLayer({64, 1, 3, 32, 32, 64, 32, 32, 3, 3, 1, 1, 1, 1});
+  testConvLayer({100, 1, 8, 32, 32, 64, 32, 32, 3, 3, 1, 1, 1, 1});
+  testConvLayer({128, 1, 64, 14, 14, 32, 14, 14, 3, 3, 1, 1, 1, 1});
+  // TODO(TJ): enable and test group != 1
+//  testConvLayer({1, 2, 4, 32, 32, 4, 32, 32, 3, 3, 1, 1, 1, 1});
+//  testConvLayer({128, 2, 64, 14, 14, 32, 14, 14, 3, 3, 1, 1, 1, 1});
 }
 
 struct testFCDesc {
@@ -140,6 +145,8 @@ void testFcLayer(const testFCDesc& pm) {
 
 TEST(Layer, fcLayer) {
   testFcLayer({100, 512, 128, 1, 1});
+  testFcLayer({1, 8, 16, 1, 1});
+// TODO(TJ): test iw and ih both > 1
 // do not support sparse yet 
 }
 
@@ -205,7 +212,7 @@ void testPoolLayer(const string& poolType, const testPoolDesc& pm) {
 
 TEST(Layer, PoolLayer) {
   testPoolLayer("max-projection", {10, 64, 32, 32, 16, 16, 2, 2, 0, 0, 2, 2});
-//  testPoolLayer("max-projection", {100, 16, 14, 14, 7, 7, 3, 3, 0, 0, 2, 2});
+  testPoolLayer("max-projection", {100, 16, 14, 14, 7, 7, 3, 3, 0, 0, 2, 2});
 //  testPoolLayer("max-projection", {64, 192, 56, 56, 28, 28, 3, 3, 0, 0, 2, 2});
 //  testPoolLayer("avg-projection");
 }

@@ -35,21 +35,26 @@ bool isMkldnnLayer(const LayerConfig& config) {
   return config.type().compare(0, dnn.length(), dnn) == 0 ? true : false;
 }
 
+// get max delta percent
+// avgDelta = sum(abs(a-b)) / sum(abs(b))
+// maxDelta = max(abs(a-b)) / avg(abs(b))
+// return max(avgDelta, maxDelta)
 double getDelta(const real* d1, const real* d2, size_t len) {
-  double delta = 0, maxDelta = 0, sum = 0;
+  double avgDelta = 0, maxDelta = 0, sum = 0;
   for (size_t i = 0; i < len; ++i) {
-    sum += fabs(d1[i]);
+    sum += fabs(d2[i]);
     double tmp = fabs(d1[i] - d2[i]);
-    delta += tmp;
+    avgDelta += tmp;
     maxDelta = std::max(tmp, maxDelta);
 //    LOG(INFO)<<"my: " <<d1[i] <<"; ex: " << d2[i];
   }
   EXPECT_TRUE(std::isnormal(sum));
-  EXPECT_FALSE(std::isnan(delta));
-  delta = delta / sum;
-  LOG(INFO) <<"dnn avg data: " << sum / len <<
-    ", avg delta: " << delta << ", max delta:" << maxDelta;
-  return std::max(delta, maxDelta);
+  EXPECT_FALSE(std::isnan(avgDelta));
+  avgDelta = avgDelta / sum;
+  maxDelta = maxDelta * len / sum;
+  LOG(INFO) <<"ref avg data: " << sum / len <<
+    ", avg Delta: " << avgDelta << ", max delta:" << maxDelta;
+  return std::max(avgDelta, maxDelta);
 }
 
 double compareMatrix(const MatrixPtr& m1, const MatrixPtr& m2) {
@@ -128,6 +133,9 @@ void testLayerFunc(std::vector<TestConfig>& cfg, size_t batchSize,
     // random test layer topdiff, copy same to ref
     testLayer[0]->getOutputGrad()->randomizeUniform();
     testLayer[1]->getOutputGrad()->copyFrom(*(testLayer[0]->getOutputGrad()));
+//  for (size_t kk =0; kk<testLayer[0]->getOutputGrad()->getElementCnt(); ++kk){
+//    LOG(INFO)<<"topdiff: " << testLayer[0]->getOutputGrad()->getData()[kk];
+//  }
     // bwd
     testLayer[0]->backward(nullptr);
     testLayer[1]->backward(nullptr);
@@ -146,6 +154,9 @@ void testLayerFunc(std::vector<TestConfig>& cfg, size_t batchSize,
     for (size_t idx = 0; idx < parameters[0].size(); ++idx) {
       CpuVector tgt(*(parameters[0][idx]->getBuf(PARAMETER_VALUE)));
       CpuVector ref(*(parameters[0][idx]->getBuf(PARAMETER_VALUE)));
+//      LOG(INFO) << parameters[0][idx]->getName()
+//          << " value: my: " << tgt.getData()[0]
+//          << ", ex: " << ref.getData()[0];
       deltaParam.push_back(compareVector(tgt, ref));
     }
 
@@ -168,15 +179,18 @@ void testLayerFunc(std::vector<TestConfig>& cfg, size_t batchSize,
   }
 
   // check Fwd delta
+  LOG(INFO) << "Check Top data";
   for (size_t i = 0; i < deltaFwd.size(); ++i) {
     EXPECT_LE(fabs(deltaFwd[i]), epsilon);
   }
   // check Bwd delta
   for (size_t i = 0; i < deltaBwd.size(); ++i) {
+    LOG(INFO) << "Check Bot" << i % dataLayers[0].size() << " diff";
     EXPECT_LE(fabs(deltaBwd[i]), epsilon);
   }
   // check Param delta
   for (size_t i = 0; i < deltaParam.size(); ++i) {
+    LOG(INFO) << "Check " << parameters[0][i % parameters[0].size()]->getName();
     EXPECT_LE(fabs(deltaParam[i]), epsilon);
   }
 }

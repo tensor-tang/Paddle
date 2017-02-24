@@ -110,7 +110,7 @@ public:
   }
 
   // get format from PD
-  int getFmt(mkldnn::memory::primitive_desc &pd) {
+  int getFmt(mkldnn::memory::primitive_desc pd) {
     return pd.desc().data.format;
   }
 
@@ -118,6 +118,11 @@ public:
   int getIntlFmt() {
     CHECK(pIntl_) << "haven't init user layout";
     return getIntlMD().data.format;
+  }
+
+  // get internal data handle
+  void* getIntlData() {
+    return pIntl_->get_data_handle();
   }
 
   mkldnn::memory::desc getIntlMD() {

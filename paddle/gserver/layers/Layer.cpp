@@ -54,8 +54,8 @@ bool Layer::init(const LayerMap& layerMap, const ParameterMap& parameterMap) {
     }
   }
 #ifdef PADDLE_USE_MKLDNN
-  topDataMD_ = NULL;
-  topDiffMD_ = NULL;
+  topDataMD_ = nullptr;
+  topDiffMD_ = nullptr;
 #endif
 
   output_.deviceId = deviceId_;

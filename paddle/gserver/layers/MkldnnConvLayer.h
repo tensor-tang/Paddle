@@ -23,6 +23,7 @@ protected:
   
   /// data buffers
   MkldnnBufferPtr dataWgt_;
+  MkldnnBufferPtr dataWgtBwd_;
   MkldnnBufferPtr dataBias_;
   /// diff buffer
   MkldnnBufferPtr diffWgt_;
@@ -62,6 +63,7 @@ public:
       bwdWgt_(nullptr),
       bwdData_(nullptr),
       dataWgt_(nullptr),
+      dataWgtBwd_(nullptr),
       dataBias_(nullptr),
       diffWgt_(nullptr),
       diffBias_(nullptr),
@@ -92,6 +94,7 @@ public:
     if (dataTop_) dataTop_->clearCvtFlag();
     if (dataBias_) dataBias_->clearCvtFlag();
     if (dataWgt_) dataWgt_->clearCvtFlag();
+    if (dataWgtBwd_) dataWgtBwd_->clearCvtFlag();
     if (diffBot_) diffBot_->clearCvtFlag();
     if (diffTop_) diffTop_->clearCvtFlag();
     if (diffBias_) diffBias_->clearCvtFlag();

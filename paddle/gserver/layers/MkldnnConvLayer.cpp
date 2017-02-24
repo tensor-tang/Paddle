@@ -214,7 +214,7 @@ void MkldnnConvLayer::resetDnn(PassType passType) {
     std::shared_ptr<mkldnn::convolution_forward::primitive_desc> fwdPD;
     if (hasBias) {
       fwdDesc.reset(new convolution_forward::desc(fwdpk, algo,
-                    prvMD ? dataBot_->getUserMD() : getAnyMD(botDims),
+                    getAnyMD(botDims), // prvMD ? dataBot_->getUserMD() : getAnyMD(botDims),
                     getAnyMD(wgtDims),
                     getAnyMD(biasDims),
                     getAnyMD(topDims),
@@ -353,7 +353,7 @@ void MkldnnConvLayer::resetDnn(PassType passType) {
     // 3. init conversion
     if (usePaddleFmt_) {
       if (diffWgt_->initCvt(dataWgt_->getIntlPD(), dnnCvtIntl2User)) {
-        LOG(INFO) << "need reorder --- weight diff: "
+        LOG(INFO) << "need reorder --- weight bwd wgt: "
           << DNN_FMTS[diffWgt_->getUserFmt()]
           << " <<< "
           << DNN_FMTS[diffWgt_->getIntlFmt()];
@@ -399,7 +399,9 @@ void MkldnnConvLayer::resetDnn(PassType passType) {
     // 1. create buffer and init user
     real* botDiff = prevLayer->getOutputGrad()->getData();
     diffBot_.reset(new MkldnnBuffer());
+    dataWgtBwd_.reset(new MkldnnBuffer());
     diffBot_->initUser(botDiff, botDims, fmt, eg);
+    dataWgtBwd_->initUser(dataWgt_->getIntlData(), dataWgt_->getIntlPD());
     // 2. init backward data primitive desc
     std::shared_ptr<convolution_forward::desc> bwdDataFwdDesc;
     std::shared_ptr<convolution_forward::primitive_desc> bwdDataFwdPD;
@@ -408,13 +410,13 @@ void MkldnnConvLayer::resetDnn(PassType passType) {
     bwdDataFwdDesc.reset(new convolution_forward::desc(
       fwdpk, algo,
       dataBot_->getIntlMD(),
-      dataWgt_->getIntlMD(),
+      getAnyMD(wgtDims),
       dataTop_->getIntlMD(),
       strides, padding, padR, padKind));
     bwdDataDesc.reset(new convolution_backward_data::desc(
       algo,
       dataBot_->getIntlMD(),
-      dataWgt_->getIntlMD(), 
+      getAnyMD(wgtDims),
       dataTop_->getIntlMD(),
       strides, padding, padR, padKind));
     bwdDataFwdPD.reset(new convolution_forward::primitive_desc(
@@ -422,9 +424,15 @@ void MkldnnConvLayer::resetDnn(PassType passType) {
     bwdDataPD.reset(new convolution_backward_data::primitive_desc(
       *bwdDataDesc, eg, *bwdDataFwdPD));
     CHECK(dataBot_->getIntlPD() == bwdDataPD->diff_src_primitive_desc());
-    CHECK(dataWgt_->getIntlPD() == bwdDataPD->weights_primitive_desc());
     CHECK(dataTop_->getIntlPD() == bwdDataPD->diff_dst_primitive_desc());
     // 3. init conversion
+    if (dataWgtBwd_->initCvt(
+      bwdDataPD->weights_primitive_desc(), dnnCvtUser2Intl)) {
+      LOG(INFO) << "need reorder --- weight bwd data: "
+          << DNN_FMTS[dataWgtBwd_->getUserFmt()]
+          << " >>> "
+          << DNN_FMTS[dataWgtBwd_->getIntlFmt()];
+    }
     if (setDnnBotDiffFmt_[i]) {
       diffBot_->resetUser(botDiff, bwdDataPD->diff_src_primitive_desc());
       prevLayer->setTopDiffMD(diffBot_->getUserMD());
@@ -433,7 +441,7 @@ void MkldnnConvLayer::resetDnn(PassType passType) {
     // 4. create bwd data handle
     bwdData_.reset(new convolution_backward_data(
       *bwdDataPD, *(diffTop_->getIntlMem()),
-      *(dataWgt_->getIntlMem()), *(diffBot_->getIntlMem())));
+      *(dataWgtBwd_->getIntlMem()), *(diffBot_->getIntlMem())));
     LOG(INFO) << "diff format flow --- "
       << DNN_FMTS[diffBot_->getUserFmt()] << " <<< ("
       << DNN_FMTS[diffBot_->getIntlFmt()] << " <<< "
@@ -489,11 +497,11 @@ void MkldnnConvLayer::exBwdBias(MatrixPtr topDiff) {
 //  MatrixPtr biases = Matrix::create(biases_->getWGrad()->getData(), 1,biases_->getWGrad()->getElementCnt(), false, useGpu_);
 
   MatrixPtr biases =Matrix::create(1,biases_->getWGrad()->getElementCnt(), false, useGpu_);
-  biases->copyFrom(*biases_->getWGrad());
-
+//  biases->copyFrom(*biases_->getWGrad());
+  biases->zeroMem();
   real* biasdiff = biases->getData();
 
-  LOG(INFO) << "--------------------before ex bias diff: "<< biasdiff[0]<< ","<<biasdiff[2] ;
+  LOG(INFO) << "--------------------before ex bias diff: "<< biasdiff[0]<< ","<<biasdiff[1] ;
   size_t mapW = getSize() / oc_;  // oh*ow
   size_t mapH = topDiff->getElementCnt() / mapW;  // oc*bs
   MatrixPtr vTmp = Matrix::create(topDiff->getData(), mapH, mapW, false, false);
@@ -501,9 +509,14 @@ void MkldnnConvLayer::exBwdBias(MatrixPtr topDiff) {
   Matrix::resizeOrCreate(transOutValue_, mapW, mapH, false, false);
   vTmp->transpose(transOutValue_, false);  // false means no memory allocation
   vTmp->reshape(transOutValue_->getElementCnt() / oc_, oc_);
+//  for (size_t i = 0; i < vTmp->getElementCnt() ; ++i)
+//    LOG(INFO) <<"in topdiff: " <<vTmp->getData()[i]; 
+//  LOG(INFO) <<"height:" << vTmp->getHeight() << ", width: " << vTmp->getWidth();
+
+  // weird, sumCols seems not work well in this collectBias, and bias diff is always not correct as exoncv's result
   biases->collectBias(*vTmp, 1.0f);
 
-  LOG(INFO) << "--------------------after ex bias diff: "<<biasdiff[0]<< ","<<biasdiff[2] ;
+  LOG(INFO) << "--------------------after ex bias diff: "<<biasdiff[0]<< ","<<biasdiff[1] ;
   biases->clear();
 
 }
@@ -566,7 +579,7 @@ void MkldnnConvLayer::exBwdData(MatrixPtr topDiff, int i) {
     tgtGradData += ih_[i] * iw_[i] * ic_[i];
   }
 
-  LOG(INFO) << "--------------------ex data diff: "<< tgtGrad->getData()[0] << "," << tgtGrad->getData()[10];
+  LOG(INFO) << "--------------------ex data diff: "<< tgtGrad->getData()[0] << "," << tgtGrad->getData()[1];
   
 }
 
@@ -640,13 +653,11 @@ void MkldnnConvLayer::exBackward(const UpdateCallback &callback) {
   MatrixPtr topGrad = getOutputGrad();
   if (biases_ && biases_->getWGrad()) {
     exBwdBias(topGrad);
-//    biases_->getParameterPtr()->incUpdate(callback);
   }
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     exBwdData(topGrad, i);
     if (weights_[i]->getWGrad()) {
       exBwdWgts(topGrad, i);
-//      weights_[i]->getParameterPtr()->incUpdate(callback);
     }
   }
 }
@@ -659,19 +670,13 @@ void MkldnnConvLayer::submitBwdData(int idx) {
   real* botdiff = botGrad->getData();
   real* topdiff = getOutputGrad()->getData();
   std::vector<primitive> pipeline;
-  if (usePaddleFmt_) {  // no need cvt wgt without usePaddleFmt_
-    CHECK(selfWgtData_[idx]);
-//    weights_[idx]->getW()->transpose(selfWgtData_[idx], false);
-    real* wgtdata = selfWgtData_[idx]->getData();
-//    dataWgt_->clearCvtFlag();
-    dataWgt_->submitCvt(pipeline, wgtdata);
-  }
+  dataWgtBwd_->submitCvt(pipeline, dataWgt_->getIntlData());
   diffTop_->submitCvt(pipeline, topdiff);
   pipeline.push_back(*bwdData_);
-//  diffBot_->clearCvtFlag();
   diffBot_->submitCvt(pipeline, botdiff);
   stream(stream::kind::eager).submit(pipeline).wait();
-  LOG(INFO) << "--------------------my data diff: "<< botdiff[0] << "," << botdiff[10];
+//  LOG(INFO) << "bwd data size: 3==" << pipeline.size();
+//  LOG(INFO) << "--------------------my data diff: "<< botdiff[0] << "," << botdiff[1];
 }
 
 void MkldnnConvLayer::submitBwdWgts(int idx) {
@@ -686,16 +691,8 @@ void MkldnnConvLayer::submitBwdWgts(int idx) {
   diffTop_->submitCvt(pipeline, topdiff);
   dataBot_->submitCvt(pipeline, botdata);
 
-// TODO: wgt diff and bias diff are both inputs and outputs???
+// TODO(TJ): wgt diff and bias diff are both inputs and outputs???
 
-
-
-
-
-
-
-
-  
   pipeline.push_back(*bwdWgt_);
   diffWgt_->submitCvt(pipeline, wgtdiff);
   // no need to cvt bias
@@ -716,10 +713,12 @@ void MkldnnConvLayer::submitBwdWgts(int idx) {
 void MkldnnConvLayer::submitDnnBwd(const UpdateCallback &callback) {
   // backward activation
   backwardActivation();
-  real* wgtdiff = weights_[0]->getWGrad()->getData();
-  real* biasdiff = biases_->getWGrad()->getData();
-  real* topdiff = getOutputGrad()->getData();
-  real* botdata = getPrev(0)->getOutputValue()->getData();
+
+//  real* wgtdiff = weights_[0]->getWGrad()->getData();
+//  real* biasdiff = biases_->getWGrad()->getData();
+//  real* topdiff = getOutputGrad()->getData();
+//  real* botdata = getPrev(0)->getOutputValue()->getData();
+//  LOG(INFO)<<"------------------------------ "<<getName();
 
 //  exBackward(nullptr);
 
@@ -729,14 +728,12 @@ void MkldnnConvLayer::submitDnnBwd(const UpdateCallback &callback) {
     submitBwdData(i);
     if (weights_[i]->getWGrad()) {
 
-LOG(INFO) << "topdiff:"<<topdiff[1] << ", botdata:" <<botdata[1] <<",------before my wgt, bias diff: "<< wgtdiff[0] << "," << wgtdiff[2] << ","<<biasdiff[0]<< ","<<biasdiff[2];
-    //LOG(INFO) << "--ex bias diff: "<< biasdiff[0]<< ","<<biasdiff[1]<< ","<<biasdiff[2]<< ","<<biasdiff[3]<< ","<<biasdiff[4]<< ","<<biasdiff[5]<< ","<<biasdiff[6]<< ","<<biasdiff[7];
+//LOG(INFO) << "topdiff:"<<topdiff[1] << ", botdata:" <<botdata[1] <<",------before my wgt, bias diff: "<< wgtdiff[0] << "," << wgtdiff[2] << ","<<biasdiff[0]<< ","<<biasdiff[1];
 
       submitBwdWgts(i);
-       wgtdiff = weights_[0]->getWGrad()->getData();
-       biasdiff = biases_->getWGrad()->getData();
-LOG(INFO) << "topdiff:"<<topdiff[1] << ", botdata:" <<botdata[1] <<",------after  my wgt, bias diff: "<< wgtdiff[0] << "," << wgtdiff[2] << ","<<biasdiff[0]<< ","<<biasdiff[2];
-   //LOG(INFO) << "--my bias diff: "<< biasdiff[0]<< ","<<biasdiff[1]<< ","<<biasdiff[2]<< ","<<biasdiff[3]<< ","<<biasdiff[4]<< ","<<biasdiff[5]<< ","<<biasdiff[6]<< ","<<biasdiff[7];
+//       wgtdiff = weights_[0]->getWGrad()->getData();
+//       biasdiff = biases_->getWGrad()->getData();
+//LOG(INFO) << "topdiff:"<<topdiff[1] << ", botdata:" <<botdata[1] <<",------after  my wgt, bias diff: "<< wgtdiff[0] << "," << wgtdiff[2] << ","<<biasdiff[0]<< ","<<biasdiff[1];
 
       weights_[i]->getParameterPtr()->incUpdate(callback);
      
@@ -745,6 +742,7 @@ LOG(INFO) << "topdiff:"<<topdiff[1] << ", botdata:" <<botdata[1] <<",------after
   if (biases_ && biases_->getWGrad()) {
     biases_->getParameterPtr()->incUpdate(callback);
   }
+//  LOG(INFO) << "topdiff:"<<topdiff[1] << ", botdata:" <<botdata[1] <<",------after update my wgt, bias diff: "<< wgtdiff[0] << "," << wgtdiff[2] << ","<<biasdiff[0]<< ","<<biasdiff[1];
 
 }
 
