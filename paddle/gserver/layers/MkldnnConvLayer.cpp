@@ -214,6 +214,7 @@ void MkldnnConvLayer::resetDnn(PassType passType) {
     std::shared_ptr<mkldnn::convolution_forward::primitive_desc> fwdPD;
     if (hasBias) {
       fwdDesc.reset(new convolution_forward::desc(fwdpk, algo,
+        // since conv have very solid policy to choose best format, so use any
                     getAnyMD(botDims), // prvMD ? dataBot_->getUserMD() : getAnyMD(botDims),
                     getAnyMD(wgtDims),
                     getAnyMD(biasDims),

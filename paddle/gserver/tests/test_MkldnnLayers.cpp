@@ -105,51 +105,6 @@ TEST(Layer, convLayer) {
 //  testConvLayer({128, 2, 64, 14, 14, 32, 14, 14, 3, 3, 1, 1, 1, 1});
 }
 
-struct testFCDesc {
-    int bs;
-    int ic;
-    int oc;
-    int ih, iw;  // oh == ow == 1
-};
-
-void testFcLayer(const testFCDesc& pm) {
-  TestConfig config;
-  config.biasSize = pm.oc;
-  config.layerConfig.set_type("mkldnn_fc");
-  config.layerConfig.set_size(pm.oc);
-  config.layerConfig.set_use_mkldnn_fmt(false);
-  config.inputDefs.push_back({INPUT_DATA, "layer_0",
-      size_t(pm.ic * pm.ih * pm.iw),  // size of input layer
-      size_t(pm.ic * pm.oc)});  // size of weight
-  config.layerConfig.add_inputs();
-
-  // test functionality as fc
-  TestConfig ref = config;
-  ref.layerConfig.set_type("fc");
-  std::vector<TestConfig> cfg = {config, ref};
-  // TODO(TJ): use {0, 1} if AddToMode ready 
-  for (auto addSize : {0}) {
-    config.layerConfig.set_add_size(addSize);
-    testLayerFunc(cfg, pm.bs);
-  }
-
-  // test layer grad
-  config.layerConfig.set_active_type("sigmoid");
-  config.layerConfig.set_drop_rate(0.1);
-  // TODO(TJ): use {0, 1} if AddToMode ready 
-  for (auto addSize : {0}) {
-    config.layerConfig.set_add_size(addSize);
-    testLayerGrad(config, "mkldnn_fc", pm.bs, false, false, true);
-  }
-}
-
-TEST(Layer, fcLayer) {
-  testFcLayer({100, 512, 128, 1, 1});
-  testFcLayer({1, 8, 16, 1, 1});
-// TODO(TJ): test iw and ih both > 1
-// do not support sparse yet 
-}
-
 struct testPoolDesc {
     int bs, cl;
     int ih, iw;
@@ -213,8 +168,54 @@ void testPoolLayer(const string& poolType, const testPoolDesc& pm) {
 TEST(Layer, PoolLayer) {
   testPoolLayer("max-projection", {10, 64, 32, 32, 16, 16, 2, 2, 0, 0, 2, 2});
   testPoolLayer("max-projection", {100, 16, 14, 14, 7, 7, 3, 3, 0, 0, 2, 2});
-//  testPoolLayer("max-projection", {64, 192, 56, 56, 28, 28, 3, 3, 0, 0, 2, 2});
+  testPoolLayer("max-projection", {64, 192, 56, 56, 28, 28, 3, 3, 0, 0, 2, 2});
+  testPoolLayer("max-projection", {1, 64, 56, 56, 28, 28, 3, 3, 0, 0, 2, 2});
 //  testPoolLayer("avg-projection");
+}
+
+struct testFCDesc {
+    int bs;
+    int ic;
+    int oc;
+    int ih, iw;  // oh == ow == 1
+};
+
+void testFcLayer(const testFCDesc& pm) {
+  TestConfig config;
+  config.biasSize = pm.oc;
+  config.layerConfig.set_type("mkldnn_fc");
+  config.layerConfig.set_size(pm.oc);
+  config.layerConfig.set_use_mkldnn_fmt(false);
+  config.inputDefs.push_back({INPUT_DATA, "layer_0",
+      size_t(pm.ic * pm.ih * pm.iw),  // size of input layer
+      size_t(pm.ic * pm.oc)});  // size of weight
+  config.layerConfig.add_inputs();
+
+  // test functionality as fc
+  TestConfig ref = config;
+  ref.layerConfig.set_type("fc");
+  std::vector<TestConfig> cfg = {config, ref};
+  // TODO(TJ): use {0, 1} if AddToMode ready 
+  for (auto addSize : {0}) {
+    config.layerConfig.set_add_size(addSize);
+    testLayerFunc(cfg, pm.bs);
+  }
+
+  // test layer grad
+  config.layerConfig.set_active_type("sigmoid");
+  config.layerConfig.set_drop_rate(0.1);
+  // TODO(TJ): use {0, 1} if AddToMode ready 
+  for (auto addSize : {0}) {
+    config.layerConfig.set_add_size(addSize);
+    testLayerGrad(config, "mkldnn_fc", pm.bs, false, false, true);
+  }
+}
+
+TEST(Layer, fcLayer) {
+  testFcLayer({100, 512, 128, 1, 1});
+  testFcLayer({1, 8, 16, 1, 1});
+// TODO(TJ): test iw and ih both > 1
+// do not support sparse yet 
 }
 
 void testBatchNormLayer() {

@@ -35,26 +35,31 @@ bool isMkldnnLayer(const LayerConfig& config) {
   return config.type().compare(0, dnn.length(), dnn) == 0 ? true : false;
 }
 
-// get max delta percent
-// avgDelta = sum(abs(a-b)) / sum(abs(b))
-// maxDelta = max(abs(a-b)) / avg(abs(b))
-// return max(avgDelta, maxDelta)
-double getDelta(const real* d1, const real* d2, size_t len) {
-  double avgDelta = 0, maxDelta = 0, sum = 0;
+// get delta percent
+// if many wrong point return the max(diff/ref)
+// else return sum(abs(a-b)) / sum(abs(b))
+double getDelta(const real* d1, const real* d2, size_t len,
+  const float failRate = 1e-3, const float thres = 0.1) {
+  double delta = 0, sum = 0;
+  int failCnt = 0;
+  const double eps = 1e-5;
+  double maxOut = 0;
   for (size_t i = 0; i < len; ++i) {
-    sum += fabs(d2[i]);
-    double tmp = fabs(d1[i] - d2[i]);
-    avgDelta += tmp;
-    maxDelta = std::max(tmp, maxDelta);
-//    LOG(INFO)<<"my: " <<d1[i] <<"; ex: " << d2[i];
+    double ref = fabs(d2[i]);
+    double diff = fabs(d1[i] - d2[i]);
+    delta += diff;
+    sum += ref;
+    if (ref > eps && fabs(d1[i]) > eps && diff / ref > thres) {
+      maxOut = std::max(maxOut, diff / ref);
+      failCnt++;
+    }
   }
   EXPECT_TRUE(std::isnormal(sum));
-  EXPECT_FALSE(std::isnan(avgDelta));
-  avgDelta = avgDelta / sum;
-  maxDelta = maxDelta * len / sum;
-  LOG(INFO) <<"ref avg data: " << sum / len <<
-    ", avg Delta: " << avgDelta << ", max delta:" << maxDelta;
-  return std::max(avgDelta, maxDelta);
+  EXPECT_FALSE(std::isinf(sum));
+  EXPECT_FALSE(std::isnan(delta));
+//  LOG(INFO) <<"ref avg data: " << sum / len << ", delta: " << delta / sum
+//    << ", failCnt:" << failCnt;
+  return (failCnt / (float)len) > failRate ? maxOut : delta / sum;
 }
 
 double compareMatrix(const MatrixPtr& m1, const MatrixPtr& m2) {

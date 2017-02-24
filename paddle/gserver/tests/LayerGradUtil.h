@@ -230,7 +230,7 @@ void testOperatorGrad(TestConfig& config, OperatorConfig& operatorConf,
 
 #ifdef PADDLE_USE_MKLDNN
 void testLayerFunc(std::vector<TestConfig>& config, size_t batchSize,
-                           float epsilon = 1e-3);
+                           float epsilon = 1e-4);
 
 #endif
 

@@ -122,7 +122,8 @@ void MkldnnPoolLayer::resetDnn(PassType passType) {
   std::shared_ptr<pooling_forward::desc> fwdDesc;
   std::shared_ptr<mkldnn::pooling_forward::primitive_desc> fwdPD;
   fwdDesc.reset(new pooling_forward::desc(pk, poolAlgo_,
-                    dataBot_->getUserMD(),
+    // since pool have pool policy to choose best format, so depends on prv
+                    prvMD ? dataBot_->getUserMD() : getAnyMD(botDims),
                     getAnyMD(topDims),
                     strides, kernel, padding, padR,
                     padKind));
@@ -236,7 +237,7 @@ void MkldnnPoolLayer::submitDnnFwd(PassType passType) {
   stream(stream::kind::eager).submit(pipeline).wait();
 //  LOG(INFO) << "------------ my top data:" << topdata[0]<< "," << topdata[1];
 
-// TODO(TJ): no activation???
+//  as paddle no forward activation
 //  forwardActivation();
 }
 
