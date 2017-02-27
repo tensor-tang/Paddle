@@ -144,21 +144,13 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   topFmt = memory::format::nc;
   biasDims = {oc_};
   biasFmt = memory::format::x;
+
   hasCvtTopData_ = false;
-  hasCvtTopDiff_ = false;
   hasCvtBiasData_ = false;
-  hasCvtBiasDiff_ = false;
   // 1. create mkldnn buffer, only have one output and bias buffer
   dataTop_.reset(new MkldnnBuffer());
   if (hasBias) {
     dataBias_.reset(new MkldnnBuffer());
-  }
-  if (passType != PASS_TEST) {  // for backward
-    diffTop_.reset(new MkldnnBuffer());
-    if (hasBias) {
-      CHECK(biases_->getWGrad()) << "assert have grad";
-      diffBias_.reset(new MkldnnBuffer());
-    }
   }
   // 2. init user top and bias
   real *topData = getOutputValue()->getData();
@@ -166,20 +158,6 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   if (hasBias) {
     real *biasData = biases_->getW()->getData();
     dataBias_->initUser(biasData, biasDims, biasFmt, eg);
-  }
-  if (passType != PASS_TEST) {
-    real *topDiff = getOutputGrad()->getData();
-    diffTop_->initUser(topDiff, topDims, topFmt, eg);
-    if (hasBias) {
-      real* biasDiff = biases_->getWGrad()->getData();
-      diffBias_->initUser(biasDiff, biasDims, biasFmt, eg);
-    }
-    // use internal top diff if use dnn input
-    const std::shared_ptr<mkldnn::memory::desc> inputDiffMD = getTopDiffMD();
-    if (inputDiffMD) {
-      diffTop_->resetUser(topDiff, *inputDiffMD, eg);
-      LOG(INFO) << "keep prev diff fmt: " << DNN_FMTS[diffTop_->getUserFmt()];
-    }
   }
   // TODO(TJ): only care about i==0 yet
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
@@ -268,18 +246,55 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
         *(dataBot_->getIntlMem()), *(dataWgt_->getIntlMem()),
         *(dataTop_->getIntlMem())));
     }
-    LOG(INFO) << "data format flow --- "
-      << DNN_FMTS[dataBot_->getUserFmt()] << " >>> ("
-      << DNN_FMTS[dataBot_->getIntlFmt()] << " >>> "
-      << DNN_FMTS[dataTop_->getIntlFmt()] << ") >>> "
-      << DNN_FMTS[dataTop_->getUserFmt()];
+  }
+}
 
-    /// init mkldnn backward ***************************************************
-    if (passType == PASS_TEST)
-      continue;
-    if (hasBias) {
-      CHECK(biases_->getWGrad()) << "assert has bias grad since has bias data";
-    }
+void MkldnnFcLayer::resetDnnBwd() {
+  mkldnn::engine eg = CpuEngine::Instance().getEngine();
+  prop_kind pk = prop_kind::forward;
+  bool hasBias = (biases_ && biases_->getWGrad());
+  // create dim structure that describes user data.
+  memory::dims botDims, wgtDims, biasDims, topDims;
+  memory::format botFmt, wgtFmt, biasFmt, topFmt;
+  if (!has_spatial_) {
+    botDims = {bs_, ic_[0]};
+    wgtDims = {oc_, ic_[0]};  // transpose from paddle weight
+    botFmt = memory::format::nc;
+    wgtFmt = memory::format::oi;
+  } else {
+    botDims = {bs_, ic_[0], ih_[0], iw_[0]};
+    wgtDims = {oc_, ic_[0], ih_[0], iw_[0]};
+    botFmt = memory::format::nchw;  // perfect fmt is or nChw8c
+    wgtFmt = memory::format::oihw;  // perfect fmt is or oIhw8i
+  }
+  topDims = {bs_, oc_};
+  topFmt = memory::format::nc;
+  biasDims = {oc_};
+  biasFmt = memory::format::x;
+  
+  hasCvtTopDiff_ = false;
+  hasCvtBiasDiff_ = false;
+
+  // 1. create mkldnn buffer, only have one output and bias buffer
+  diffTop_.reset(new MkldnnBuffer());
+  if (hasBias) {
+    diffBias_.reset(new MkldnnBuffer());
+  }
+  // 2. init user top and bias
+  real *topDiff = getOutputGrad()->getData();
+  diffTop_->initUser(topDiff, topDims, topFmt, eg);
+  if (hasBias) {
+    real* biasDiff = biases_->getWGrad()->getData();
+    diffBias_->initUser(biasDiff, biasDims, biasFmt, eg);
+  }
+  // use internal top diff if use dnn input
+  const std::shared_ptr<mkldnn::memory::desc> inputDiffMD = getTopDiffMD();
+  if (inputDiffMD) {
+    diffTop_->resetUser(topDiff, *inputDiffMD, eg);
+    LOG(INFO) << "keep prev diff fmt: " << DNN_FMTS[diffTop_->getUserFmt()];
+  }
+  // TODO(TJ): only care about i==0 yet
+  for (size_t i = 0; i != inputLayers_.size(); ++i) {
     // 1. create mkldnn buffer and init user
     CHECK(weights_[i]->getWGrad()) << "should have weight anyway";
     diffWgt_.reset(new MkldnnBuffer());
@@ -368,16 +383,7 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
     bwdData_.reset(new inner_product_backward_data(
       *bwdDataPD, *(diffTop_->getIntlMem()),
       *(dataWgt_->getIntlMem()), *(diffBot_->getIntlMem())));
-    LOG(INFO) << "diff format flow --- "
-      << DNN_FMTS[diffBot_->getUserFmt()] << " <<< ("
-      << DNN_FMTS[diffBot_->getIntlFmt()] << " <<< "
-      << DNN_FMTS[diffTop_->getIntlFmt()] << ") <<< "
-      << DNN_FMTS[diffTop_->getUserFmt()];
   }
-}
-
-void MkldnnFcLayer::resetDnnBwd() {
-
 }
 
 void MkldnnFcLayer::exFwd(PassType passType) {

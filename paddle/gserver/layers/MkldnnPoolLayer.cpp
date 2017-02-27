@@ -120,27 +120,25 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
   }
   // 3. create forward PD
   std::shared_ptr<pooling_forward::desc> fwdDesc;
-  std::shared_ptr<mkldnn::pooling_forward::primitive_desc> fwdPD;
   fwdDesc.reset(new pooling_forward::desc(pk, poolAlgo_,
     // since pool have pool policy to choose best format, so depends on prv
-                    prvMD ? dataBot_->getUserMD() : getAnyMD(botDims),
-                    getAnyMD(topDims),
-                    strides, kernel, padding, padR,
-                    padKind));
-  fwdPD.reset(new pooling_forward::primitive_desc(*fwdDesc, eg));
+    prvMD ? dataBot_->getUserMD() : getAnyMD(botDims),
+    getAnyMD(topDims),
+    strides, kernel, padding, padR, padKind));
+  fwdPD_.reset(new pooling_forward::primitive_desc(*fwdDesc, eg));
   // 4. init cvt
   dataBot_->initCvt();  // dnnCvtNoNeed
   // set topdata dnn MemDesc if next is also mkldnn
   if (setDnnTopDataFmt_) {
-    dataTop_->resetUser(topData, fwdPD->dst_primitive_desc());
+    dataTop_->resetUser(topData, fwdPD_->dst_primitive_desc());
     setTopDataMD(dataTop_->getUserMD());
     LOG(INFO) << "set next data format: " << DNN_FMTS[dataTop_->getUserFmt()];
   }
-  dataTop_->initCvt(fwdPD->dst_primitive_desc(), dnnCvtIntl2User);
+  dataTop_->initCvt(fwdPD_->dst_primitive_desc(), dnnCvtIntl2User);
   withWorkspace_ = (passType != PASS_TEST
       && poolAlgo_ != algorithm::pooling_avg);
   if (withWorkspace_) {
-    workspace_.reset(new memory(fwdPD->workspace_primitive_desc()));
+    workspace_.reset(new memory(fwdPD_->workspace_primitive_desc()));
   } else {
     auto p_workspace_desc = memory::primitive_desc(
       {{}, memory::data_type::f32, memory::format(dataTop_->getIntlFmt())},
@@ -149,22 +147,42 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
   }
   // 5. create handle
   if (withWorkspace_) {
-    fwd_.reset(new pooling_forward(*fwdPD,
+    fwd_.reset(new pooling_forward(*fwdPD_,
       *(dataBot_->getIntlMem()), *(dataTop_->getIntlMem()),
       *workspace_));
   } else {
-    fwd_.reset(new pooling_forward(*fwdPD,
+    fwd_.reset(new pooling_forward(*fwdPD_,
       *(dataBot_->getIntlMem()), *(dataTop_->getIntlMem())));
   }
-  LOG(INFO) << "data format flow --- "
-    << DNN_FMTS[dataBot_->getUserFmt()] << " >>> ("
-    << DNN_FMTS[dataBot_->getIntlFmt()] << " >>> "
-    << DNN_FMTS[dataTop_->getIntlFmt()] << ") >>> "
-    << DNN_FMTS[dataTop_->getUserFmt()];
+}
 
-  /// init mkldnn backward ***************************************************
-  if (passType == PASS_TEST)
-    return;
+void MkldnnPoolLayer::exFwd(PassType passType) {
+  const Argument& in = getInput(0);
+  const Argument& out = output_;
+  CHECK_EQ(getSize(), out.value->getWidth());
+  MatrixPtr inputV = in.value;
+  MatrixPtr outV = out.value;
+  outV->maxPoolForward(*inputV, ih_[0], iw_[0], ic_[0], fw_, fh_,
+                       sh_, sw_, oh_[0], ow_[0], ph_, pw_);
+  
+}
+
+void MkldnnPoolLayer::resetDnnBwd() {
+  mkldnn::engine eg = CpuEngine::Instance().getEngine();
+  // create dim structure that describes user data.
+  memory::dims botDims = {bs_, ic_[0], ih_[0], iw_[0]};
+  memory::dims kernel = {fh_, fw_};
+  memory::dims strides = {sh_, sw_};
+  memory::dims padding = {ph_, pw_};
+  memory::dims topDims = {bs_, oc_, oh_[0], ow_[0]};
+  padding_kind padKind = padding_kind::zero;
+  std::vector<int> padR = {ph_, pw_};
+  // TODO(TJ): uncomment it, wait for mkldnn update
+  // temporary skip it for googlenet, for better performance
+//  for (int k = 0; k < 2; ++k) {
+//    if ((ih_[0] + ph_ + padR[0] - fh_)/sh_ + 1 < oh_[0]) ++padR[0];
+//    if ((iw_[0] + pw_ + padR[1] - fw_)/sw_ + 1 < ow_[0]) ++padR[1];
+//  }
   // 1. create buffer
   diffBot_.reset(new MkldnnBuffer());
   diffTop_.reset(new MkldnnBuffer());
@@ -190,7 +208,7 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
     poolAlgo_, diffBot_->getUserMD(), diffTop_->getUserMD(),
     strides, kernel, padding, padR, padKind));
   bwdPD.reset(new pooling_backward::primitive_desc(
-    *bwdDesc, eg, *fwdPD));
+    *bwdDesc, eg, *fwdPD_));
   // 4. init cvt
   diffTop_->initCvt();
   diffBot_->initCvt();
@@ -202,27 +220,6 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
     bwd_.reset(new pooling_backward(*bwdPD,
       *(diffTop_->getIntlMem()), *(diffBot_->getIntlMem())));
   }
-  LOG(INFO) << "diff format flow --- "
-    << DNN_FMTS[diffBot_->getUserFmt()] << " <<< ("
-    << DNN_FMTS[diffBot_->getIntlFmt()] << " <<< "
-    << DNN_FMTS[diffTop_->getIntlFmt()] << ") <<< "
-    << DNN_FMTS[diffTop_->getUserFmt()];
-  
-}
-
-void MkldnnPoolLayer::exFwd(PassType passType) {
-  const Argument& in = getInput(0);
-  const Argument& out = output_;
-  CHECK_EQ(getSize(), out.value->getWidth());
-  MatrixPtr inputV = in.value;
-  MatrixPtr outV = out.value;
-  outV->maxPoolForward(*inputV, ih_[0], iw_[0], ic_[0], fw_, fh_,
-                       sh_, sw_, oh_[0], ow_[0], ph_, pw_);
-  
-}
-
-void MkldnnPoolLayer::resetDnnBwd() {
-
 }
 
 void MkldnnPoolLayer::submitDnnFwd(PassType passType) {

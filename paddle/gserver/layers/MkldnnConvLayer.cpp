@@ -138,21 +138,12 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
   useConvRelu_ = (hasRelu_ && passType == PASS_TEST);
 
   hasCvtTopData_ = false;
-  hasCvtTopDiff_ = false;
   hasCvtBiasData_ = false;
-  hasCvtBiasDiff_ = false;
 
   // 1. create buffer, only have one output and bias buffer
   dataTop_.reset(new MkldnnBuffer());
   if (hasBias) {
     dataBias_.reset(new MkldnnBuffer());
-  }
-  if (passType != PASS_TEST) {
-    diffTop_.reset(new MkldnnBuffer());
-    if (hasBias) {
-      CHECK(biases_->getWGrad()) << "assert have grad";
-      diffBias_.reset(new MkldnnBuffer());
-    }
   }
   // 2. init user
   real *topData = getOutputValue()->getData();
@@ -160,20 +151,6 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
   if (hasBias) {
     real *biasData = biases_->getW()->getData();
     dataBias_->initUser(biasData, biasDims, fmtx, eg);
-  }
-  if (passType != PASS_TEST) {  // for backward
-    real *topDiff = getOutputGrad()->getData();
-    diffTop_->initUser(topDiff, topDims, fmt, eg);
-    if (hasBias) {
-      real* biasDiff = biases_->getWGrad()->getData();
-      diffBias_->initUser(biasDiff, biasDims, fmtx, eg);
-    }
-    // use internal top diff if use dnn input
-    const std::shared_ptr<mkldnn::memory::desc> inputDiffMD = getTopDiffMD();
-    if (inputDiffMD) {
-      diffTop_->resetUser(topDiff, *inputDiffMD, eg);
-      LOG(INFO) << "keep prev diff fmt: " << DNN_FMTS[diffTop_->getUserFmt()];
-    }
   }
   // TODO(TJ): only care about i==0 yet
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
@@ -214,18 +191,18 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
     std::shared_ptr<mkldnn::convolution_forward::primitive_desc> fwdPD;
     if (hasBias) {
       fwdDesc.reset(new convolution_forward::desc(fwdpk, algo,
-        // since conv have very solid policy to choose best format, so use any
-                    getAnyMD(botDims), // prvMD ? dataBot_->getUserMD() : getAnyMD(botDims),
-                    getAnyMD(wgtDims),
-                    getAnyMD(biasDims),
-                    getAnyMD(topDims),
-                    strides, padding, padR, padKind));
+      // since conv have very solid policy to choose best format, so use any
+        getAnyMD(botDims), // prvMD ? dataBot_->getUserMD() : getAnyMD(botDims),
+        getAnyMD(wgtDims),
+        getAnyMD(biasDims),
+        getAnyMD(topDims),
+        strides, padding, padR, padKind));
     } else {
       fwdDesc.reset(new convolution_forward::desc(fwdpk, algo,
-                    prvMD ? dataBot_->getUserMD() : getAnyMD(botDims),
-                    getAnyMD(wgtDims),
-                    getAnyMD(topDims),
-                    strides, padding, padR, padKind));
+        getAnyMD(botDims),
+        getAnyMD(wgtDims),
+        getAnyMD(topDims),
+        strides, padding, padR, padKind));
     }
     fwdPD.reset(new convolution_forward::primitive_desc(*fwdDesc, eg));
     // create conv_relu fwd only in scoring
@@ -305,17 +282,57 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
               *(dataTop_->getIntlMem())));
       }
     }
-    LOG(INFO) << "data format flow --- "
-      << DNN_FMTS[dataBot_->getUserFmt()] << " >>> ("
-      << DNN_FMTS[dataBot_->getIntlFmt()] << " >>> "
-      << DNN_FMTS[dataTop_->getIntlFmt()] << ") >>> "
-      << DNN_FMTS[dataTop_->getUserFmt()];
+  }
+}
 
-    /// init mkldnn backward ***************************************************
-    if (passType == PASS_TEST)
-      continue;
-    if (hasBias) {
-      CHECK(biases_->getWGrad()) << "assert has bias grad since has bias data";
+void MkldnnConvLayer::resetDnnBwd() {
+  mkldnn::engine eg = CpuEngine::Instance().getEngine();
+  algorithm algo = algorithm::convolution_direct;
+  padding_kind padKind = padding_kind::zero;
+  prop_kind fwdpk = prop_kind::forward_training;
+  bool hasBias = (biases_ && biases_->getWGrad());
+  memory::dims topDims = {bs_, oc_, oh_[0], ow_[0]};
+  memory::dims biasDims = {oc_};
+  memory::format fmt = memory::format::nchw;
+  memory::format fmtx = memory::format::x;
+
+  hasCvtTopDiff_ = false;
+  hasCvtBiasDiff_ = false;
+
+  // 1. create buffer, only have one output and bias buffer
+  diffTop_.reset(new MkldnnBuffer());
+  if (hasBias) {
+    diffBias_.reset(new MkldnnBuffer());
+  }
+  // 2. init user
+  real *topDiff = getOutputGrad()->getData();
+  diffTop_->initUser(topDiff, topDims, fmt, eg);
+  if (hasBias) {
+    real* biasDiff = biases_->getWGrad()->getData();
+    diffBias_->initUser(biasDiff, biasDims, fmtx, eg);
+  }
+  // use internal top diff if use dnn input
+  const std::shared_ptr<mkldnn::memory::desc> inputDiffMD = getTopDiffMD();
+  if (inputDiffMD) {
+    diffTop_->resetUser(topDiff, *inputDiffMD, eg);
+    LOG(INFO) << "keep prev diff fmt: " << DNN_FMTS[diffTop_->getUserFmt()];
+  }
+  for (size_t i = 0; i != inputLayers_.size(); ++i) {
+    CHECK(bs_ == getInput(i).getBatchSize()) << "batchsize should equal";
+    // init dim structure that describes user data.
+    memory::dims botDims = {bs_, ic_[i], ih_[i], iw_[i]};
+    memory::dims wgtDims = (gp_[i] == 1) ?
+      memory::dims{oc_, ic_[i], fh_[i], fw_[i]}
+      : memory::dims{gp_[i], oc_/gp_[i], ic_[i]/gp_[i], fh_[i], fw_[i]};
+    // TODO(TJ): never tested g!=1
+    memory::dims strides = {sh_[i], sw_[i]};
+    memory::dims padding = {ph_[i], pw_[i]};
+    memory::format wgtFmt= (gp_[i] == 1) ? memory::format::oihw
+      : memory::format::goihw;
+    std::vector<int> padR = {ph_[i], pw_[i]};
+    for (int k = 0; k < 2; ++k) {
+      if ((ih_[i] + ph_[i] + padR[0] - fh_[i])/sh_[i] + 1 != oh_[i]) ++padR[0];
+      if ((iw_[i] + pw_[i] + padR[1] - fw_[i])/sw_[i] + 1 != ow_[i]) ++padR[1];
     }
     // 1. create wgt buffer and init, could be vector later
     diffWgt_.reset(new MkldnnBuffer());
@@ -325,9 +342,18 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
     // 2. prepare backward weight and bias PD-----------------------------------
     // bias backward can only execute with weight bakcward
     // unable execute seperately
+    std::shared_ptr<convolution_forward::desc> fwdDesc;
+    std::shared_ptr<mkldnn::convolution_forward::primitive_desc> fwdPD;
     std::shared_ptr<convolution_backward_weights::desc> bwdWgtDesc;
     std::shared_ptr<convolution_backward_weights::primitive_desc> bwdWgtPD;
     if (hasBias) {
+      fwdDesc.reset(new convolution_forward::desc(
+        fwdpk, algo,
+        getAnyMD(botDims),
+        getAnyMD(wgtDims),
+        getAnyMD(biasDims),
+        getAnyMD(topDims),
+        strides, padding, padR, padKind));
       // TODO(TJ): only bwd bias once with multi inputs layers, or sum them?
       bwdWgtDesc.reset(new convolution_backward_weights::desc(
         algo,
@@ -337,6 +363,12 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
         dataTop_->getIntlMD(),
         strides, padding, padR, padKind));
     } else {
+      fwdDesc.reset(new convolution_forward::desc(
+        fwdpk, algo,
+        getAnyMD(botDims),
+        getAnyMD(wgtDims),
+        getAnyMD(topDims),
+        strides, padding, padR, padKind));
       bwdWgtDesc.reset(new convolution_backward_weights::desc(
         algo,
         dataBot_->getIntlMD(),
@@ -344,6 +376,7 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
         dataTop_->getIntlMD(),
         strides, padding, padR, padKind));
     }
+    fwdPD.reset(new convolution_forward::primitive_desc(*fwdDesc, eg));
     bwdWgtPD.reset(new convolution_backward_weights::primitive_desc(
       *bwdWgtDesc, eg, *fwdPD));
     CHECK(dataBot_->getIntlPD() == bwdWgtPD->src_primitive_desc());
@@ -443,16 +476,7 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
     bwdData_.reset(new convolution_backward_data(
       *bwdDataPD, *(diffTop_->getIntlMem()),
       *(dataWgtBwd_->getIntlMem()), *(diffBot_->getIntlMem())));
-    LOG(INFO) << "diff format flow --- "
-      << DNN_FMTS[diffBot_->getUserFmt()] << " <<< ("
-      << DNN_FMTS[diffBot_->getIntlFmt()] << " <<< "
-      << DNN_FMTS[diffTop_->getIntlFmt()] << ") <<< "
-      << DNN_FMTS[diffTop_->getUserFmt()];
   }
-}
-
-void MkldnnConvLayer::resetDnnBwd() {
-
 }
 
 void MkldnnConvLayer::submitDnnFwd(PassType passType) {

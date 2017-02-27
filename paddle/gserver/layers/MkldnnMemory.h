@@ -30,7 +30,7 @@ protected:
   /// conversion handle and type
   std::shared_ptr<mkldnn::primitive> pCvt_;
 
-  int  type_;
+  int  cvtType_;
   bool hasCvted_;  // to avoid re-cvt
 
 public:
@@ -39,7 +39,7 @@ public:
     pUser_(nullptr),
     pIntl_(nullptr),
     pCvt_(nullptr),
-    type_(dnnCvtNone),
+    cvtType_(dnnCvtNone),
     hasCvted_(false) {
     if (tp != mkldnn::memory::data_type::f32)
       LOG(FATAL) << "only support float 32 so far";
@@ -144,10 +144,10 @@ public:
     CHECK(pIntl_ == NULL)
       << "internal memory should be empty before initCvt";
     pIntl_ = pUser_;
-    type_ = cvtType;
+    cvtType_ = cvtType;
     clearCvtFlag();
     if (cvtType == dnnCvtNoNeed || intlPD == getUserPD()) {
-      type_ = dnnCvtNoNeed;
+      cvtType_ = dnnCvtNoNeed;
       return false;
     } else {
       // allocate internal src memory from user
@@ -169,14 +169,14 @@ public:
     CHECK(pIntl_ == NULL)
       << "internal memory should be empty before initCvt";
     pIntl_ = pUser_;
-    type_ = dnnCvtNoNeed;
+    cvtType_ = dnnCvtNoNeed;
     clearCvtFlag();
     return false;
   }
 
   bool needCvt() {
-    CHECK(type_) << "init conversion firstly";
-    if (type_ == dnnCvtNoNeed) {
+    CHECK(cvtType_) << "init conversion firstly";
+    if (cvtType_ == dnnCvtNoNeed) {
       return false;
     } else {
       return pCvt_ == NULL ? false : true;
@@ -188,7 +188,7 @@ public:
    */
   void submitCvt(std::vector<mkldnn::primitive> &net,
                       void* userData = NULL) {
-    CHECK(type_) << "init conversion firstly";
+    CHECK(cvtType_) << "init conversion firstly";
     // set user data handle, whether if need reorder or not
     if (userData) {
       if (userData != pUser_->get_data_handle()) {
@@ -200,7 +200,7 @@ public:
     } else {  // user data do not change
       if (hasCvted_)  return;
     }
-    if (type_ == dnnCvtNoNeed)
+    if (cvtType_ == dnnCvtNoNeed)
       return;
     CHECK(pCvt_) << "init conversion firstly";
     net.push_back(*pCvt_);

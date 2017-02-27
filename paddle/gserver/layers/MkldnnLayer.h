@@ -104,6 +104,16 @@ public:
       LOG(INFO) << "reset forward mkldnn of layer: " << getName();
       resetDnnFwd(passType);
 
+      // print the data flow
+      for (size_t i = 0; i != inputLayers_.size(); ++i) {
+        // TODO(TJ): consider multi input
+        if (dataBot_ && dataTop_)
+          LOG(INFO) << "data format flow --- "
+            << DNN_FMTS[dataBot_->getUserFmt()] << " >>> ("
+            << DNN_FMTS[dataBot_->getIntlFmt()] << " >>> "
+            << DNN_FMTS[dataTop_->getIntlFmt()] << ") >>> "
+            << DNN_FMTS[dataTop_->getUserFmt()];
+      }
       needResetBwd_ = true;
     }
 
@@ -120,6 +130,17 @@ public:
       // mkldnn init or reset backward
       LOG(INFO) << "reset backward mkldnn of layer: " << getName();
       resetDnnBwd();
+
+      // print the diff flow
+      for (size_t i = 0; i != inputLayers_.size(); ++i) {
+        // TODO(TJ): consider multi input
+        if (diffBot_ && diffTop_)
+          LOG(INFO) << "diff format flow --- "
+            << DNN_FMTS[diffBot_->getUserFmt()] << " <<< ("
+            << DNN_FMTS[diffBot_->getIntlFmt()] << " <<< "
+            << DNN_FMTS[diffTop_->getIntlFmt()] << ") <<< "
+            << DNN_FMTS[diffTop_->getUserFmt()];
+      }
     }
 
     // submit dnn backward
