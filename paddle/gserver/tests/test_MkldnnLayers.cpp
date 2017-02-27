@@ -95,7 +95,7 @@ void testConvLayer(const testConvDesc& pm) {
   }
 }
 
-TEST(Layer, convLayer) {
+TEST(MkldnnLayer, convLayer) {
   testConvLayer({1, 1, 3, 32, 32, 64, 32, 32, 3, 3, 1, 1, 1, 1});
   testConvLayer({64, 1, 3, 32, 32, 64, 32, 32, 3, 3, 1, 1, 1, 1});
   testConvLayer({100, 1, 8, 32, 32, 64, 32, 32, 3, 3, 1, 1, 1, 1});
@@ -165,7 +165,7 @@ void testPoolLayer(const string& poolType, const testPoolDesc& pm) {
   }
 }
 
-TEST(Layer, PoolLayer) {
+TEST(MkldnnLayer, PoolLayer) {
   testPoolLayer("max-projection", {10, 64, 32, 32, 16, 16, 2, 2, 0, 0, 2, 2});
   testPoolLayer("max-projection", {100, 16, 14, 14, 7, 7, 3, 3, 0, 0, 2, 2});
   testPoolLayer("max-projection", {64, 192, 56, 56, 28, 28, 3, 3, 0, 0, 2, 2});
@@ -211,11 +211,45 @@ void testFcLayer(const testFCDesc& pm) {
   }
 }
 
-TEST(Layer, fcLayer) {
+TEST(MkldnnLayer, fcLayer) {
   testFcLayer({100, 512, 128, 1, 1});
   testFcLayer({1, 8, 16, 1, 1});
 // TODO(TJ): test iw and ih both > 1
 // do not support sparse yet 
+}
+
+void testActivation(std::string act, const int bs, const size_t sz) {
+  const std::string dnn("mkldnn_");
+  CHECK(act.compare(0, dnn.length(), dnn) == 0);
+  LOG(INFO) << "test activation: " << act;
+
+  TestConfig config;
+  config.biasSize = 0;
+  config.layerConfig.set_type("addto");
+  config.layerConfig.set_size(sz);
+  config.layerConfig.set_active_type(act);
+  config.inputDefs.push_back({INPUT_DATA, "layer_0", sz, 0});
+  config.layerConfig.add_inputs();
+  // test gradient
+  testLayerGrad(config, act + "_activation", bs, false, false, true);
+
+  // test functionality
+  TestConfig ref = config;
+  act.erase(0, 7);
+  ref.layerConfig.set_active_type(act);
+  std::vector<TestConfig> cfg = {config, ref};
+  // TODO(TJ): use {0, 1} if AddToMode ready 
+  for (auto addSize : {0}) {
+    config.layerConfig.set_add_size(addSize);
+    testLayerFunc(cfg, bs);
+  }
+}
+
+TEST(MkldnnLayer, activations) {
+  testActivation("mkldnn_softmax", /* batch_size */ 1, /* size */ 100);
+  testActivation("mkldnn_softmax", /* batch_size */ 100, /* size */ 10);
+  testActivation("mkldnn_relu", /* batch_size */ 1, /* size */ 100);
+  testActivation("mkldnn_relu", /* batch_size */ 100, /* size */ 10);
 }
 
 void testBatchNormLayer() {
@@ -250,7 +284,7 @@ void testBatchNormLayer() {
                 /* useWeight */ true);
 }
 
-TEST(Layer, BatchNormalizationLayer) {
+TEST(MkldnnLayer, BatchNormalizationLayer) {
 //  testBatchNormLayer();
 }
 

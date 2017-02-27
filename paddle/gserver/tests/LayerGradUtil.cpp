@@ -30,9 +30,17 @@ real getCostSum(LayerPtr& testLayer, MatrixPtr weights) {
 
 #ifdef PADDLE_USE_MKLDNN
 bool isMkldnnLayer(const LayerConfig& config) {
-  // if type started with "mkldnn"
-  const std::string dnn("mkldnn");
-  return config.type().compare(0, dnn.length(), dnn) == 0 ? true : false;
+  // if layer type started with "mkldnn_"
+  const std::string dnn("mkldnn_");
+  const std::string& type = config.type();
+  return type.compare(0, dnn.length(), dnn) == 0;
+}
+
+bool isMkldnnAct(const LayerConfig& config) {
+  // if layer activation started with "mkldnn_"
+  const std::string dnn("mkldnn_");
+  const std::string& act = config.active_type();
+  return act.compare(0, dnn.length(), dnn) == 0;
 }
 
 // get delta percent
@@ -74,7 +82,8 @@ double compareVector(const CpuVector& v1, const CpuVector& v2) {
 
 void testLayerFunc(std::vector<TestConfig>& cfg, size_t batchSize,
                            float epsilon) {
-  CHECK(isMkldnnLayer(cfg[0].layerConfig)) << "test layer go first";
+  CHECK(isMkldnnLayer(cfg[0].layerConfig)
+    || isMkldnnAct(cfg[0].layerConfig)) << "test type go first";
 
   bool trans = false;
   bool useGpu = false;

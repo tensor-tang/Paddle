@@ -50,7 +50,8 @@ void testActivation(const string& act) {
 
 TEST(Activation, activation) {
   auto types = ActivationFunction::getAllRegisteredTypes();
-  std::set<string> excluded{"sequence_softmax"};
+  std::set<string> excluded{"sequence_softmax",
+    "mkldnn_relu", "mkldnn_softmax"};
   for (auto type : types) {
     if (excluded.count(type)) continue;
     testActivation(type);
