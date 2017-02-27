@@ -3165,6 +3165,7 @@ void CpuMatrix::oneHotCrossEntropy(Matrix& output, IVector& label) {
   for (size_t i = 0; i < numSamples; ++i, out += dim) {
     CHECK_GE(lbl[i], 0);
     CHECK_LT((size_t)lbl[i], dim);
+    // TODO(TJ): here could have log(0) in MKLDNN and cause Inf
     cost[i] = -std::log(out[lbl[i]]);
   }
 }

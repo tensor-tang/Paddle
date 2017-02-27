@@ -344,7 +344,9 @@ public:
     // act.value->getWidth(), false, false);
     // in->copyFrom(*act.value);
     // act.value->softmax(*tmp);
-
+// TODO(TJ): MKLDNN softmax could have pure zero output, which cause
+//  costLayer have "inf" in training phase, so do not use it yet!
+//  wait MKLDNN update, or add EPS later
     std::vector<mkldnn::primitive> pipeline;
     pipeline.push_back(*fwd_);
     mkldnn::stream(mkldnn::stream::kind::eager).submit(pipeline).wait();
