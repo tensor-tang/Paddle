@@ -50,6 +50,8 @@ public:
   // sacrificing the compatibility with original CPU layers
   bool useMkldnnFmt_;
 
+  bool needResetBwd_;
+
 public:
   explicit MkldnnLayer(const LayerConfig& config)
     : Layer(config),
@@ -59,7 +61,8 @@ public:
       diffTop_(nullptr),
       setDnnTopDataFmt_(false),
       addSize_(0),
-      useMkldnnFmt_(false)
+      useMkldnnFmt_(false),
+      needResetBwd_(true)
     {}
 
   ~MkldnnLayer() {}
@@ -97,9 +100,11 @@ public:
       reshape();
       resetOutput(bs_, getSize());
 
-      // mkldnn init or reset
-      LOG(INFO) << "reset mkldnn of layer: " << getName();
-      resetDnn(passType);
+      // mkldnn init or reset forward
+      LOG(INFO) << "reset forward mkldnn of layer: " << getName();
+      resetDnnFwd(passType);
+
+      needResetBwd_ = true;
     }
 
     // all sumbit cvt should be clear
@@ -110,6 +115,13 @@ public:
   }
 
   void backward(const UpdateCallback& callback) {
+    if (needResetBwd_) {
+      needResetBwd_ = false;
+      // mkldnn init or reset backward
+      LOG(INFO) << "reset backward mkldnn of layer: " << getName();
+      resetDnnBwd();
+    }
+
     // submit dnn backward
     REGISTER_TIMER_INFO("mkldnn_BwdTimer", getName().c_str());
     submitDnnBwd(callback);
@@ -203,9 +215,15 @@ public:
 
   /** 
    * each dnn layer should have function
-   * to init or reset mkldnn
+   * to init or reset forward mkldnn
    */
-  virtual void resetDnn(PassType passType) = 0;
+  virtual void resetDnnFwd(PassType passType) = 0;
+
+  /** 
+   * each dnn layer should have function
+   * to init or reset backward mkldnn
+   */
+  virtual void resetDnnBwd() = 0;
 
   /** 
    * each dnn layer should have function

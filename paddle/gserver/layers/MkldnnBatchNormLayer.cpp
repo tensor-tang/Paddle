@@ -242,7 +242,7 @@ void MkldnnBatchNormLayer::reshape() {
   printInfo();
 }
 
-void MkldnnBatchNormLayer::resetDnn(PassType passType) {
+void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   CHECK(bs_ == getInput(0).getBatchSize()) << "batchsize should equal";
   bool hasShift = (biases_ && biases_->getW());
   bool hasScale = (weight_ && weight_->getW());
@@ -469,6 +469,10 @@ void MkldnnBatchNormLayer::resetDnn(PassType passType) {
   << DNN_FMTS[diffBot_->getIntlFmt()] << " <<< "
   << DNN_FMTS[diffTop_->getIntlFmt()] << ") <<< "
   << DNN_FMTS[diffTop_->getUserFmt()];
+}
+
+void MkldnnBatchNormLayer::resetDnnBwd() {
+
 }
 
 void MkldnnBatchNormLayer::myFwd(PassType passType) {

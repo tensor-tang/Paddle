@@ -122,7 +122,7 @@ void MkldnnConvLayer::reshape() {
   printInfo();
 }
 
-void MkldnnConvLayer::resetDnn(PassType passType) {
+void MkldnnConvLayer::resetDnnFwd(PassType passType) {
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
   algorithm algo = algorithm::convolution_direct;
   prop_kind fwdpk = passType == PASS_TEST ? prop_kind::forward_scoring
@@ -449,6 +449,10 @@ void MkldnnConvLayer::resetDnn(PassType passType) {
       << DNN_FMTS[diffTop_->getIntlFmt()] << ") <<< "
       << DNN_FMTS[diffTop_->getUserFmt()];
   }
+}
+
+void MkldnnConvLayer::resetDnnBwd() {
+
 }
 
 void MkldnnConvLayer::submitDnnFwd(PassType passType) {

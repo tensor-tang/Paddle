@@ -120,7 +120,7 @@ void MkldnnFcLayer::reshape() {
   printInfo();
 }
 
-void MkldnnFcLayer::resetDnn(PassType passType) {
+void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   CHECK(bs_ == getInput(0).getBatchSize())
     << "Assert batchsize of input layers are equal";
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
@@ -374,6 +374,10 @@ void MkldnnFcLayer::resetDnn(PassType passType) {
       << DNN_FMTS[diffTop_->getIntlFmt()] << ") <<< "
       << DNN_FMTS[diffTop_->getUserFmt()];
   }
+}
+
+void MkldnnFcLayer::resetDnnBwd() {
+
 }
 
 void MkldnnFcLayer::exFwd(PassType passType) {

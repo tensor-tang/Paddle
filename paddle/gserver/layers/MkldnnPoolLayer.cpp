@@ -84,7 +84,7 @@ void MkldnnPoolLayer::reshape() {
   printInfo();
 }
 
-void MkldnnPoolLayer::resetDnn(PassType passType) {
+void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
   CHECK(bs_ == getInput(0).getBatchSize())
     << "Assert batchsize of input layers are equal";
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
@@ -219,6 +219,10 @@ void MkldnnPoolLayer::exFwd(PassType passType) {
   outV->maxPoolForward(*inputV, ih_[0], iw_[0], ic_[0], fw_, fh_,
                        sh_, sw_, oh_[0], ow_[0], ph_, pw_);
   
+}
+
+void MkldnnPoolLayer::resetDnnBwd() {
+
 }
 
 void MkldnnPoolLayer::submitDnnFwd(PassType passType) {

@@ -70,7 +70,7 @@ void MkldnnAddtoLayer::reshape() {
   printInfo();
 }
 
-void MkldnnAddtoLayer::resetDnn(PassType passType) {
+void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
   LOG(INFO) << "reset mkldnn forward of addto layer: " << config_.name();
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
   memory::dims botDims, topDims;
@@ -180,6 +180,9 @@ void MkldnnAddtoLayer::exFwd(PassType passType) {
   }
 //  real *topdata = outV->getData();
 //  LOG(INFO) << "ex-" << topdata[0] << "," << topdata[1] << "," << topdata[2];
+}
+
+void MkldnnAddtoLayer::resetDnnBwd() {
 }
 
 void MkldnnAddtoLayer::submitDnnFwd(PassType passType) {

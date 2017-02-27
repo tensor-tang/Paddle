@@ -82,7 +82,9 @@ public:
 
   void clearDataDiff();
 
-  void resetDnn(PassType passType);
+  void resetDnnFwd(PassType passType);
+
+  void resetDnnBwd();
 
   void submitDnnFwd(PassType passType);
   

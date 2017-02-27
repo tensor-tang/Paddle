@@ -61,7 +61,9 @@ public:
 
   void clearDataDiff();
 
-  void resetDnn(PassType passType);
+  void resetDnnFwd(PassType passType);
+
+  void resetDnnBwd();
 
   /** 
    * Forward propagation.
