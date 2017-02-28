@@ -94,14 +94,11 @@ public:
   
   void submitDnnBwd(const UpdateCallback& callback);
 
-  // keep for paddle
+  // keep as paddle did
   void prefetch();
 
-private:
+  // keep as paddle did
   Weight& getWeight(int idx) { return *weights_[idx]; }
-
-  void exFwd(PassType passType);
-  void exBwd(const UpdateCallback &callback);
 
   void printInfo() {
     for (size_t i = 0; i < iw_.size(); ++i) {

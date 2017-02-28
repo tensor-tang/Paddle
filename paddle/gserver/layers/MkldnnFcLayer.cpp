@@ -380,34 +380,7 @@ void MkldnnFcLayer::resetDnnBwd() {
   }
 }
 
-void MkldnnFcLayer::exFwd(PassType passType) {
-  /* malloc memory for the output_ if necessary
-  //int batchSize = getInput(0).getBatchSize();
-  //int size = getSize();
-  //reserveOutput(batchSize, size);
-  //MatrixPtr outV = getOutputValue()*/;
-
-  MatrixPtr outV = Matrix::create(bs_, oc_, false, false);
-  outV->zeroMem();
-  for (size_t i = 0; i != inputLayers_.size(); ++i) {
-    auto input = getInput(i);
-    CHECK(input.value) << "The input of 'fc' layer must be matrix";
-    i == 0 ? outV->mul(input.value, weights_[i]->getW(), 1, 0)
-           : outV->mul(input.value, weights_[i]->getW(), 1, 1);
-  }
-  /* add the bias-vector */
-  if (biases_.get() != NULL) {
-    outV->addBias(*(biases_->getW()), 1);
-  }
- // real *topdata = outV->getData();
- // LOG(INFO) << "ex ------------ " << topdata[0] << "," << topdata[1];
-
-}
-
 void MkldnnFcLayer::submitDnnFwd(PassType passType) {
-
-//  exFwd(passType);
-
   real *topdata = getOutputValue()->getData();
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     CHECK(getInput(i).value) << "The input of 'fc' layer must be matrix";
@@ -422,60 +395,8 @@ void MkldnnFcLayer::submitDnnFwd(PassType passType) {
     pipeline.push_back(*fwd_);
     dataTop_->submitCvt(pipeline, topdata);
     stream(stream::kind::eager).submit(pipeline).wait();
-//    LOG(INFO) << "my ------------ " << topdata[0] << "," << topdata[1];
   }
-
   forwardActivation();
-}
-
-void MkldnnFcLayer::exBwd(const UpdateCallback &callback) {
-  real* biasdiff = biases_->getWGrad()->getData();
-  
-  real* wgtdiff = weights_[0]->getWGrad()->getData();
-
-  LOG(INFO) << "--------------------ex before wgt, bias diff: "<< wgtdiff[0] << "," << wgtdiff[3] << ","<<biasdiff[0]<< ","<<biasdiff[2];
-      
-  if (biases_ && biases_->getWGrad()) {
-    biases_->getWGrad()->collectBias(*getOutputGrad(), 1);
-
-    /* Increasing the number of gradient */
-//    biases_->getParameterPtr()->incUpdate(callback);
-  }
-
-
-  bool syncFlag = hl_get_sync_flag();
-
-  for (size_t i = 0; i != inputLayers_.size(); ++i) {
-    /* Calculate the W-gradient for the current layer */
-    if (weights_[i]->getWGrad()) {
-      MatrixPtr input_T = getInputValue(i)->getTranspose();
-      MatrixPtr oGrad = getOutputGrad();
-      weights_[i]->getWGrad()->mul(input_T, oGrad, 1, 1);
-      LOG(INFO) << "--------------------ex wgt, bias diff: "<< wgtdiff[0] << "," << wgtdiff[3] << ","<<biasdiff[0]<< ","<<biasdiff[2];
-            
-    }
-
-    // If callback does not change value, backprop error asynchronously so that
-    // we can do the callback concurrently.
-    hl_set_sync_flag(false);
-
-    /* Calculate the input layers error */
-    
-    
-    MatrixPtr preGrad = getInputGrad(i);
-    real* botdiff = preGrad->getData();
-    LOG(INFO) << "--------------------ex before data diff: "<< botdiff[0] << "," << botdiff[10];
-    if (NULL != preGrad) {
-      MatrixPtr weights_T = weights_[i]->getW()->getTranspose();
-      preGrad->mul(getOutputGrad(), weights_T, 1, 1);
-    }
-    hl_set_sync_flag(syncFlag);
-    LOG(INFO) << "--------------------ex data diff: "<< botdiff[0] << "," << botdiff[10];
-
-
-//      weights_[i]->getParameterPtr()->incUpdate(callback);
-
-  }
 }
 
 void MkldnnFcLayer::submitBwdData(int idx, const MatrixPtr& botGrad) {
@@ -494,7 +415,6 @@ void MkldnnFcLayer::submitBwdData(int idx, const MatrixPtr& botGrad) {
   pipeline.push_back(*bwdData_);
   diffBot_->submitCvt(pipeline, botdiff);
   stream(stream::kind::eager).submit(pipeline).wait();
-//  LOG(INFO) << "--------------------my data diff: "<< botdiff[0] << "," << botdiff[10];
 }
 
 void MkldnnFcLayer::submitBwdWgts(int idx, const MatrixPtr& botVal) {
@@ -510,12 +430,7 @@ void MkldnnFcLayer::submitBwdWgts(int idx, const MatrixPtr& botVal) {
   dataBot_->submitCvt(pipeline, botdata);
   pipeline.push_back(*bwdWgt_);
   diffWgt_->submitCvt(pipeline, wgtdiff);
-  if (biases_ && biases_->getWGrad()) {
-    // bias backward can only execute in filter backward with MKL-DNN
-    real* biasdiff = biases_->getWGrad()->getData();
-    diffBias_->submitCvt(pipeline, biasdiff);
-  }
-//  LOG(INFO) << "size:" << pipeline.size();
+  // no need to submit cvt bias since biasfmt would not be changed
   stream(stream::kind::eager).submit(pipeline).wait();
   
   if (usePaddleFmt_) {
@@ -527,28 +442,16 @@ void MkldnnFcLayer::submitBwdWgts(int idx, const MatrixPtr& botVal) {
 void MkldnnFcLayer::submitDnnBwd(const UpdateCallback &callback) {
   backwardActivation();
 
-//  exBwd(nullptr);
-
-//  real* wgtdiff = weights_[0]->getWGrad()->getData();
-//  real* biasdiff = biases_->getWGrad()->getData();
-
-
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     submitBwdData(i, getPrev(i)->getOutputGrad());
-    
     if (weights_[i]->getWGrad()) {
- //     LOG(INFO) << "--------------------ex wgt, bias diff: "<< wgtdiff[0] << "," << wgtdiff[3] << ","<<biasdiff[0]<< ","<<biasdiff[2];
-      
       submitBwdWgts(i, getPrev(i)->getOutputValue());
- //     LOG(INFO) << "--------------------my wgt, bias diff: "<< wgtdiff[0] << "," << wgtdiff[3] << ","<<biasdiff[0]<< ","<<biasdiff[2];
       weights_[i]->getParameterPtr()->incUpdate(callback);   
     }
   }
   if (biases_ && biases_->getWGrad()) {
     biases_->getParameterPtr()->incUpdate(callback);
   }
-
-
 }
 
 }  // namespace paddle

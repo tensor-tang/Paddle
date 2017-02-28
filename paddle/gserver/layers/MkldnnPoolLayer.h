@@ -62,10 +62,6 @@ public:
 
   void submitDnnBwd(const UpdateCallback& callback);
 
-private:
-  void exFwd(PassType passType);
-  void exBwd(const UpdateCallback &callback);
-
   void printInfo() {
     for (size_t i = 0; i < iw_.size(); ++i) {
       LOG(INFO)

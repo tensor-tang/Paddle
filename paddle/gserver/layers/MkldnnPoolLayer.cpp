@@ -165,17 +165,6 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
   }
 }
 
-void MkldnnPoolLayer::exFwd(PassType passType) {
-  const Argument& in = getInput(0);
-  const Argument& out = output_;
-  CHECK_EQ(getSize(), out.value->getWidth());
-  MatrixPtr inputV = in.value;
-  MatrixPtr outV = out.value;
-  outV->maxPoolForward(*inputV, ih_[0], iw_[0], ic_[0], fw_, fh_,
-                       sh_, sw_, oh_[0], ow_[0], ph_, pw_);
-  
-}
-
 void MkldnnPoolLayer::resetDnnBwd() {
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
   // create dim structure that describes user data.
@@ -240,8 +229,6 @@ void MkldnnPoolLayer::resetDnnBwd() {
 }
 
 void MkldnnPoolLayer::submitDnnFwd(PassType passType) {
-//  exFwd(passType);
-
   real *botdata = getPrev(0)->getOutputValue()->getData();
   real *topdata = getOutputValue()->getData();
 
@@ -249,66 +236,25 @@ void MkldnnPoolLayer::submitDnnFwd(PassType passType) {
   dataBot_->submitCvt(pipeline, botdata);
   pipeline.push_back(*fwd_);
   dataTop_->submitCvt(pipeline, topdata);
-
-//  LOG(INFO) << "------------ ex top data:" << topdata[0] << "," << topdata[1];
-
   stream(stream::kind::eager).submit(pipeline).wait();
-//  LOG(INFO) << "------------ my top data:" << topdata[0]<< "," << topdata[1];
 
 //  as paddle no forward activation
 //  forwardActivation();
 }
 
-void MkldnnPoolLayer::exBwd(const UpdateCallback &callback) {
-  
-  const Argument& in = getInput(0);
-  MatrixPtr outGrad = getOutputGrad();
-  MatrixPtr inputV = in.value;
-  MatrixPtr outV = getOutputValue();
-  MatrixPtr inputGrad = in.grad;
-
-  if (nullptr == getInputGrad(0)) {
-    return;
-  }
-
-  inputGrad->maxPoolBackward(*inputV, ih_[0], iw_[0], *outGrad, *outV,
-                             fw_, fh_, sh_, sw_, oh_[0], ow_[0],
-                             1, 1, ph_, pw_);
-}
-
 void MkldnnPoolLayer::submitDnnBwd(const UpdateCallback &callback) {
   (void)callback;
-
-//  exBwd(nullptr);
-
   if (nullptr == getInputGrad(0)) {
     return;
   }
 
   real* botdiff = getInputGrad(0)->getData();
   real* topdiff = getOutputGrad()->getData();
-
-//  MatrixPtr ex = Matrix::create(getInputGrad(0)->getHeight(), getInputGrad(0)->getWidth(),false);
-//  ex->copyFrom(*getInputGrad(0));
-//  real* exdiff = ex->getData();
-//  LOG(INFO) << "--------------------ex bot diff: "<< exdiff[10] << "," << exdiff[11];
   std::vector<primitive> pipeline;
   diffTop_->submitCvt(pipeline, topdiff);
   pipeline.push_back(*bwd_);
   diffBot_->submitCvt(pipeline, botdiff);
   stream(stream::kind::eager).submit(pipeline).wait();
-//  LOG(INFO) << "--------------------my bot diff: "<< botdiff[10] << "," << botdiff[11];
-/*  real sum=0;
-  real mx=0;
-  size_t cnt = ex->getElementCnt();
-  for (size_t i=0; i<cnt; ++i) {
-    real tmp = fabs(exdiff[i]-botdiff[i]);
-    sum += tmp;
-    mx = std::max(tmp, mx);
-  }
-  LOG(INFO) << "cnt:" << cnt << "max:"<<mx;
-  LOG(INFO) <<"--------------absf diff sum:"<<sum/cnt;
-*/
 }
 
 }  // namespace paddle

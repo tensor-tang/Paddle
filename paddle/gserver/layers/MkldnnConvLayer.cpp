@@ -529,177 +529,6 @@ void MkldnnConvLayer::submitDnnFwd(PassType passType) {
   }
 }
 
-void MkldnnConvLayer::exBwdBias(MatrixPtr topDiff) {
-//  biases_->getWGrad()->zeroMem();
-
-//  MatrixPtr biases = Matrix::create(biases_->getWGrad()->getData(), 1,biases_->getWGrad()->getElementCnt(), false, useGpu_);
-
-  MatrixPtr biases =Matrix::create(1,biases_->getWGrad()->getElementCnt(), false, useGpu_);
-//  biases->copyFrom(*biases_->getWGrad());
-  biases->zeroMem();
-  real* biasdiff = biases->getData();
-
-  LOG(INFO) << "--------------------before ex bias diff: "<< biasdiff[0]<< ","<<biasdiff[1] ;
-  size_t mapW = getSize() / oc_;  // oh*ow
-  size_t mapH = topDiff->getElementCnt() / mapW;  // oc*bs
-  MatrixPtr vTmp = Matrix::create(topDiff->getData(), mapH, mapW, false, false);
-  MatrixPtr transOutValue_;
-  Matrix::resizeOrCreate(transOutValue_, mapW, mapH, false, false);
-  vTmp->transpose(transOutValue_, false);  // false means no memory allocation
-  vTmp->reshape(transOutValue_->getElementCnt() / oc_, oc_);
-//  for (size_t i = 0; i < vTmp->getElementCnt() ; ++i)
-//    LOG(INFO) <<"in topdiff: " <<vTmp->getData()[i]; 
-//  LOG(INFO) <<"height:" << vTmp->getHeight() << ", width: " << vTmp->getWidth();
-
-  // weird, sumCols seems not work well in this collectBias, and bias diff is always not correct as exoncv's result
-  biases->collectBias(*vTmp, 1.0f);
-
-  LOG(INFO) << "--------------------after ex bias diff: "<<biasdiff[0]<< ","<<biasdiff[1] ;
-  biases->clear();
-
-}
-
-void MkldnnConvLayer::exBwdData(MatrixPtr topDiff, int i) {
-  LayerPtr prevLayer = getPrev(i);
-  if (NULL == prevLayer->getOutputGrad()) {
-    return;
-  }
-  
-  int subM = oc_ / gp_[i];
-  int subN = oh_[i] * ow_[i];
-  int subK = ic_[i] * fw_[i] * fh_[i] / gp_[i];
-//  MatrixPtr tgtGrad = prevLayer->getOutputGrad();
-
-  MatrixPtr tgtGrad = Matrix::create(prevLayer->getOutputGrad()->getHeight(),
-    prevLayer->getOutputGrad()->getWidth(), false, false);//prevLayer->getOutputGrad();
-  tgtGrad->zeroMem();
-
-  /* reset the expand-grad memory */
-  MatrixPtr expandInput_;
-  Matrix::resizeOrCreate(expandInput_, subK*gp_[i], subN, false, false);
-  real *localGradData = topDiff->getData();
-  real *tgtGradData = tgtGrad->getData();
-  MatrixPtr exWgt = weights_[i]->getW();
-  if (!usePaddleFmt_) {
-    MatrixPtr exWgt = Matrix::create(
-      ic_[i] * fh_[i] * fw_[i] / gp_[i], oc_, false, false);
-    weights_[i]->getW()->transpose(exWgt, false);
-//    LOG(INFO) << "should not be here";
-  }
-
-  for (size_t n = 0; n < size_t(bs_); n++) {
-    real *wgtData = exWgt->getData();
-    real *expandInData = expandInput_->getData();
-    for (int g = 0; g < gp_[i]; g++) {
-      // create temporary matrix
-      MatrixPtr C = Matrix::create(expandInData, subK, subN, false, useGpu_);
-      MatrixPtr B = Matrix::create(localGradData, subM, subN, false, useGpu_);
-      MatrixPtr A = Matrix::create(wgtData, subK, subM, false, useGpu_);
-      C->mul(A, B);  // mul
-      // clear the temporary matrix
-      A->clear();
-      B->clear();
-      C->clear();
-      expandInData += subK * subN;
-      localGradData += subM * subN;
-      wgtData += subK * subM;
-    }
-    // shrink one frame outGrad
-    MatrixPtr oneGradTmp = Matrix::create(
-      expandInput_->getData(), subK * gp_[i], subN, false, useGpu_);
-    MatrixPtr vTmp = Matrix::create(
-      tgtGradData, 1, ih_[i] * iw_[i] * ic_[i], false, false);
-    vTmp->convShrink(*oneGradTmp, ih_[i], iw_[i], ic_[i], fh_[i], fw_[i],
-      sh_[i], sw_[i], ph_[i], pw_[i], oh_[i], ow_[i], 1.0f, 1.0f);
-    vTmp->clear();
-    oneGradTmp->clear();
-    // move the data-pointer
-    tgtGradData += ih_[i] * iw_[i] * ic_[i];
-  }
-
-  LOG(INFO) << "--------------------ex data diff: "<< tgtGrad->getData()[0] << "," << tgtGrad->getData()[1];
-  
-}
-
-void MkldnnConvLayer::exBwdWgts(MatrixPtr topDiff, int i) {
-  
-  MatrixPtr exWgt = weights_[i]->getWGrad();
-  //if (!usePaddleFmt_) {
-  //  exWgt = Matrix::create(ic_[i]*fh_[i]*fw_[i]/gp_[i], oc_, false, false);
-  //  weights_[i]->getWGrad()->transpose(exWgt, false);
-  //  LOG(WARNING) <<"not here..........";
- // }
-  MatrixPtr weightGrad = Matrix::create(exWgt->getHeight(), exWgt->getWidth(), false, false);
-  weightGrad->copyFrom(*exWgt);
-
-  MatrixPtr inputV = getPrev(i)->getOutputValue();
-
-
-  int subM = oc_ / gp_[i];
-  int subN = oh_[i] * ow_[i];
-  int subK = ic_[i] * fw_[i] * fh_[i] / gp_[i];
-  MatrixPtr expandInput_;
-  Matrix::resizeOrCreate(expandInput_, subK*gp_[i], subN, false, false);
-  real *gradData = topDiff->getData();
-
-  real* wgtdiff = weightGrad->getData();
-  real* topdiff = topDiff->getData();
-  real* botdata = inputV->getData();
-
-//  weightGrad->zeroMem();
-
-  LOG(INFO) << "topdiff:"<<topdiff[1] << ", botdata:" <<botdata[1] <<",---before ex bwd wgt diff: wgtdiff:"<< wgtdiff[0] << "," << wgtdiff[2] ;
-
-//  LOG(INFO) << "--------------------before expandInput_: " <<expandInput_->getData()[0];
-  
-  for (size_t n = 0; n < size_t(bs_); n++) {  // frame by frame
-    // expand
-    Matrix::resizeOrCreate(expandInput_, subK*gp_[i], subN, false, false);
-    real *imgData = inputV->getData() + n * inputV->getWidth();
-    MatrixPtr imageTmp = Matrix::create(
-      imgData, 1, ih_[i]*iw_[i]*ic_[i], false, false);
-    expandInput_->convExpand(*imageTmp, ih_[i], iw_[i], ic_[i], fh_[i], fw_[i],
-      sh_[i], sw_[i], ph_[i], pw_[i], oh_[i], ow_[i]);
-    imageTmp->clear();
-    real *wGradData = weightGrad->getData();
-    real *expandInData = expandInput_->getData();
-    // expand-mul one-group by one
-    for (int g = 0; g < gp_[i]; g++) {
-      MatrixPtr A = Matrix::create(expandInData, subK, subN, false, useGpu_);
-      MatrixPtr B = Matrix::create(gradData, subM, subN, true, useGpu_);
-      MatrixPtr C = Matrix::create(wGradData, subK, subM, false, useGpu_);
-      C->mul(A, B, 1, 1);
-      A->clear();
-      B->clear();
-      C->clear();
-      gradData += subM * subN;
-      wGradData += subK * subM;
-      expandInData += subK * subN;
-      }
-    }
-  // transpose to paddle wgts
-  //if (!usePaddleFmt_)
-  //  exWgt->transpose(weights_[i]->getWGrad_mutable(), false);
-//  LOG(INFO) << "--------------------after expandInput_: " <<expandInput_->getData()[0];
-
-  LOG(INFO) << "topdiff:"<<topdiff[1] << ", botdata:" <<botdata[1] <<",---after  ex bwd wgt diff: wgtdiff:"<< wgtdiff[0] << "," << wgtdiff[2] ;
-
-
-}
-
-void MkldnnConvLayer::exBackward(const UpdateCallback &callback) {
-  MatrixPtr topGrad = getOutputGrad();
-  if (biases_ && biases_->getWGrad()) {
-    exBwdBias(topGrad);
-  }
-  for (size_t i = 0; i != inputLayers_.size(); ++i) {
-    exBwdData(topGrad, i);
-    if (weights_[i]->getWGrad()) {
-      exBwdWgts(topGrad, i);
-    }
-  }
-}
-
 void MkldnnConvLayer::submitBwdData(int idx) {
   const MatrixPtr& botGrad = getPrev(idx)->getOutputGrad();
   if (botGrad == NULL) {
@@ -713,8 +542,6 @@ void MkldnnConvLayer::submitBwdData(int idx) {
   pipeline.push_back(*bwdData_);
   diffBot_->submitCvt(pipeline, botdiff);
   stream(stream::kind::eager).submit(pipeline).wait();
-//  LOG(INFO) << "bwd data size: 3==" << pipeline.size();
-//  LOG(INFO) << "--------------------my data diff: "<< botdiff[0] << "," << botdiff[1];
 }
 
 void MkldnnConvLayer::submitBwdWgts(int idx) {
@@ -728,18 +555,9 @@ void MkldnnConvLayer::submitBwdWgts(int idx) {
   std::vector<primitive> pipeline;
   diffTop_->submitCvt(pipeline, topdiff);
   dataBot_->submitCvt(pipeline, botdata);
-
-// TODO(TJ): wgt diff and bias diff are both inputs and outputs???
-
   pipeline.push_back(*bwdWgt_);
   diffWgt_->submitCvt(pipeline, wgtdiff);
-  // no need to cvt bias
-//  if (biases_ && biases_->getWGrad()) {
-    // bias backward can only execute in filter backward with MKL-DNN
-//    real* biasdiff = biases_->getWGrad()->getData();
-//    diffBias_->submitCvt(pipeline, biasdiff);
-//  }
-//  LOG(INFO) << "size:" << pipeline.size();
+  // no need to submit cvt bias since biasfmt would not be changed
   stream(stream::kind::eager).submit(pipeline).wait();
   
   if (usePaddleFmt_) {
@@ -752,36 +570,16 @@ void MkldnnConvLayer::submitDnnBwd(const UpdateCallback &callback) {
   // backward activation
   backwardActivation();
 
-//  real* wgtdiff = weights_[0]->getWGrad()->getData();
-//  real* biasdiff = biases_->getWGrad()->getData();
-//  real* topdiff = getOutputGrad()->getData();
-//  real* botdata = getPrev(0)->getOutputValue()->getData();
-//  LOG(INFO)<<"------------------------------ "<<getName();
-
-//  exBackward(nullptr);
-
-  
-
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     submitBwdData(i);
     if (weights_[i]->getWGrad()) {
-
-//LOG(INFO) << "topdiff:"<<topdiff[1] << ", botdata:" <<botdata[1] <<",------before my wgt, bias diff: "<< wgtdiff[0] << "," << wgtdiff[2] << ","<<biasdiff[0]<< ","<<biasdiff[1];
-
       submitBwdWgts(i);
-//       wgtdiff = weights_[0]->getWGrad()->getData();
-//       biasdiff = biases_->getWGrad()->getData();
-//LOG(INFO) << "topdiff:"<<topdiff[1] << ", botdata:" <<botdata[1] <<",------after  my wgt, bias diff: "<< wgtdiff[0] << "," << wgtdiff[2] << ","<<biasdiff[0]<< ","<<biasdiff[1];
-
       weights_[i]->getParameterPtr()->incUpdate(callback);
-     
     }
   }
   if (biases_ && biases_->getWGrad()) {
     biases_->getParameterPtr()->incUpdate(callback);
   }
-//  LOG(INFO) << "topdiff:"<<topdiff[1] << ", botdata:" <<botdata[1] <<",------after update my wgt, bias diff: "<< wgtdiff[0] << "," << wgtdiff[2] << ","<<biasdiff[0]<< ","<<biasdiff[1];
-
 }
 
 }  // namespace paddle
