@@ -124,7 +124,7 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
       dataBot_->resetUser(botData, botDims_[0], fmt, eg);
       LOG(INFO) << "use nchw data fmt";
     } else {
-      LOG(INFO) << "use prev data fmt: " << DNN_FMTS[dataBot_->getUserFmt()];
+      LOG(INFO) << "keep prev data fmt: " << DNN_FMTS[dataBot_->getUserFmt()];
     }  
   }
   // 3. create forward PD
@@ -203,8 +203,8 @@ void MkldnnPoolLayer::resetDnnBwd() {
     diffTop_->resetUser(topDiff, *prvMD, eg);
     bool isNC = diffTop_->getUserFmt() == memory::format::nc;
     if (isNC) {
-      CHECK(ih_[0] == iw_[0] && ih_[0] == 1)
-        << "iw, ih must be 1 with nc input";
+      CHECK(oh_[0] == ow_[0] && oh_[0] == 1)
+        << "ow, oh must be 1 with nc input";
       // do not support nc input, so change to nchw
       memory::format fmt = memory::format::nchw;
       diffTop_->resetUser(topDiff, topDims_, fmt, eg);

@@ -19,6 +19,7 @@ class MkldnnBatchNormLayer : public MkldnnLayer {
 protected:
   std::shared_ptr<mkldnn::batch_normalization_forward> fwd_;
   std::shared_ptr<mkldnn::batch_normalization_backward> bwd_;
+  std::shared_ptr<mkldnn::batch_normalization_forward::primitive_desc> fwdPD_;
 
   // use paddle weight format
   bool usePaddleFmt_;
@@ -36,6 +37,7 @@ protected:
   MatrixPtr localVar_;  // v^2
 
   bool useScaleShift_;
+  unsigned flags_;
 
   /// Epsilon value used in the batch normalization formula.
   static const real EPS;
@@ -97,6 +99,7 @@ public:
     : MkldnnLayer(config),
       fwd_(nullptr),
       bwd_(nullptr),
+      fwdPD_(nullptr),
       usePaddleFmt_(true),
       dataScaleShift_(nullptr),
       mean_(nullptr),

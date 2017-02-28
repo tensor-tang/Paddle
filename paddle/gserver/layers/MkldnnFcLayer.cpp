@@ -35,7 +35,7 @@ bool MkldnnFcLayer::initDnn(const LayerMap &layerMap,
 
   bs_ = 0;
   oc_ = getSize();
-  has_spatial_ = false;
+  hasSpatial_ = false;
   // TODO(TJ): should get this flag from layer proto , default true
   usePaddleFmt_ = true;
   for (size_t i = 0; i < inputLayers_.size(); i++) {
@@ -102,11 +102,11 @@ void MkldnnFcLayer::reshape() {
     int height = inputLayers_[i]->getOutput().getFrameHeight();
     int width = inputLayers_[i]->getOutput().getFrameWidth();
     if (height > 0 && width > 0) {
-      has_spatial_ = true;
+      hasSpatial_ = true;
       ih_[i] = height;
       iw_[i] = width;
     } else {
-      has_spatial_ = false;
+      hasSpatial_ = false;
       ih_[i] = 1;
       iw_[i] = 1;
     }
@@ -126,7 +126,7 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   prop_kind pk = prop_kind::forward;
   bool hasBias = (biases_ && biases_->getW());
   // create dim structure that describes user data.
-  if (!has_spatial_) {
+  if (!hasSpatial_) {
     botDims_[0] = {bs_, ic_[0]};
     wgtDims_[0] = {oc_, ic_[0]};  // transpose from paddle weight
     botFmt_[0] = memory::format::nc;
@@ -271,7 +271,14 @@ void MkldnnFcLayer::resetDnnBwd() {
   const std::shared_ptr<mkldnn::memory::desc> prv = getTopDiffMD();
   if (prv) {
     diffTop_->resetUser(topDiff, *prv, eg);
-    LOG(INFO) << "keep prev diff fmt: " << DNN_FMTS[diffTop_->getUserFmt()];
+    bool isNCHW = diffTop_->getUserFmt() == memory::format::nchw;
+    if (isNCHW && oh_[0] == ow_[0] && oh_[0] == 1) {
+      // if prv is nchw and h==w==1, use nc instead
+      diffTop_->resetUser(topDiff, topDims_, memory::format::nc, eg);
+      LOG(INFO) << "use nc diff fmt";
+    } else {
+      LOG(INFO) << "keep prev diff fmt: " << DNN_FMTS[diffTop_->getUserFmt()];
+    }
   }
   // TODO(TJ): only care about i==0 yet
   CHECK_EQ(inputLayers_.size(), 1);

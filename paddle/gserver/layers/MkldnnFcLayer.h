@@ -22,7 +22,7 @@ protected:
   std::shared_ptr<mkldnn::inner_product_backward_weights> bwdWgt_;
 
   // if image width and height !=0
-  bool has_spatial_;
+  bool hasSpatial_;
   /// data buffers
   MkldnnBufferPtr dataWgt_;
   MkldnnBufferPtr dataBias_;
@@ -52,7 +52,7 @@ public:
   explicit MkldnnFcLayer(const LayerConfig& config)
     : MkldnnLayer(config),
       fwd_(nullptr),
-      has_spatial_(false),
+      hasSpatial_(false),
       dataWgt_(nullptr),
       dataBias_(nullptr),
       diffWgt_(nullptr),
