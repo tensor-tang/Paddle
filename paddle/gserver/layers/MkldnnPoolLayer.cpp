@@ -64,7 +64,7 @@ bool MkldnnPoolLayer::initDnn(const LayerMap &layerMap,
 }
 
 void MkldnnPoolLayer::clearDataDiff() {
-  reserveOutput(bs_, getSize());
+//  reserveOutput(bs_, getSize());
 }
 
 void MkldnnPoolLayer::reshape() {
@@ -80,8 +80,6 @@ void MkldnnPoolLayer::reshape() {
   // reset output image size
   getOutput().setFrameHeight(oh_[0]);
   getOutput().setFrameWidth(ow_[0]);
-
-  printInfo();
 }
 
 void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
@@ -91,13 +89,14 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
   prop_kind pk = (passType == PASS_TEST) ? prop_kind::forward_scoring :
     prop_kind::forward_training;
   // create dim structure that describes user data.
-  memory::dims botDims = {bs_, ic_[0], ih_[0], iw_[0]};
+  botDims_[0] = {bs_, ic_[0], ih_[0], iw_[0]};
+  botFmt_[0] = memory::format::nchw;
+  topDims_ = {bs_, oc_, oh_[0], ow_[0]};
+  topFmt_ = memory::format::nchw;
   memory::dims kernel = {fh_, fw_};
   memory::dims strides = {sh_, sw_};
   memory::dims padding = {ph_, pw_};
-  memory::dims topDims = {bs_, oc_, oh_[0], ow_[0]};
   padding_kind padKind = padding_kind::zero;
-  memory::format fmt = memory::format::nchw;
   std::vector<int> padR = {ph_, pw_};
   // TODO(TJ): uncomment it, wait for mkldnn update
   // temporary skip it for googlenet, for better performance
@@ -111,19 +110,29 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
   // 2. init user
   real *botData = getPrev(0)->getOutputValue()->getData();
   real *topData = getOutputValue()->getData();
-  dataBot_->initUser(botData, botDims, fmt, eg);
-  dataTop_->initUser(topData, topDims, fmt, eg);
+  dataBot_->initUser(botData, botDims_[0], botFmt_[0], eg);
+  dataTop_->initUser(topData, topDims_, topFmt_, eg);
   const std::shared_ptr<memory::desc> prvMD = getPrev(0)->getTopDataMD();
   if (prvMD) {
     dataBot_->resetUser(botData, *prvMD, eg);
-    LOG(INFO) << "use prev data format: " << DNN_FMTS[dataBot_->getUserFmt()];
+    bool isNC = dataBot_->getUserFmt() == memory::format::nc;
+    if (isNC) {
+      CHECK(ih_[0] == iw_[0] && ih_[0] == 1)
+        << "iw, ih must be 1 with nc input";
+      // do not support nc input, so change to nchw or nChw8c
+      memory::format fmt = memory::format::nchw;
+      dataBot_->resetUser(botData, botDims_[0], fmt, eg);
+      LOG(INFO) << "use nchw data fmt";
+    } else {
+      LOG(INFO) << "use prev data fmt: " << DNN_FMTS[dataBot_->getUserFmt()];
+    }  
   }
   // 3. create forward PD
   std::shared_ptr<pooling_forward::desc> fwdDesc;
   fwdDesc.reset(new pooling_forward::desc(pk, poolAlgo_,
     // since pool have pool policy to choose best format, so depends on prv
-    prvMD ? dataBot_->getUserMD() : getAnyMD(botDims),
-    getAnyMD(topDims),
+    prvMD ? dataBot_->getUserMD() : getAnyMD(botDims_[0]),
+    getAnyMD(topDims_),
     strides, kernel, padding, padR, padKind));
   fwdPD_.reset(new pooling_forward::primitive_desc(*fwdDesc, eg));
   // 4. init cvt
@@ -170,11 +179,9 @@ void MkldnnPoolLayer::exFwd(PassType passType) {
 void MkldnnPoolLayer::resetDnnBwd() {
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
   // create dim structure that describes user data.
-  memory::dims botDims = {bs_, ic_[0], ih_[0], iw_[0]};
   memory::dims kernel = {fh_, fw_};
   memory::dims strides = {sh_, sw_};
   memory::dims padding = {ph_, pw_};
-  memory::dims topDims = {bs_, oc_, oh_[0], ow_[0]};
   padding_kind padKind = padding_kind::zero;
   std::vector<int> padR = {ph_, pw_};
   // TODO(TJ): uncomment it, wait for mkldnn update
@@ -191,10 +198,20 @@ void MkldnnPoolLayer::resetDnnBwd() {
   real* botDiff = getPrev(0)->getOutputGrad()->getData();
   diffBot_->initUser(botDiff, dataBot_->getUserMD(), eg);
   diffTop_->initUser(topDiff, dataTop_->getUserMD(), eg);
-  const std::shared_ptr<mkldnn::memory::desc> inputDiffMD = getTopDiffMD();
-  if (inputDiffMD) {
-    diffTop_->resetUser(topDiff, *inputDiffMD, eg);
-    LOG(INFO) << "use prev diff format: " << DNN_FMTS[diffTop_->getUserFmt()];
+  const std::shared_ptr<mkldnn::memory::desc> prvMD = getTopDiffMD();
+  if (prvMD) {
+    diffTop_->resetUser(topDiff, *prvMD, eg);
+    bool isNC = diffTop_->getUserFmt() == memory::format::nc;
+    if (isNC) {
+      CHECK(ih_[0] == iw_[0] && ih_[0] == 1)
+        << "iw, ih must be 1 with nc input";
+      // do not support nc input, so change to nchw
+      memory::format fmt = memory::format::nchw;
+      diffTop_->resetUser(topDiff, topDims_, fmt, eg);
+      LOG(INFO) << "use nchw diff fmt";
+    } else {
+      LOG(INFO) << "keep prev diff fmt: " << DNN_FMTS[diffTop_->getUserFmt()];
+    }
   }
   if (setDnnBotDiffFmt_[0]) {
     diffBot_->resetUser(botDiff, dataBot_->getIntlPD());

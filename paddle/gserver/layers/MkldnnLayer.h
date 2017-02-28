@@ -26,6 +26,12 @@ public:
   MkldnnBufferPtr diffBot_;
   MkldnnBufferPtr diffTop_;
 
+  // dims and format for user buffer
+  std::vector<mkldnn::memory::dims> botDims_, wgtDims_, biasDims_;
+  std::vector<mkldnn::memory::format> botFmt_, wgtFmt_, biasFmt_;
+  mkldnn::memory::dims topDims_;
+  mkldnn::memory::format topFmt_;
+
   // The spatial dimensions of height and width of input feature map.
   std::vector<int> ih_, iw_;
   // The spatial dimensions of height and width of output feature map.
@@ -80,6 +86,16 @@ public:
 
     bs_ = 0;
     oc_ = 0;
+    topDims_ = {0};
+    topFmt_ = mkldnn::memory::format::nchw;
+    for (size_t i = 0; i < inputLayers_.size(); i++) {
+      botDims_.push_back({0});
+      wgtDims_.push_back({0});
+      biasDims_.push_back({0});
+      botFmt_.push_back(mkldnn::memory::format::nchw);
+      wgtFmt_.push_back(mkldnn::memory::format::format_undef);
+      biasFmt_.push_back(mkldnn::memory::format::x);
+    }
 
     return initDnn(layerMap, parameterMap);
   }
@@ -93,15 +109,16 @@ public:
       clearDataDiff();
     } else {
       bs_ = getInput(0).getBatchSize();
+      LOG(INFO) << "reshape batch size: " << bs_ 
+        << ", and reset mkldnn forward of layer: " << getName();
 
       // reshape the input and output size
-      REGISTER_TIMER_INFO("mkldnn_ReshapeTimer", getName().c_str());
-      LOG(INFO) << "reshape batch size: " << bs_;
+      REGISTER_TIMER_INFO("mkldnn_ResetDnnTimer", getName().c_str());
       reshape();
-      resetOutput(bs_, getSize());
+      printInfo();
 
       // mkldnn init or reset forward
-      LOG(INFO) << "reset forward mkldnn of layer: " << getName();
+      resetOutput(bs_, getSize());
       resetDnnFwd(passType);
 
       // print the data flow
@@ -128,7 +145,7 @@ public:
     if (needResetBwd_) {
       needResetBwd_ = false;
       // mkldnn init or reset backward
-      LOG(INFO) << "reset backward mkldnn of layer: " << getName();
+      LOG(INFO) << "reset mkldnn backward of layer: " << getName();
       resetDnnBwd();
 
       // print the diff flow
@@ -228,11 +245,16 @@ public:
   virtual bool initDnn(const LayerMap& layerMap,
                            const ParameterMap& parameterMap) = 0;
 
-  /** 
+  /**
    * each dnn layer should have function
    * to reshape the input and output size, when batch size changes
    */
   virtual void reshape() = 0;
+
+  /**
+   * print some info like input or output size
+   */
+  virtual void printInfo() {}
 
   /** 
    * each dnn layer should have function

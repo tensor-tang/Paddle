@@ -90,7 +90,7 @@ void MkldnnFcLayer::prefetch() {
 }
 
 void MkldnnFcLayer::clearDataDiff() {
-  reserveOutput(bs_, getSize());
+//  reserveOutput(bs_, getSize());
 }
 
 void MkldnnFcLayer::reshape() {
@@ -117,7 +117,6 @@ void MkldnnFcLayer::reshape() {
     CHECK(layerSize == 0 || size_t(oh_[i] * ow_[i] * oc_) == layerSize);
     layerSize = oh_[i] * ow_[i] * oc_;
   }
-  printInfo();
 }
 
 void MkldnnFcLayer::resetDnnFwd(PassType passType) {
@@ -127,23 +126,21 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   prop_kind pk = prop_kind::forward;
   bool hasBias = (biases_ && biases_->getW());
   // create dim structure that describes user data.
-  memory::dims botDims, wgtDims, biasDims, topDims;
-  memory::format botFmt, wgtFmt, biasFmt, topFmt;
   if (!has_spatial_) {
-    botDims = {bs_, ic_[0]};
-    wgtDims = {oc_, ic_[0]};  // transpose from paddle weight
-    botFmt = memory::format::nc;
-    wgtFmt = memory::format::oi;
+    botDims_[0] = {bs_, ic_[0]};
+    wgtDims_[0] = {oc_, ic_[0]};  // transpose from paddle weight
+    botFmt_[0] = memory::format::nc;
+    wgtFmt_[0] = memory::format::oi;
   } else {
-    botDims = {bs_, ic_[0], ih_[0], iw_[0]};
-    wgtDims = {oc_, ic_[0], ih_[0], iw_[0]};
-    botFmt = memory::format::nchw;  // perfect fmt is or nChw8c
-    wgtFmt = memory::format::oihw;  // perfect fmt is or oIhw8i
+    botDims_[0] = {bs_, ic_[0], ih_[0], iw_[0]};
+    wgtDims_[0] = {oc_, ic_[0], ih_[0], iw_[0]};
+    botFmt_[0] = memory::format::nchw;
+    wgtFmt_[0] = memory::format::oihw;
   }
-  topDims = {bs_, oc_};
-  topFmt = memory::format::nc;
-  biasDims = {oc_};
-  biasFmt = memory::format::x;
+  topDims_ = {bs_, oc_};
+  topFmt_ = memory::format::nc;
+  biasDims_[0] = {oc_};
+  biasFmt_[0] = memory::format::x;
 
   hasCvtTopData_ = false;
   hasCvtBiasData_ = false;
@@ -154,12 +151,13 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   }
   // 2. init user top and bias
   real *topData = getOutputValue()->getData();
-  dataTop_->initUser(topData, topDims, topFmt, eg);
+  dataTop_->initUser(topData, topDims_, topFmt_, eg);
   if (hasBias) {
     real *biasData = biases_->getW()->getData();
-    dataBias_->initUser(biasData, biasDims, biasFmt, eg);
+    dataBias_->initUser(biasData, biasDims_[0], biasFmt_[0], eg);
   }
   // TODO(TJ): only care about i==0 yet
+  CHECK_EQ(inputLayers_.size(), 1);
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     CHECK(bs_ == getInput(i).getBatchSize()) << "batchsize should equal";
     /// 1. create buffer, could be vector later
@@ -169,24 +167,24 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
     real *botData = getPrev(i)->getOutputValue()->getData();
     real *wgtData = usePaddleFmt_ ? selfWgtData_[i]->getData()
         : weights_[i]->getW()->getData();
-    dataBot_->initUser(botData, botDims, botFmt, eg);
-    dataWgt_->initUser(wgtData, wgtDims, wgtFmt, eg);
+    dataBot_->initUser(botData, botDims_[i], botFmt_[i], eg);
+    dataWgt_->initUser(wgtData, wgtDims_[i], wgtFmt_[i], eg);
     // 3. create fc desc
     std::shared_ptr<inner_product_forward::desc> fwdDesc;
     std::shared_ptr<mkldnn::inner_product_forward::primitive_desc> fwdPD;
     const std::shared_ptr<memory::desc> prvMD = getPrev(i)->getTopDataMD();
     if (prvMD) {
       dataBot_->resetUser(botData, *prvMD, eg);
-      LOG(INFO) << "use prev format: " << DNN_FMTS[dataBot_->getUserFmt()];
+      LOG(INFO) << "use prev data fmt: " << DNN_FMTS[dataBot_->getUserFmt()];
     }
     if (hasBias) {
       fwdDesc.reset(new inner_product_forward::desc(pk,
-          prvMD ? dataBot_->getUserMD() : getAnyMD(botDims),
-          getAnyMD(wgtDims), getAnyMD(biasDims), getAnyMD(topDims)));
+          prvMD ? dataBot_->getUserMD() : getAnyMD(botDims_[i]),
+          getAnyMD(wgtDims_[i]), getAnyMD(biasDims_[i]), getAnyMD(topDims_)));
     } else {
       fwdDesc.reset(new inner_product_forward::desc(pk,
-          prvMD ? dataBot_->getUserMD() : getAnyMD(botDims),
-          getAnyMD(wgtDims), getAnyMD(topDims)));
+          prvMD ? dataBot_->getUserMD() : getAnyMD(botDims_[i]),
+          getAnyMD(wgtDims_[i]), getAnyMD(topDims_)));
     }
     fwdPD.reset(new inner_product_forward::primitive_desc(*fwdDesc, eg));
     // 4. init cvt
@@ -229,7 +227,7 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
       if (setDnnTopDataFmt_) {
         dataTop_->resetUser(topData, fwdPD->dst_primitive_desc());
         setTopDataMD(dataTop_->getUserMD());
-        LOG(INFO) << "set next format: " << DNN_FMTS[dataTop_->getUserFmt()];
+        LOG(INFO) << "set next data fmt: " << DNN_FMTS[dataTop_->getUserFmt()];
       }
       dataTop_->initCvt(fwdPD->dst_primitive_desc(), dnnCvtIntl2User);
     } else {
@@ -253,25 +251,7 @@ void MkldnnFcLayer::resetDnnBwd() {
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
   prop_kind pk = prop_kind::forward;
   bool hasBias = (biases_ && biases_->getWGrad());
-  // create dim structure that describes user data.
-  memory::dims botDims, wgtDims, biasDims, topDims;
-  memory::format botFmt, wgtFmt, biasFmt, topFmt;
-  if (!has_spatial_) {
-    botDims = {bs_, ic_[0]};
-    wgtDims = {oc_, ic_[0]};  // transpose from paddle weight
-    botFmt = memory::format::nc;
-    wgtFmt = memory::format::oi;
-  } else {
-    botDims = {bs_, ic_[0], ih_[0], iw_[0]};
-    wgtDims = {oc_, ic_[0], ih_[0], iw_[0]};
-    botFmt = memory::format::nchw;  // perfect fmt is or nChw8c
-    wgtFmt = memory::format::oihw;  // perfect fmt is or oIhw8i
-  }
-  topDims = {bs_, oc_};
-  topFmt = memory::format::nc;
-  biasDims = {oc_};
-  biasFmt = memory::format::x;
-  
+
   hasCvtTopDiff_ = false;
   hasCvtBiasDiff_ = false;
 
@@ -282,46 +262,50 @@ void MkldnnFcLayer::resetDnnBwd() {
   }
   // 2. init user top and bias
   real *topDiff = getOutputGrad()->getData();
-  diffTop_->initUser(topDiff, topDims, topFmt, eg);
+  diffTop_->initUser(topDiff, topDims_, topFmt_, eg);
   if (hasBias) {
     real* biasDiff = biases_->getWGrad()->getData();
-    diffBias_->initUser(biasDiff, biasDims, biasFmt, eg);
+    diffBias_->initUser(biasDiff, biasDims_[0], biasFmt_[0], eg);
   }
   // use internal top diff if use dnn input
-  const std::shared_ptr<mkldnn::memory::desc> inputDiffMD = getTopDiffMD();
-  if (inputDiffMD) {
-    diffTop_->resetUser(topDiff, *inputDiffMD, eg);
+  const std::shared_ptr<mkldnn::memory::desc> prv = getTopDiffMD();
+  if (prv) {
+    diffTop_->resetUser(topDiff, *prv, eg);
     LOG(INFO) << "keep prev diff fmt: " << DNN_FMTS[diffTop_->getUserFmt()];
   }
   // TODO(TJ): only care about i==0 yet
+  CHECK_EQ(inputLayers_.size(), 1);
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     // 1. create mkldnn buffer and init user
     CHECK(weights_[i]->getWGrad()) << "should have weight anyway";
     diffWgt_.reset(new MkldnnBuffer());
     real *wgtDiff = usePaddleFmt_ ? selfWgtDiff_[i]->getData()
       : weights_[i]->getWGrad()->getData();
-    diffWgt_->initUser(wgtDiff, wgtDims, wgtFmt, eg);
+    diffWgt_->initUser(wgtDiff, wgtDims_[i], wgtFmt_[i], eg);
     // 2. prepare backward weight and bias
     std::shared_ptr<inner_product_forward::desc> bwdFwdDesc;
     std::shared_ptr<inner_product_forward::primitive_desc> bwdFwdPD;
     std::shared_ptr<inner_product_backward_weights::desc> bwdWgtDesc;
     std::shared_ptr<inner_product_backward_weights::primitive_desc> bwdWgtPD;
     bwdFwdDesc.reset(new inner_product_forward::desc(pk,
-      dataBot_->getIntlMD(), dataWgt_->getIntlMD(), dataTop_->getIntlMD()));
+      dataBot_->getIntlMD(), getAnyMD(wgtDims_[i]),//dataWgt_->getIntlMD(),
+      prv ? diffTop_->getUserMD() : dataTop_->getIntlMD()));
     bwdFwdPD.reset(new inner_product_forward::primitive_desc(
       *bwdFwdDesc, eg));
     CHECK(hasBias) << "only support with bias in mkldnn";
     bwdWgtDesc.reset(new inner_product_backward_weights::desc(
-      dataBot_->getIntlMD(), dataWgt_->getIntlMD(),
-      dataBias_->getIntlMD(), dataTop_->getIntlMD()));
+      dataBot_->getIntlMD(), getAnyMD(wgtDims_[i]),//dataWgt_->getIntlMD(),
+      dataBias_->getIntlMD(),
+      prv ? diffTop_->getUserMD() : dataTop_->getIntlMD()));
     bwdWgtPD.reset(new inner_product_backward_weights::primitive_desc(
       *bwdWgtDesc, eg, *bwdFwdPD));
     CHECK(dataBot_->getIntlPD() == bwdWgtPD->src_primitive_desc());
-    CHECK(dataWgt_->getIntlPD() == bwdWgtPD->diff_weights_primitive_desc());
+//    CHECK(dataWgt_->getIntlPD() == bwdWgtPD->diff_weights_primitive_desc());
     CHECK(dataBias_->getIntlPD() == bwdWgtPD->diff_bias_primitive_desc());
+
     // 3. init conversion    
     if (usePaddleFmt_) {
-      if (diffWgt_->initCvt(dataWgt_->getIntlPD(), dnnCvtIntl2User)) {
+      if (diffWgt_->initCvt(bwdWgtPD->diff_weights_primitive_desc(), dnnCvtIntl2User)) {
         LOG(INFO) << "need reorder --- weight diff: "
           << DNN_FMTS[diffWgt_->getIntlFmt()]
           << " >>>>> "
@@ -363,12 +347,14 @@ void MkldnnFcLayer::resetDnnBwd() {
     // 1. create buffer and init user
     real* botDiff = prevLayer->getOutputGrad()->getData();
     diffBot_.reset(new MkldnnBuffer());
-    diffBot_->initUser(botDiff, botDims, botFmt, eg);
+    diffBot_->initUser(botDiff, botDims_[i], botFmt_[i], eg);
     // 2. init backward data primitive desc
     std::shared_ptr<inner_product_backward_data::desc> bwdDataDesc;
     std::shared_ptr<inner_product_backward_data::primitive_desc> bwdDataPD;
     bwdDataDesc.reset(new inner_product_backward_data::desc(
-      dataBot_->getIntlMD(), dataWgt_->getIntlMD(), dataTop_->getIntlMD()));
+      getAnyMD(botDims_[0]),  // dataBot_->getIntlMD(),
+      dataWgt_->getIntlMD(),
+      diffTop_->getIntlMD()));
     bwdDataPD.reset(new inner_product_backward_data::primitive_desc(
       *bwdDataDesc, eg, *bwdFwdPD));
     CHECK(dataWgt_->getIntlPD() == bwdDataPD->weights_primitive_desc());
@@ -377,6 +363,7 @@ void MkldnnFcLayer::resetDnnBwd() {
     if (setDnnBotDiffFmt_[i]) {
       diffBot_->resetUser(botDiff, bwdDataPD->diff_src_primitive_desc());
       prevLayer->setTopDiffMD(diffBot_->getUserMD());
+      LOG(INFO) << "set next diff fmt: " << DNN_FMTS[diffBot_->getUserFmt()];
     }
     diffBot_->initCvt(dataBot_->getIntlPD(), dnnCvtIntl2User);
     // 4. create bwd data handle
