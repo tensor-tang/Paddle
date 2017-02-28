@@ -130,7 +130,7 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
   // 3. create forward PD
   std::shared_ptr<pooling_forward::desc> fwdDesc;
   fwdDesc.reset(new pooling_forward::desc(pk, poolAlgo_,
-    // since pool have pool policy to choose best format, so depends on prv
+    // since pool have poor policy to choose best format, so depends on prv
     prvMD ? dataBot_->getUserMD() : getAnyMD(botDims_[0]),
     getAnyMD(topDims_),
     strides, kernel, padding, padR, padKind));

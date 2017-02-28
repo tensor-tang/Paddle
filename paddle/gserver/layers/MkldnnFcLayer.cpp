@@ -359,11 +359,13 @@ void MkldnnFcLayer::resetDnnBwd() {
     std::shared_ptr<inner_product_backward_data::desc> bwdDataDesc;
     std::shared_ptr<inner_product_backward_data::primitive_desc> bwdDataPD;
     bwdDataDesc.reset(new inner_product_backward_data::desc(
-      getAnyMD(botDims_[0]),  // dataBot_->getIntlMD(),
+      // since fc have pool policy to choose best format, so data intlMD
+      dataBot_->getIntlMD(),
       dataWgt_->getIntlMD(),
       diffTop_->getIntlMD()));
     bwdDataPD.reset(new inner_product_backward_data::primitive_desc(
       *bwdDataDesc, eg, *bwdFwdPD));
+    CHECK(dataBot_->getIntlPD() == bwdDataPD->diff_src_primitive_desc());
     CHECK(dataWgt_->getIntlPD() == bwdDataPD->weights_primitive_desc());
     CHECK(diffTop_->getIntlPD() == bwdDataPD->diff_dst_primitive_desc());
     // 3. init conversion
@@ -372,7 +374,7 @@ void MkldnnFcLayer::resetDnnBwd() {
       prevLayer->setTopDiffMD(diffBot_->getUserMD());
       LOG(INFO) << "set next diff fmt: " << DNN_FMTS[diffBot_->getUserFmt()];
     }
-    diffBot_->initCvt(dataBot_->getIntlPD(), dnnCvtIntl2User);
+    diffBot_->initCvt(bwdDataPD->diff_src_primitive_desc(), dnnCvtIntl2User);
     // 4. create bwd data handle
     bwdData_.reset(new inner_product_backward_data(
       *bwdDataPD, *(diffTop_->getIntlMem()),
