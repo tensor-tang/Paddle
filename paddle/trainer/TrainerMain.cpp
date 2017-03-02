@@ -97,7 +97,6 @@ int main(int argc, char** argv) {
   feenableexcept(FE_INVALID | FE_DIVBYZERO | FE_OVERFLOW);
   trainer.init(config, FLAGS_job == "test");
 
-  LOG(INFO) << "...........finish init train........";
   if (FLAGS_job == "train") {
     trainer.train();
   } else if (FLAGS_job == "checkgrad") {

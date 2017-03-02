@@ -306,9 +306,9 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
         << "iw, ih must be 1 with nc input";
       // do not support nc input, so change to nchw
       dataBot_->resetUser(botData, botDims_[0], botFmt_[0], eg);
-      LOG(INFO) << "use nchw data fmt";
+      VLOG(4) << "use nchw data fmt";
     } else {
-      LOG(INFO) << "keep prev data fmt: " << DNN_FMTS[dataBot_->getUserFmt()];
+      VLOG(4) << "use prev data fmt: " << DNN_FMTS[dataBot_->getUserFmt()];
     }
   } else {
     dataBot_->initUser(botData, botDims_[0], botFmt_[0], eg);
@@ -326,7 +326,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   if (setDnnTopDataFmt_) {
     dataTop_->resetUser(topData, fwdPD_->dst_primitive_desc());
     setTopDataMD(dataTop_->getUserMD());
-    LOG(INFO) << "set next data fmt: " << DNN_FMTS[dataTop_->getUserFmt()];
+    VLOG(4) << "set next data fmt: " << DNN_FMTS[dataTop_->getUserFmt()];
   }
   dataTop_->initCvt(fwdPD_->dst_primitive_desc(), dnnCvtIntl2User);
   // weight(scale) and bias(shift)
@@ -413,9 +413,9 @@ void MkldnnBatchNormLayer::resetDnnBwd() {
         << "ow, oh must be 1 with nc input";
       // do not support nc input, so change to nchw
       diffTop_->resetUser(topDiff, topDims_, topFmt_, eg);
-      LOG(INFO) << "use nchw diff fmt";
+      VLOG(4) << "use nchw diff fmt";
     } else {
-      LOG(INFO) << "keep prev diff fmt: " << DNN_FMTS[diffTop_->getUserFmt()];
+      VLOG(4) << "use prev diff fmt: " << DNN_FMTS[diffTop_->getUserFmt()];
     }
   }
   // 3. create backward desc ----------------------------------------
@@ -434,7 +434,7 @@ void MkldnnBatchNormLayer::resetDnnBwd() {
   if (setDnnBotDiffFmt_[0]) {
     diffBot_->resetUser(botDiff, dataBot_->getIntlPD());
     prevLayer->setTopDiffMD(diffBot_->getUserMD());
-    LOG(INFO) << "set next diff format: " << DNN_FMTS[diffBot_->getUserFmt()];
+    VLOG(4) << "set next diff format: " << DNN_FMTS[diffBot_->getUserFmt()];
   }
   diffBot_->initCvt(dataBot_->getIntlPD(), dnnCvtIntl2User);
   // weight(scale) and bias(shift)

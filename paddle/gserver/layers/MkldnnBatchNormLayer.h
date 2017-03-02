@@ -152,7 +152,7 @@ private:
 
   void printInfo() {
     for (size_t i = 0; i < iw_.size(); ++i) {
-      LOG(INFO)
+      VLOG(2)
         << "ic: " << ic_[i]
         << ", ih: " << ih_[i] << ", iw: " << iw_[i]
         << ", oc: " << oc_

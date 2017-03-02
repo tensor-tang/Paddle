@@ -122,9 +122,9 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
       // do not support nc input, so change to nchw or nChw8c
       memory::format fmt = memory::format::nchw;
       dataBot_->resetUser(botData, botDims_[0], fmt, eg);
-      LOG(INFO) << "use nchw data fmt";
+      VLOG(4) << "use nchw data fmt";
     } else {
-      LOG(INFO) << "keep prev data fmt: " << DNN_FMTS[dataBot_->getUserFmt()];
+      VLOG(4) << "use prev data fmt: " << DNN_FMTS[dataBot_->getUserFmt()];
     }  
   }
   // 3. create forward PD
@@ -141,7 +141,7 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
   if (setDnnTopDataFmt_) {
     dataTop_->resetUser(topData, fwdPD_->dst_primitive_desc());
     setTopDataMD(dataTop_->getUserMD());
-    LOG(INFO) << "set next data format: " << DNN_FMTS[dataTop_->getUserFmt()];
+    VLOG(4) << "set next data format: " << DNN_FMTS[dataTop_->getUserFmt()];
   }
   dataTop_->initCvt(fwdPD_->dst_primitive_desc(), dnnCvtIntl2User);
   withWorkspace_ = (passType != PASS_TEST
@@ -197,15 +197,15 @@ void MkldnnPoolLayer::resetDnnBwd() {
       // do not support nc input, so change to nchw
       memory::format fmt = memory::format::nchw;
       diffTop_->resetUser(topDiff, topDims_, fmt, eg);
-      LOG(INFO) << "use nchw diff fmt";
+      VLOG(4) << "use nchw diff fmt";
     } else {
-      LOG(INFO) << "keep prev diff fmt: " << DNN_FMTS[diffTop_->getUserFmt()];
+      VLOG(4) << "use prev diff fmt: " << DNN_FMTS[diffTop_->getUserFmt()];
     }
   }
   if (setDnnBotDiffFmt_[0]) {
     diffBot_->resetUser(botDiff, dataBot_->getIntlPD());
     getPrev(0)->setTopDiffMD(diffBot_->getUserMD());
-    LOG(INFO) << "set next diff format: " << DNN_FMTS[diffBot_->getUserFmt()];
+    VLOG(4) << "set next diff format: " << DNN_FMTS[diffBot_->getUserFmt()];
   }
   // 3. create bwd PD
   std::shared_ptr<pooling_backward::desc> bwdDesc;

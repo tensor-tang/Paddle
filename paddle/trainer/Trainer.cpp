@@ -263,7 +263,6 @@ void Trainer::init(const std::shared_ptr<TrainerConfigHelper> &config,
 
 void Trainer::train(size_t numPasses) {
   startTrain();
-  LOG(INFO) << "test1";
 
   for (size_t i = 0; i < numPasses; ++i) {
     if (IGradientMachineMode::trainWholeDataInOneBatch(mode_)) {
@@ -407,7 +406,6 @@ void Trainer::startTrainPass() {
 
   trainerInternal_.getParameterUpdater()->startPass();
   evaluator_->start();
-  LOG(INFO) << "started evaluator";
   if (FLAGS_prev_batch_state) {
     LOG(INFO) << "prev_batch_state";
     trainerInternal_.getGradientMachine()->resetState();

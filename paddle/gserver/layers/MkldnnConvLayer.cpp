@@ -187,9 +187,9 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
         // do not support nc as input, so change to nchw
         memory::format fmt = memory::format::nchw;
         dataBot_->resetUser(botData, botDims_[i], fmt, eg);
-        LOG(INFO) << "use nchw data fmt";
+        VLOG(4) << "use nchw data fmt";
       } else {
-        LOG(INFO) << "keep prev data fmt: " << DNN_FMTS[dataBot_->getUserFmt()];
+        VLOG(4) << "use prev data fmt: " << DNN_FMTS[dataBot_->getUserFmt()];
       }
     }
     /// 3. create mkldnn forward PD ********************************************
@@ -224,7 +224,7 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
     dataBot_->initCvt(fwdPD->src_primitive_desc(), dnnCvtUser2Intl);
     if (usePaddleFmt_) {
       if (dataWgt_->initCvt(fwdPD->weights_primitive_desc(), dnnCvtUser2Intl)) {
-        LOG(INFO) << "need reorder --- weight data: "
+        VLOG(3) << "need reorder --- weight data: "
           << DNN_FMTS[dataWgt_->getUserFmt()]
           << " >>> "
           << DNN_FMTS[dataWgt_->getIntlFmt()];
@@ -259,7 +259,7 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
       if (setDnnTopDataFmt_) {
         dataTop_->resetUser(topData, fwdPD->dst_primitive_desc());
         setTopDataMD(dataTop_->getUserMD());
-        LOG(INFO) << "set next data fmt: " << DNN_FMTS[dataTop_->getUserFmt()];
+        VLOG(4) << "set next data fmt: " << DNN_FMTS[dataTop_->getUserFmt()];
       }
       dataTop_->initCvt(fwdPD->dst_primitive_desc(), dnnCvtIntl2User);
     } else {
@@ -324,9 +324,9 @@ void MkldnnConvLayer::resetDnnBwd() {
       // do not support nc as input, so change to nchw
       memory::format fmt = memory::format::nchw;
       diffTop_->resetUser(topDiff, topDims_, fmt, eg);
-      LOG(INFO) << "use nchw diff fmt";
+      VLOG(4) << "use nchw diff fmt";
     } else {
-      LOG(INFO) << "keep prev diff fmt: " << DNN_FMTS[diffTop_->getUserFmt()];
+      VLOG(4) << "use prev diff fmt: " << DNN_FMTS[diffTop_->getUserFmt()];
     }
   }
   // TODO(TJ): only care about i==0 yet, and never tested g!=1
@@ -395,7 +395,7 @@ void MkldnnConvLayer::resetDnnBwd() {
     if (usePaddleFmt_) {
       if (diffWgt_->initCvt(
         bwdWgtPD->diff_weights_primitive_desc(), dnnCvtIntl2User)) {
-        LOG(INFO) << "need reorder --- weight bwd wgt: "
+        VLOG(3) << "need reorder --- weight bwd wgt: "
           << DNN_FMTS[diffWgt_->getUserFmt()]
           << " <<< "
           << DNN_FMTS[diffWgt_->getIntlFmt()];
@@ -470,7 +470,7 @@ void MkldnnConvLayer::resetDnnBwd() {
     // 3. init conversion
     if (dataWgtBwd_->initCvt(
       bwdDataPD->weights_primitive_desc(), dnnCvtUser2Intl)) {
-      LOG(INFO) << "need reorder --- weight bwd data: "
+      VLOG(3) << "need reorder --- weight bwd data: "
           << DNN_FMTS[dataWgtBwd_->getUserFmt()]
           << " >>> "
           << DNN_FMTS[dataWgtBwd_->getIntlFmt()];
@@ -478,7 +478,7 @@ void MkldnnConvLayer::resetDnnBwd() {
     if (setDnnBotDiffFmt_[i]) {
       diffBot_->resetUser(botDiff, bwdDataPD->diff_src_primitive_desc());
       prevLayer->setTopDiffMD(diffBot_->getUserMD());
-      LOG(INFO) << "set next diff fmt: " << DNN_FMTS[diffBot_->getUserFmt()];
+      VLOG(4) << "set next diff fmt: " << DNN_FMTS[diffBot_->getUserFmt()];
     }
     diffBot_->initCvt(bwdDataPD->diff_src_primitive_desc(), dnnCvtIntl2User);
     // 4. create bwd data handle

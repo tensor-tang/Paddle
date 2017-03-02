@@ -109,8 +109,8 @@ public:
       clearDataDiff();
     } else {
       bs_ = getInput(0).getBatchSize();
-      LOG(INFO) << "reshape batch size: " << bs_ 
-        << ", and reset mkldnn forward of layer: " << getName();
+      LOG(INFO) << "reset forward batch size to " << bs_ 
+        << " of mkldnn layer: " << getName();
 
       // reshape the input and output size
       REGISTER_TIMER_INFO("mkldnn_ResetDnnTimer", getName().c_str());
@@ -125,7 +125,7 @@ public:
       for (size_t i = 0; i != inputLayers_.size(); ++i) {
         // TODO(TJ): consider multi input
         if (dataBot_ && dataTop_)
-          LOG(INFO) << "data format flow --- "
+          VLOG(1) << "data format flow --- "
             << DNN_FMTS[dataBot_->getUserFmt()] << " >>> ("
             << DNN_FMTS[dataBot_->getIntlFmt()] << " >>> "
             << DNN_FMTS[dataTop_->getIntlFmt()] << ") >>> "
@@ -145,14 +145,15 @@ public:
     if (needResetBwd_) {
       needResetBwd_ = false;
       // mkldnn init or reset backward
-      LOG(INFO) << "reset mkldnn backward of layer: " << getName();
+      LOG(INFO) << "reset backward batch size to " << bs_ 
+        << " of mkldnn layer: " << getName();
       resetDnnBwd();
 
       // print the diff flow
       for (size_t i = 0; i != inputLayers_.size(); ++i) {
         // TODO(TJ): consider multi input
         if (diffBot_ && diffTop_)
-          LOG(INFO) << "diff format flow --- "
+          VLOG(1) << "diff format flow --- "
             << DNN_FMTS[diffBot_->getUserFmt()] << " <<< ("
             << DNN_FMTS[diffBot_->getIntlFmt()] << " <<< "
             << DNN_FMTS[diffTop_->getIntlFmt()] << ") <<< "
@@ -254,7 +255,15 @@ public:
   /**
    * print some info like input or output size
    */
-  virtual void printInfo() {}
+  virtual void printInfo() {
+    for (size_t i = 0; i < ih_.size(); ++i) {
+      VLOG(2)
+        << "ih: " << ih_[i] << ", iw: " << iw_[i]
+        << ", ic: " << ic_[i]
+        << ", oh: " << oh_[i] << ", ow: " << ow_[i]
+        << ", oc: " << oc_;
+    }
+  }
 
   /** 
    * each dnn layer should have function

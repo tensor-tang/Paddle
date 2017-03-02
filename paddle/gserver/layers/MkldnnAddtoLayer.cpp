@@ -71,7 +71,6 @@ void MkldnnAddtoLayer::reshape() {
 }
 
 void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
-  LOG(INFO) << "reset mkldnn forward of addto layer: " << config_.name();
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
   memory::dims botDims, topDims;
   memory::format botFmt, topFmt;
@@ -99,8 +98,7 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
     const std::shared_ptr<memory::desc> prvMD = getPrev(i)->getTopDataMD();
     if (prvMD) {
       dataBottoms_[i]->initUser(botData, *prvMD, eg);
-      LOG(INFO) << "use prev format: "
-        << DNN_FMTS[dataBottoms_[i]->getUserFmt()];
+      VLOG(4) << "use prev format: " << DNN_FMTS[dataBottoms_[i]->getUserFmt()];
       prvs.push_back(prvMD);
     } else {
       dataBottoms_[i]->initUser(botData, botDims, botFmt, eg);
@@ -132,7 +130,7 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
     // fwdPD_ should be init with any type before, if in here.
     dataTop_->initUser(topData, fwdPD_->dst_primitive_desc());
     setTopDataMD(dataTop_->getUserMD());
-    LOG(INFO) << "set next format: " << DNN_FMTS[dataTop_->getUserFmt()];
+    VLOG(4) << "set next format: " << DNN_FMTS[dataTop_->getUserFmt()];
   } else {
     dataTop_->initUser(topData, topDims, topFmt, eg);
   }
@@ -140,12 +138,12 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
   // init top cvt
   if (dataTop_->initCvt(
     fwdPD_->dst_primitive_desc(), dnnCvtIntl2User)) {
-    LOG(INFO) << "need reorder --- top data: "
+    VLOG(3) << "need reorder --- top data: "
       << DNN_FMTS[dataTop_->getIntlFmt()]
       << " >>>>> "
       << DNN_FMTS[dataTop_->getUserFmt()];
   }
-  LOG(INFO) << "data format flow --- "
+  VLOG(1) << "data format flow --- "
     << DNN_FMTS[dataBottoms_[0]->getUserFmt()] << " >>> ("
     << DNN_FMTS[dataBottoms_[0]->getIntlFmt()] << " >>> "
     << DNN_FMTS[dataTop_->getIntlFmt()] << ") >>> "

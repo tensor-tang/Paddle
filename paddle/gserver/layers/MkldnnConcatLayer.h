@@ -66,9 +66,9 @@ private:
   void exBwd(const UpdateCallback &callback);
 
   void printInfo() {
-    LOG(INFO) << "concats number: " << num_concats_;
+    VLOG(1) << "concats number: " << num_concats_;
     for (size_t i = 0; i < iw_.size(); ++i) {
-      LOG(INFO)
+      VLOG(2)
         << "ih: " << ih_[i] << ", iw: " << iw_[i]
         << ", ic: " << ic_[i]
         << ", oh: " << oh_[i] << ", ow: " << ow_[i]

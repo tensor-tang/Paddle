@@ -64,7 +64,7 @@ public:
 
   void printInfo() {
     for (size_t i = 0; i < iw_.size(); ++i) {
-      LOG(INFO)
+      VLOG(2)
         << "ih: " << ih_[i] << ", iw: " << iw_[i]
         << ", ic: " << ic_[i]
         << ", oh: " << oh_[i] << ", ow: " << ow_[i]
