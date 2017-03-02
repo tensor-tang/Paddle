@@ -295,24 +295,26 @@ void MkldnnFcLayer::resetDnnBwd() {
     std::shared_ptr<inner_product_backward_weights::desc> bwdWgtDesc;
     std::shared_ptr<inner_product_backward_weights::primitive_desc> bwdWgtPD;
     bwdFwdDesc.reset(new inner_product_forward::desc(pk,
-      dataBot_->getIntlMD(), getAnyMD(wgtDims_[i]),//dataWgt_->getIntlMD(),
+      // poor any policy for FC bwd, so use wgt data internal format
+      dataBot_->getIntlMD(), dataWgt_->getIntlMD(),
       prv ? diffTop_->getUserMD() : dataTop_->getIntlMD()));
     bwdFwdPD.reset(new inner_product_forward::primitive_desc(
       *bwdFwdDesc, eg));
     CHECK(hasBias) << "only support with bias in mkldnn";
     bwdWgtDesc.reset(new inner_product_backward_weights::desc(
-      dataBot_->getIntlMD(), getAnyMD(wgtDims_[i]),//dataWgt_->getIntlMD(),
+      dataBot_->getIntlMD(), dataWgt_->getIntlMD(),
       dataBias_->getIntlMD(),
       prv ? diffTop_->getUserMD() : dataTop_->getIntlMD()));
     bwdWgtPD.reset(new inner_product_backward_weights::primitive_desc(
       *bwdWgtDesc, eg, *bwdFwdPD));
     CHECK(dataBot_->getIntlPD() == bwdWgtPD->src_primitive_desc());
-//    CHECK(dataWgt_->getIntlPD() == bwdWgtPD->diff_weights_primitive_desc());
+    CHECK(dataWgt_->getIntlPD() == bwdWgtPD->diff_weights_primitive_desc());
     CHECK(dataBias_->getIntlPD() == bwdWgtPD->diff_bias_primitive_desc());
 
     // 3. init conversion    
     if (usePaddleFmt_) {
-      if (diffWgt_->initCvt(bwdWgtPD->diff_weights_primitive_desc(), dnnCvtIntl2User)) {
+      if (diffWgt_->initCvt(
+        bwdWgtPD->diff_weights_primitive_desc(), dnnCvtIntl2User)) {
         LOG(INFO) << "need reorder --- weight diff: "
           << DNN_FMTS[diffWgt_->getIntlFmt()]
           << " >>>>> "
