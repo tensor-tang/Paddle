@@ -193,18 +193,18 @@ void testLayerFunc(std::vector<TestConfig>& cfg, size_t batchSize,
   }
 
   // check Fwd delta
-  LOG(INFO) << "Check Top data";
+  VLOG(1) << "Check Top data";
   for (size_t i = 0; i < deltaFwd.size(); ++i) {
     EXPECT_LE(fabs(deltaFwd[i]), epsilon);
   }
   // check Bwd delta
   for (size_t i = 0; i < deltaBwd.size(); ++i) {
-    LOG(INFO) << "Check Bot" << i % dataLayers[0].size() << " diff";
+    VLOG(1) << "Check Bot" << i % dataLayers[0].size() << " diff";
     EXPECT_LE(fabs(deltaBwd[i]), epsilon);
   }
   // check Param delta
   for (size_t i = 0; i < deltaParam.size(); ++i) {
-    LOG(INFO) << "Check " << parameters[0][i % parameters[0].size()]->getName();
+    VLOG(1) << "Check " << parameters[0][i % parameters[0].size()]->getName();
     EXPECT_LE(fabs(deltaParam[i]), epsilon);
   }
 }
