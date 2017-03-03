@@ -421,7 +421,7 @@ sinclude(`ModelConfigLayer.proto.m4')
   // MKLDNN weight supports both paddle's CPU format and MKLDNN format
   // use MKLDNN format will get better performance, but the weight will not
   // be compatible with none-MKLDNN CPU layers
-  optional bool use_mkldnn_fmt = 51 [default = false];
+  optional bool use_mkldnn_wgt = 51 [default = true];
 }
 
 message EvaluatorConfig {

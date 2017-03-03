@@ -44,6 +44,7 @@ protected:
   bool hasCvtTopDiff_;
   bool hasCvtBiasData_;
   bool hasCvtBiasDiff_;
+  bool hasInited_;
 
   // input size (== ic*ih*iw) by batch size
   std::vector<size_t> inputSizeByBS_;
@@ -60,7 +61,8 @@ public:
       hasCvtTopData_(false),
       hasCvtTopDiff_(false),
       hasCvtBiasData_(false),
-      hasCvtBiasDiff_(false)
+      hasCvtBiasDiff_(false),
+      hasInited_(false)
     {}
 
   ~MkldnnFcLayer() {}

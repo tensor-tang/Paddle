@@ -27,6 +27,7 @@ train_list="data/train.list"
 test_list="data/test.list"
 use_dummy=1
 is_test=1
+use_mkldnn_wgt=0
 if [ ! -d "data" ]; then
     mkdir -p data
 fi
@@ -58,6 +59,6 @@ paddle train \
 --init_model_path=$model \
 --job=test \
 --use_gpu=0 \
---config_args="use_mkldnn=1,is_test=${is_test},use_dummy=${use_dummy},batch_size=64" \
+--config_args="use_mkldnn=1,use_mkldnn_wgt=${use_mkldnn_wgt},is_test=${is_test},use_dummy=${use_dummy},batch_size=64" \
 2>&1 | tee $log
 

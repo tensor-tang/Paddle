@@ -1306,7 +1306,9 @@ class LayerBase(object):
             device=None,
             active_type="",
             drop_rate=0.,
-            coeff=None):
+            coeff=None,
+            use_mkldnn_wgt=None,
+            add_size=None):
         config_assert('@' not in name,
                       "layer name: %s contain special character @" % name)
         global g_current_submodel
@@ -1328,6 +1330,12 @@ class LayerBase(object):
         self.config.name = name
         self.config.type = type
         self.config.active_type = active_type
+        if use_mkldnn_wgt is not None:
+            self.config.use_mkldnn_wgt = use_mkldnn_wgt
+        else:
+            self.config.use_mkldnn_wgt = bool(int(g_command_config_args.get("use_mkldnn_wgt", 1)))
+        if add_size is not None:
+            self.config.add_size = int(add_size)
         if coeff is not None:
             self.config.coeff = float(coeff)
         if size != 0:
@@ -1671,7 +1679,7 @@ class ConvLayerBase(LayerBase):
         use_mkldnn = bool(int(g_command_config_args.get("use_mkldnn", 0)))
         use_gpu = int(g_command_config_args.get("use_gpu", 0))
         parallel_nn = int(g_command_config_args.get("parallel_nn", 0))
-
+        
         # Automatically select cudnn_type for GPU
         # and exconv(or mkldnn_conv) for CPU
         # if set type=conv, but still reserve the way user specify

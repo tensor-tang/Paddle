@@ -40,9 +40,6 @@ protected:
   std::vector<MatrixPtr> selfWgtData_;
   std::vector<MatrixPtr> selfWgtDiff_;
 
-  // use paddle weight format
-  bool usePaddleFmt_;
-
   /// shape of weight: (oc, ic*fh*fw/gp)
   WeightList weights_;
   /// If shared_biases is false shape of bias: (oc * outputX * outputY, 1)
@@ -54,6 +51,7 @@ protected:
   bool hasCvtBiasData_;
   bool hasCvtBiasDiff_;
   bool useConvRelu_;
+  bool hasInited_;
   double negativeSlope_;
 
 public:
@@ -73,6 +71,7 @@ public:
       hasCvtBiasData_(false),
       hasCvtBiasDiff_(false),
       useConvRelu_(false),
+      hasInited_(false),
       negativeSlope_(-0.0)
     {}
 

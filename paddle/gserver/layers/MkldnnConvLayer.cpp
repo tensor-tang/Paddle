@@ -57,8 +57,12 @@ bool MkldnnConvLayer::initDnn(const LayerMap &layerMap,
     }
   }
 
-  // TODO(TJ): should get this flag from layer proto , default true
-  usePaddleFmt_ = true;
+  if (config_.has_add_size()) {
+    addSize_ = config_.add_size();
+  }
+  if (config_.has_use_mkldnn_wgt()) {
+    useMkldnnWgt_ = config_.use_mkldnn_wgt();
+  }
 
   /* initialize the weightList */
   CHECK(inputLayers_.size() == parameters_.size());
@@ -66,20 +70,20 @@ bool MkldnnConvLayer::initDnn(const LayerMap &layerMap,
     size_t height, width;
     selfWgtData_.push_back(nullptr);
     selfWgtDiff_.push_back(nullptr);
-    if (usePaddleFmt_) {
+    if (!useMkldnnWgt_) {
       height = ic_[i] * fh_[i] * fw_[i] / gp_[i];
       width = oc_;
       selfWgtData_[i] = Matrix::create(width, height, false, false);
       selfWgtDiff_[i] = Matrix::create(width, height, false, false);
       selfWgtData_[i]->zeroMem();
       selfWgtDiff_[i]->zeroMem();
-    } else {  // TODO(TJ): never tested this case
+    } else {
       height = oc_;
       width = ic_[i] * fh_[i] * fw_[i] / gp_[i];
     }
     // create a new weight
     CHECK_EQ(parameters_[i]->getSize(), width * height);
-    Weight* w = new Weight(height, width, parameters_[i]);
+    Weight* w = new Weight(height, width, parameters_[i], 0);
     weights_.emplace_back(w);
   }
 
@@ -172,8 +176,9 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
     dataWgt_.reset(new MkldnnBuffer());
     /// 2. init user ***********************************************************
     real *botData = getPrev(i)->getOutputValue()->getData();
-    real *wgtData = usePaddleFmt_ ? selfWgtData_[i]->getData()
-      : weights_[i]->getW()->getData();
+    // if use mkldnn wgt directly save into weight parameter
+    real *wgtData = useMkldnnWgt_ ? weights_[i]->getW()->getData()
+      : selfWgtData_[i]->getData();
     dataBot_->initUser(botData, botDims_[i], botFmt_[i], eg);
     dataWgt_->initUser(wgtData, wgtDims_[i], wgtFmt_[i], eg);
     // use internal bottom data if use prv input
@@ -222,24 +227,50 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
     }
     /// 4. init conversion *****************************************************
     dataBot_->initCvt(fwdPD->src_primitive_desc(), dnnCvtUser2Intl);
-    if (usePaddleFmt_) {
-      if (dataWgt_->initCvt(fwdPD->weights_primitive_desc(), dnnCvtUser2Intl)) {
-        VLOG(3) << "need reorder --- weight data: "
-          << DNN_FMTS[dataWgt_->getUserFmt()]
-          << " >>> "
-          << DNN_FMTS[dataWgt_->getIntlFmt()];
-      }
-      if (passType == PASS_TEST) {
-        weights_[i]->getW()->transpose(selfWgtData_[i], false);
-        std::vector<primitive> cvtWgt;
-        dataWgt_->submitCvt(cvtWgt, wgtData);
-        stream(stream::kind::eager).submit(cvtWgt).wait();
-      }
-    } else {
-      // TODO(TJ): never tested
+    if (useMkldnnWgt_) {
+      // directly use internal format and save in paddle weight parameter
       wgtData = weights_[i]->getW()->getData();
       dataWgt_->resetUser(wgtData, fwdPD->weights_primitive_desc());
       dataWgt_->initCvt(dataWgt_->getUserPD(), dnnCvtNoNeed);
+      // need check the memory size, should be strictly equal
+      CHECK_EQ(dataWgt_->getIntlSize(), parameters_[i]->getSize())
+        << "can not use mkldnn wgt since memory size does not equal";
+    } else {
+      dataWgt_->initCvt(fwdPD->weights_primitive_desc(), dnnCvtUser2Intl);
+    }
+    // only init wgt once
+    if (!hasInited_) {
+      hasInited_ = true;
+      if (useMkldnnWgt_) {
+        // cvt the initial paddle wgt to mkldnn wgt only once when training
+        // in testing phase do not need cvt
+        if (passType != PASS_TEST) {
+          // paddle wgt is transposed
+          size_t height = weights_[i]->getW()->getWidth();
+          size_t width = weights_[i]->getW()->getHeight();
+          MatrixPtr initWgt = Matrix::create(height, width, false, false);
+          initWgt->copyFrom(*(weights_[i]->getW()));
+          initWgt = initWgt->getTranspose();
+          MkldnnBufferPtr tmp(new MkldnnBuffer());
+          tmp->initUser(initWgt->getData(), wgtDims_[i], wgtFmt_[i], eg);
+          tmp->initCvt(fwdPD->weights_primitive_desc(), dnnCvtUser2Intl);
+          std::vector<primitive> cvtWgt;
+          tmp->submitCvt(cvtWgt);
+          stream(stream::kind::eager).submit(cvtWgt).wait();
+          real* dst = weights_[i]->getW()->getData();
+          memcpy(dst, tmp->getIntlData(), tmp->getIntlSize());
+        }
+      } else {
+        // load the initial paddle wgt and cvt only once when scoring
+        // in training phase will cvt in every forward
+        if (passType == PASS_TEST) {
+          weights_[i]->getW()->transpose(selfWgtData_[i], false);
+          std::vector<primitive> cvtWgt;
+          wgtData = selfWgtData_[i]->getData();
+          dataWgt_->submitCvt(cvtWgt, wgtData);
+          stream(stream::kind::eager).submit(cvtWgt).wait();
+        }
+      }
     }
     if (hasBias) {
       // only cvt once
@@ -287,6 +318,12 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
               *(dataBot_->getIntlMem()), *(dataWgt_->getIntlMem()),
               *(dataTop_->getIntlMem())));
       }
+    }
+    if (dataWgt_) {
+      VLOG(3) << "weight data flow --- "
+        << DNN_FMTS[dataWgt_->getUserFmt()]
+        << " >>> "
+        << DNN_FMTS[dataWgt_->getIntlFmt()];
     }
   }
 }
@@ -342,8 +379,8 @@ void MkldnnConvLayer::resetDnnBwd() {
     }
     // 1. create wgt buffer and init, could be vector later
     diffWgt_.reset(new MkldnnBuffer());
-    real *wgtDiff = usePaddleFmt_ ? selfWgtDiff_[i]->getData()
-      : weights_[i]->getWGrad()->getData();
+    real *wgtDiff = useMkldnnWgt_? weights_[i]->getWGrad()->getData()
+      : selfWgtDiff_[i]->getData();
     diffWgt_->initUser(wgtDiff, wgtDims_[i], wgtFmt_[i], eg);
     // 2. prepare backward weight and bias PD-----------------------------------
     // bias backward can only execute with weight bakcward
@@ -392,17 +429,14 @@ void MkldnnConvLayer::resetDnnBwd() {
 //    CHECK(dataTop_->getIntlPD() == bwdWgtPD->diff_dst_primitive_desc());
     CHECK(weights_[i]->getWGrad()) << "should have weight";
     // 3. init conversion
-    if (usePaddleFmt_) {
-      if (diffWgt_->initCvt(
-        bwdWgtPD->diff_weights_primitive_desc(), dnnCvtIntl2User)) {
-        VLOG(3) << "need reorder --- weight bwd wgt: "
-          << DNN_FMTS[diffWgt_->getUserFmt()]
-          << " <<< "
-          << DNN_FMTS[diffWgt_->getIntlFmt()];
-      }
-    } else {
+    if (useMkldnnWgt_) {
       diffWgt_->resetUser(wgtDiff, bwdWgtPD->diff_weights_primitive_desc());
       diffWgt_->initCvt(diffWgt_->getUserPD(), dnnCvtNoNeed);
+      CHECK_EQ(diffWgt_->getIntlSize(), dataWgt_->getIntlSize())
+        << "can not use mkldnn wgt since memory size does not equal";
+    } else {
+      diffWgt_->initCvt(
+        bwdWgtPD->diff_weights_primitive_desc(), dnnCvtIntl2User);
     }
     if (hasBias) {
       if (!hasCvtBiasDiff_) {
@@ -432,6 +466,12 @@ void MkldnnConvLayer::resetDnnBwd() {
       bwdWgt_.reset(new convolution_backward_weights(*bwdWgtPD,
         *(dataBot_->getIntlMem()), *(diffTop_->getIntlMem()),
         *(diffWgt_->getIntlMem())));
+    }
+    if (diffWgt_) {
+      VLOG(3) << "bwd data weight diff flow --- "
+        << DNN_FMTS[diffWgt_->getUserFmt()]
+        << " <<< "
+        << DNN_FMTS[diffWgt_->getIntlFmt()];
     }
     // then prepare backward data ----------------------------------------------
     LayerPtr prevLayer = getPrev(i);
@@ -470,7 +510,7 @@ void MkldnnConvLayer::resetDnnBwd() {
     // 3. init conversion
     if (dataWgtBwd_->initCvt(
       bwdDataPD->weights_primitive_desc(), dnnCvtUser2Intl)) {
-      VLOG(3) << "need reorder --- weight bwd data: "
+      VLOG(3) << "bwd data weight data flow --- "
           << DNN_FMTS[dataWgtBwd_->getUserFmt()]
           << " >>> "
           << DNN_FMTS[dataWgtBwd_->getIntlFmt()];
@@ -494,7 +534,8 @@ void MkldnnConvLayer::submitDnnFwd(PassType passType) {
     real* botdata = getPrev(i)->getOutputValue()->getData();
     std::vector<primitive> pipeline;
     dataBot_->submitCvt(pipeline, botdata);
-    if (passType != PASS_TEST && usePaddleFmt_) {
+    if (!useMkldnnWgt_ && passType != PASS_TEST) {
+      // transpose and cvt every time in training if do not use mkldnn wgt
       weights_[i]->getW()->transpose(selfWgtData_[i], false);
       real* wgtdata = selfWgtData_[i]->getData();
       dataWgt_->submitCvt(pipeline, wgtdata);
@@ -548,7 +589,7 @@ void MkldnnConvLayer::submitBwdWgts(int idx) {
   real* botdata = getInputValue(idx)->getData();  
   real* topdiff = getOutputGrad()->getData();
   real* wgtdiff = weights_[idx]->getWGrad()->getData();
-  if (usePaddleFmt_) {
+  if (!useMkldnnWgt_) {
     CHECK(selfWgtDiff_[idx]);
     wgtdiff = selfWgtDiff_[idx]->getData();
   }
@@ -560,7 +601,7 @@ void MkldnnConvLayer::submitBwdWgts(int idx) {
   // no need to submit cvt bias since biasfmt would not be changed
   stream(stream::kind::eager).submit(pipeline).wait();
   
-  if (usePaddleFmt_) {
+  if (!useMkldnnWgt_) {
     // save to actual weight param
     selfWgtDiff_[idx]->transpose(weights_[idx]->getWGrad_mutable(), false);
   }

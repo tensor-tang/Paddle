@@ -85,7 +85,7 @@ public:
 
       if (md) {
         md_ = md;
-        VLOG(3) << "act use prev format";
+        VLOG(4) << "act use prev format";
       } else {
         mkldnn::memory::dims dm = {bs_, oc_, oh_, ow_};
         mkldnn::memory::data_type type = mkldnn::memory::data_type::f32;

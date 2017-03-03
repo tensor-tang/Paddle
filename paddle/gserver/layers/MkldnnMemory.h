@@ -27,6 +27,10 @@ protected:
   std::shared_ptr<mkldnn::memory> pUser_;
   std::shared_ptr<mkldnn::memory> pIntl_;
 
+  /// data type: mkldnn only support f32 and s32
+  /// here only support f32 yet
+  mkldnn::memory::data_type tp_;
+
   /// conversion handle and type
   std::shared_ptr<mkldnn::primitive> pCvt_;
 
@@ -35,46 +39,81 @@ protected:
 
 public:
   explicit MkldnnBuffer(
-    mkldnn::memory::data_type tp = mkldnn::memory::data_type::f32) :
+    mkldnn::memory::data_type type = mkldnn::memory::data_type::f32) :
     pUser_(nullptr),
     pIntl_(nullptr),
     pCvt_(nullptr),
     cvtType_(dnnCvtNone),
     hasCvted_(false) {
-    if (tp != mkldnn::memory::data_type::f32)
+    tp_ = type;
+    if (tp_ != mkldnn::memory::data_type::f32)
       LOG(FATAL) << "only support float 32 so far";
   }
 
   ~MkldnnBuffer() {}
 
   void initUser(void *pd,
-    mkldnn::memory::dims dm, mkldnn::memory::format fmt, mkldnn::engine eg,
-    mkldnn::memory::data_type tp = mkldnn::memory::data_type::f32) {
-    initUser(pd, mkldnn::memory::desc({dm}, tp, fmt), eg);
+    mkldnn::memory::dims dm, mkldnn::memory::format fmt, mkldnn::engine eg) {
+    initUser(pd, mkldnn::memory::desc({dm}, tp_, fmt), eg);
   }
 
   void initUser(void *pd, mkldnn::memory::desc md, mkldnn::engine eg) {
+    CHECK_EQ(md.data.data_type, tp_) << "input data type does not match: "
+      << md.data.data_type << " vs " << tp_;
     pUser_.reset(
       new mkldnn::memory(mkldnn::memory::primitive_desc(md, eg), pd));
   }
 
   void initUser(void *pdata, mkldnn::memory::primitive_desc pd) {
+    CHECK_EQ(pd.desc().data.data_type, tp_)
+      << "input data type does not match: " 
+      << pd.desc().data.data_type << " vs " << tp_;
     pUser_.reset(new mkldnn::memory(pd, pdata));
   }
 
   void resetUser(void *pd,
-    mkldnn::memory::dims dm, mkldnn::memory::format fmt, mkldnn::engine eg,
-    mkldnn::memory::data_type tp = mkldnn::memory::data_type::f32) {
-    initUser(pd, mkldnn::memory::desc({dm}, tp, fmt), eg);
+    mkldnn::memory::dims dm, mkldnn::memory::format fmt, mkldnn::engine eg) {
+    initUser(pd, mkldnn::memory::desc({dm}, tp_, fmt), eg);
   }
 
   void resetUser(void *pd, mkldnn::memory::desc md, mkldnn::engine eg) {
+    CHECK_EQ(md.data.data_type, tp_) << "input data type does not match: "
+      << md.data.data_type << " vs " << tp_;
     pUser_.reset(
       new mkldnn::memory(mkldnn::memory::primitive_desc(md, eg), pd));
   }
 
   void resetUser(void *pdata, mkldnn::memory::primitive_desc pd) {
+    CHECK_EQ(pd.desc().data.data_type, tp_)
+      << "input data type does not match: " 
+      << pd.desc().data.data_type << " vs " << tp_;
     pUser_.reset(new mkldnn::memory(pd, pdata));
+  }
+
+  size_t getSize(size_t sz) {
+    size_t unit;
+    switch (tp_) {
+      case mkldnn::memory::data_type::f32:
+        unit = sizeof(float);
+        break;
+      case mkldnn::memory::data_type::s32:
+        unit = sizeof(signed int);
+        break;
+      default:
+        LOG(ERROR) << "Error data type";
+        return 0;
+    }
+    return sz / unit;
+  }
+
+  size_t getIntlSize() {
+    CHECK(pIntl_) << "haven't init internal layout, call initUser then initCvt";
+    return getSize(pIntl_->get_primitive_desc().get_size());
+  }
+
+  size_t getUserSize() {
+    CHECK(pUser_) << "haven't init user layout";
+    return getSize(pUser_->get_primitive_desc().get_size());
   }
 
   std::shared_ptr<mkldnn::memory> getIntlMem() {
@@ -93,7 +132,7 @@ public:
 
   // internal primitive desc
   mkldnn::memory::primitive_desc getIntlPD() {
-    CHECK(pIntl_) << "haven't init internal layout, call initCvt firstly";
+    CHECK(pIntl_) << "haven't init internal layout, call initUser then initCvt";
     return pIntl_->get_primitive_desc();
   }
 
@@ -116,7 +155,7 @@ public:
 
   // get user memory format
   int getIntlFmt() {
-    CHECK(pIntl_) << "haven't init user layout";
+    CHECK(pIntl_) << "haven't init internal layout, call initUser then initCvt";
     return getIntlMD().data.format;
   }
 
@@ -126,7 +165,7 @@ public:
   }
 
   mkldnn::memory::desc getIntlMD() {
-    CHECK(pIntl_) << "haven't init internal layout, call initCvt firstly";
+    CHECK(pIntl_) << "haven't init internal layout, call initUser then initCvt";
     return pIntl_->get_primitive_desc().desc();
   }
 
@@ -141,7 +180,7 @@ public:
       || cvtType == dnnCvtNoNeed) << "please specify one type of conversion";
     CHECK(pUser_)
       << "call initUser before init internal layout and conversion";
-    CHECK(pIntl_ == NULL)
+    CHECK(nullptr == pIntl_)
       << "internal memory should be empty before initCvt";
     pIntl_ = pUser_;
     cvtType_ = cvtType;
@@ -166,7 +205,7 @@ public:
   bool initCvt() {
     CHECK(pUser_)
       << "call initUser before init internal layout and conversion";
-    CHECK(pIntl_ == NULL)
+    CHECK(nullptr == pIntl_)
       << "internal memory should be empty before initCvt";
     pIntl_ = pUser_;
     cvtType_ = dnnCvtNoNeed;
@@ -179,7 +218,7 @@ public:
     if (cvtType_ == dnnCvtNoNeed) {
       return false;
     } else {
-      return pCvt_ == NULL ? false : true;
+      return nullptr == pCvt_ ? false : true;
     }
   }
 

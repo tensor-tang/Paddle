@@ -51,7 +51,6 @@ void testConvLayer(const testConvDesc& pm) {
   config.layerConfig.set_num_filters(pm.oc);
   config.layerConfig.set_partial_sum(1);
   config.layerConfig.set_shared_biases(true);
-  config.layerConfig.set_use_mkldnn_fmt(false);
   config.inputDefs.push_back({INPUT_DATA, "layer_0", 
     size_t(pm.ih * pm.iw * pm.ic),  // size of input layer
     size_t(pm.kw * pm.kh * pm.oc * pm.ic / pm.gp)});  // param size
@@ -76,6 +75,10 @@ void testConvLayer(const testConvDesc& pm) {
   conv->set_output_x(ow);
   config.layerConfig.set_size(conv->output_x() * conv->output_x() *
                               config.layerConfig.num_filters());
+
+  // TODO(TJ): test both true and false 
+  config.layerConfig.set_use_mkldnn_wgt(false);
+
   // TODO(TJ): use {0, 1} if AddToMode ready 
   for (auto addSize : {0}) {
     config.layerConfig.set_add_size(addSize);
@@ -147,7 +150,7 @@ void testPoolLayer(const string& poolType, const testPoolDesc& pm) {
 
   config.layerConfig.set_size(pool->output_x() * pool->output_y() *
                               pool->channels());
-  config.layerConfig.set_use_mkldnn_fmt(false);
+  config.layerConfig.set_use_mkldnn_wgt(false);
   // TODO(TJ): use {0, 1} if AddToMode ready 
   for (auto addSize : {0}) {
     config.layerConfig.set_add_size(addSize);
@@ -185,11 +188,13 @@ void testFcLayer(const testFCDesc& pm) {
   config.biasSize = pm.oc;
   config.layerConfig.set_type("mkldnn_fc");
   config.layerConfig.set_size(pm.oc);
-  config.layerConfig.set_use_mkldnn_fmt(false);
   config.inputDefs.push_back({INPUT_DATA, "layer_0",
       size_t(pm.ic * pm.ih * pm.iw),  // size of input layer
       size_t(pm.ic * pm.oc)});  // size of weight
   config.layerConfig.add_inputs();
+
+  // TODO(TJ): test both true and false 
+  config.layerConfig.set_use_mkldnn_wgt(false);
 
   // test functionality as fc
   TestConfig ref = config;
@@ -258,7 +263,6 @@ void testBatchNormLayer() {
   TestConfig config;
   const int CHANNELS = 10;
   const int IMG_SIZE = 16;
-  config.layerConfig.set_use_mkldnn_fmt(false);
   config.layerConfig.set_type("mkldnn_batch_norm");
   config.layerConfig.set_size(CHANNELS * IMG_SIZE * IMG_SIZE);
   config.layerConfig.set_active_type("mkldnn_relu");
@@ -279,6 +283,9 @@ void testBatchNormLayer() {
   ImageConfig* img_conf = input->mutable_image_conf();
   img_conf->set_channels(CHANNELS);
   img_conf->set_img_size(IMG_SIZE);
+
+  // TODO(TJ): test both true and false 
+  config.layerConfig.set_use_mkldnn_wgt(false);
 
   testLayerGrad(config, "mkldnn_batch_norm", 64, /* trans= */ trans, useGpu,
                 /* useWeight */ true);

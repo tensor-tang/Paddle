@@ -42,9 +42,10 @@ bool MkldnnPoolLayer::initDnn(const LayerMap &layerMap,
   if (config_.has_add_size()) {
     addSize_ = config_.add_size();
   }
-  if (config_.has_use_mkldnn_fmt()) {
-    useMkldnnFmt_ = config_.use_mkldnn_fmt();
+  if (config_.has_use_mkldnn_wgt()) {
+    useMkldnnWgt_ = config_.use_mkldnn_wgt();
   }
+
   ic_.push_back(conf.channels());
   iw_.push_back(conf.img_size());
   ow_.push_back(conf.output_x());

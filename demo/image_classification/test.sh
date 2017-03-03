@@ -29,6 +29,6 @@ paddle train \
 --init_model_path=$model \
 --job=test \
 --use_gpu=0 \
---config_args="is_test=1,use_mkldnn=1" \
+--config_args="is_test=1,use_mkldnn=1,use_mkldnn_wgt=0" \
 2>&1 | tee $log
 

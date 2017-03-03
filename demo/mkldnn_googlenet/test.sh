@@ -20,8 +20,10 @@ function run() {
     use_dummy=$4
     prefix="googlenet"
     is_test=0
+    use_mkldnn_wgt=1
     if [ $task == "test" ]; then
         is_test=1
+        use_mkldnn_wgt=0
     fi
     log="log_${task}_${prefix}_bs${bs}.log"
     rm -f $log
@@ -46,7 +48,7 @@ function run() {
           echo "model does not exist!"
         fi
     fi
-    args="use_mkldnn=1,batch_size=${bs},is_test=${is_test},use_dummy=${use_dummy}"
+    args="use_mkldnn=1,use_mkldnn_wgt=${use_mkldnn_wgt},batch_size=${bs},is_test=${is_test},use_dummy=${use_dummy}"
     paddle train --job=$task \
     --config=$cfg \
     --use_gpu=False \

@@ -52,9 +52,9 @@ public:
   int addSize_;
 
   // layers with weight have an option to choose
-  // whether use mkldnn format to get a better performance
+  // whether use mkldnn foramt weight to get a better performance
   // sacrificing the compatibility with original CPU layers
-  bool useMkldnnFmt_;
+  bool useMkldnnWgt_;
 
   bool needResetBwd_;
 
@@ -67,7 +67,7 @@ public:
       diffTop_(nullptr),
       setDnnTopDataFmt_(false),
       addSize_(0),
-      useMkldnnFmt_(false),
+      useMkldnnWgt_(true),
       needResetBwd_(true)
     {}
 
