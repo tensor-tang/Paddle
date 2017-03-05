@@ -20,7 +20,7 @@ protected:
   std::shared_ptr<mkldnn::convolution_forward::primitive> fwd_;
   std::shared_ptr<mkldnn::convolution_backward_weights> bwdWgt_;
   std::shared_ptr<mkldnn::convolution_backward_data> bwdData_;
-  
+
   /// data buffers
   MkldnnBufferPtr dataWgt_;
   MkldnnBufferPtr dataWgtBwd_;

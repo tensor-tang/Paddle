@@ -109,7 +109,7 @@ public:
       clearDataDiff();
     } else {
       bs_ = getInput(0).getBatchSize();
-      LOG(INFO) << "reset forward batch size to " << bs_ 
+      LOG(INFO) << "reset forward batch size to " << bs_
         << " of mkldnn layer: " << getName();
 
       // reshape the input and output size
@@ -145,7 +145,7 @@ public:
     if (needResetBwd_) {
       needResetBwd_ = false;
       // mkldnn init or reset backward
-      LOG(INFO) << "reset backward batch size to " << bs_ 
+      LOG(INFO) << "reset backward batch size to " << bs_
         << " of mkldnn layer: " << getName();
       resetDnnBwd();
 

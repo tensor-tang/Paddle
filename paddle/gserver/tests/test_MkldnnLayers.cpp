@@ -27,8 +27,6 @@ limitations under the License. */
 using namespace paddle;  // NOLINT
 using namespace std;     // NOLINT
 
-//P_DECLARE_bool(use_gpu);
-//P_DECLARE_int32(gpu_id);
 P_DECLARE_double(checkgrad_eps);
 P_DECLARE_bool(thread_local_rand_use_global_seed);
 P_DECLARE_bool(prev_batch_state);
@@ -51,7 +49,7 @@ void testConvLayer(const testConvDesc& pm) {
   config.layerConfig.set_num_filters(pm.oc);
   config.layerConfig.set_partial_sum(1);
   config.layerConfig.set_shared_biases(true);
-  config.inputDefs.push_back({INPUT_DATA, "layer_0", 
+  config.inputDefs.push_back({INPUT_DATA, "layer_0",
     size_t(pm.ih * pm.iw * pm.ic),  // size of input layer
     size_t(pm.kw * pm.kh * pm.oc * pm.ic / pm.gp)});  // param size
   LayerInputConfig* input = config.layerConfig.add_inputs();
@@ -76,10 +74,10 @@ void testConvLayer(const testConvDesc& pm) {
   config.layerConfig.set_size(conv->output_x() * conv->output_x() *
                               config.layerConfig.num_filters());
 
-  // TODO(TJ): test both true and false 
+  // TODO(TJ): test both true and false
   config.layerConfig.set_use_mkldnn_wgt(false);
 
-  // TODO(TJ): use {0, 1} if AddToMode ready 
+  // TODO(TJ): use {0, 1} if AddToMode ready
   for (auto addSize : {0}) {
     config.layerConfig.set_add_size(addSize);
     testLayerGrad(config, "mkldnn_conv", pm.bs, trans, useGpu);
@@ -91,7 +89,7 @@ void testConvLayer(const testConvDesc& pm) {
   TestConfig ref = config;
   ref.layerConfig.set_type("exconv");
   std::vector<TestConfig> cfg = {config, ref};
-  // TODO(TJ): use {0, 1} if AddToMode ready 
+  // TODO(TJ): use {0, 1} if AddToMode ready
   for (auto addSize : {0}) {
     config.layerConfig.set_add_size(addSize);
     testLayerFunc(cfg, pm.bs);
@@ -151,7 +149,7 @@ void testPoolLayer(const string& poolType, const testPoolDesc& pm) {
   config.layerConfig.set_size(pool->output_x() * pool->output_y() *
                               pool->channels());
   config.layerConfig.set_use_mkldnn_wgt(false);
-  // TODO(TJ): use {0, 1} if AddToMode ready 
+  // TODO(TJ): use {0, 1} if AddToMode ready
   for (auto addSize : {0}) {
     config.layerConfig.set_add_size(addSize);
     testLayerGrad(config, "mkldnn_pool", pm.bs, trans, false);
@@ -161,7 +159,7 @@ void testPoolLayer(const string& poolType, const testPoolDesc& pm) {
   TestConfig ref = config;
   ref.layerConfig.set_type("pool");
   std::vector<TestConfig> cfg = {config, ref};
-  // TODO(TJ): use {0, 1} if AddToMode ready 
+  // TODO(TJ): use {0, 1} if AddToMode ready
   for (auto addSize : {0}) {
     config.layerConfig.set_add_size(addSize);
     testLayerFunc(cfg, pm.bs);
@@ -193,14 +191,14 @@ void testFcLayer(const testFCDesc& pm) {
       size_t(pm.ic * pm.oc)});  // size of weight
   config.layerConfig.add_inputs();
 
-  // TODO(TJ): test both true and false 
+  // TODO(TJ): test both true and false
   config.layerConfig.set_use_mkldnn_wgt(false);
 
   // test functionality as fc
   TestConfig ref = config;
   ref.layerConfig.set_type("fc");
   std::vector<TestConfig> cfg = {config, ref};
-  // TODO(TJ): use {0, 1} if AddToMode ready 
+  // TODO(TJ): use {0, 1} if AddToMode ready
   for (auto addSize : {0}) {
     config.layerConfig.set_add_size(addSize);
     testLayerFunc(cfg, pm.bs);
@@ -209,7 +207,7 @@ void testFcLayer(const testFCDesc& pm) {
   // test layer grad
   config.layerConfig.set_active_type("sigmoid");
   config.layerConfig.set_drop_rate(0.1);
-  // TODO(TJ): use {0, 1} if AddToMode ready 
+  // TODO(TJ): use {0, 1} if AddToMode ready
   for (auto addSize : {0}) {
     config.layerConfig.set_add_size(addSize);
     testLayerGrad(config, "mkldnn_fc", pm.bs, false, false, true);
@@ -220,12 +218,12 @@ TEST(MkldnnLayer, fcLayer) {
   testFcLayer({100, 512, 128, 1, 1});
   testFcLayer({1, 8, 16, 1, 1});
 // TODO(TJ): test iw and ih both > 1
-// do not support sparse yet 
+// do not support sparse yet
 }
 
 void testActivation(std::string act, const int bs, const size_t sz) {
   const std::string dnn("mkldnn_");
-  CHECK(act.compare(0, dnn.length(), dnn) == 0);
+  CHECK_EQ(act.compare(0, dnn.length(), dnn), 0);
   LOG(INFO) << "test activation: " << act;
 
   TestConfig config;
@@ -243,7 +241,7 @@ void testActivation(std::string act, const int bs, const size_t sz) {
   act.erase(0, 7);
   ref.layerConfig.set_active_type(act);
   std::vector<TestConfig> cfg = {config, ref};
-  // TODO(TJ): use {0, 1} if AddToMode ready 
+  // TODO(TJ): use {0, 1} if AddToMode ready
   for (auto addSize : {0}) {
     config.layerConfig.set_add_size(addSize);
     testLayerFunc(cfg, bs);
@@ -284,7 +282,7 @@ void testBatchNormLayer() {
   img_conf->set_channels(CHANNELS);
   img_conf->set_img_size(IMG_SIZE);
 
-  // TODO(TJ): test both true and false 
+  // TODO(TJ): test both true and false
   config.layerConfig.set_use_mkldnn_wgt(false);
 
   testLayerGrad(config, "mkldnn_batch_norm", 64, /* trans= */ trans, useGpu,

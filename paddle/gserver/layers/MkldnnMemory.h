@@ -66,7 +66,7 @@ public:
 
   void initUser(void *pdata, mkldnn::memory::primitive_desc pd) {
     CHECK_EQ(pd.desc().data.data_type, tp_)
-      << "input data type does not match: " 
+      << "input data type does not match: "
       << pd.desc().data.data_type << " vs " << tp_;
     pUser_.reset(new mkldnn::memory(pd, pdata));
   }
@@ -85,7 +85,7 @@ public:
 
   void resetUser(void *pdata, mkldnn::memory::primitive_desc pd) {
     CHECK_EQ(pd.desc().data.data_type, tp_)
-      << "input data type does not match: " 
+      << "input data type does not match: "
       << pd.desc().data.data_type << " vs " << tp_;
     pUser_.reset(new mkldnn::memory(pd, pdata));
   }
@@ -173,7 +173,7 @@ public:
     hasCvted_ = false;
   }
 
-  // init conversion(reorder), will create internal buffer if needed 
+  // init conversion(reorder), will create internal buffer if needed
   // return true if need cvt.
   bool initCvt(mkldnn::memory::primitive_desc intlPD, int cvtType) {
     CHECK(cvtType == dnnCvtUser2Intl || cvtType == dnnCvtIntl2User

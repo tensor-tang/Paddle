@@ -126,7 +126,7 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
       VLOG(4) << "use nchw data fmt";
     } else {
       VLOG(4) << "use prev data fmt: " << DNN_FMTS[dataBot_->getUserFmt()];
-    }  
+    }
   }
   // 3. create forward PD
   std::shared_ptr<pooling_forward::desc> fwdDesc;

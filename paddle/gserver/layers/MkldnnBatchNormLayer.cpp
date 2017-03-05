@@ -274,7 +274,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   // 1. create mkldnn data buffer
   dataBot_.reset(new MkldnnBuffer());
   dataTop_.reset(new MkldnnBuffer());
-  if (useScaleShift_) {    
+  if (useScaleShift_) {
     dataScaleShift_.reset(new MkldnnBuffer());
   }
   if (useGlobalStats_ || passType != PASS_TEST) {
@@ -317,7 +317,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   std::shared_ptr<batch_normalization_forward::desc> fwdDesc;
   fwdDesc.reset(new batch_normalization_forward::desc(fwdpk,
     // pool policy in MKLDNN for BN, any MD would not work yet
-    dataBot_->getUserMD(),  // getAnyMD(botDims_[0]), 
+    dataBot_->getUserMD(),  // getAnyMD(botDims_[0]),
     EPS, flags_));
   fwdPD_.reset(new batch_normalization_forward::primitive_desc(*fwdDesc, eg));
   // 4. init  conversion
@@ -396,11 +396,11 @@ void MkldnnBatchNormLayer::resetDnnBwd() {
   // 1. create mkldnn diff buffer
   diffBot_.reset(new MkldnnBuffer());
   diffTop_.reset(new MkldnnBuffer());
-  if (useScaleShift_) {    
+  if (useScaleShift_) {
     diffScaleShift_.reset(new MkldnnBuffer());
   }
   // 2. init user, prepare top diff if use dnn input
-  real* botDiff = prevLayer->getOutputGrad()->getData();  
+  real* botDiff = prevLayer->getOutputGrad()->getData();
   real *topDiff = getOutputGrad()->getData();
   diffBot_->initUser(botDiff, botDims_[0], botFmt_[0], eg);
   diffTop_->initUser(topDiff, topDims_, topFmt_, eg);
@@ -458,7 +458,6 @@ void MkldnnBatchNormLayer::resetDnnBwd() {
         *dataBot_->getIntlMem(),
         *mean_->getIntlMem(), *var_->getIntlMem(),
         *diffTop_->getIntlMem(), *diffBot_->getIntlMem()));
-
 }
 
 void MkldnnBatchNormLayer::myFwd(PassType passType) {
@@ -469,7 +468,7 @@ void MkldnnBatchNormLayer::myFwd(PassType passType) {
   // data bottom
   dataBot_->submitCvt(pipeline, botdata);
 
-  // prepare weight data of scale and shift 
+  // prepare weight data of scale and shift
   if (useScaleShift_) {
     real *wgtdata;
     if (usePaddleFmt_) {
@@ -484,11 +483,13 @@ void MkldnnBatchNormLayer::myFwd(PassType passType) {
     }
     dataScaleShift_->submitCvt(pipeline, wgtdata);
   }
-  
+
   pipeline.push_back(*fwd_);
 
   dataTop_->submitCvt(pipeline, topdata);
-// LOG(INFO) << botdata[1] << "," << localMean_->getData()[1] << "," << localVar_->getData()[1] << "," << selfScaleShiftData_->getData()[1] << topdata[1];
+/* LOG(INFO) << botdata[1] << "," << localMean_->getData()[1]
+ << "," << localVar_->getData()[1] << ","
+ << selfScaleShiftData_->getData()[1] << topdata[1];*/
 
   stream(stream::kind::eager).submit(pipeline).wait();
 
@@ -574,7 +575,7 @@ void MkldnnBatchNormLayer::exFwd(PassType passType) {
 void MkldnnBatchNormLayer::submitDnnFwd(PassType passType) {
   //  exFwd(passType);
   myFwd(passType);
-   
+
 /*
 { // check mean and var
   localVar_->sqrt(*localVar_);  // mkldnn var is v^2
@@ -594,7 +595,6 @@ void MkldnnBatchNormLayer::submitDnnFwd(PassType passType) {
 }
 
 void MkldnnBatchNormLayer::exBwd(const UpdateCallback &callback) {
-
   int batchSize = getInputValue(0)->getHeight();
 
   Matrix::resizeOrCreate(meanGrad_, 1, oc_, false, useGpu_);
@@ -671,7 +671,11 @@ void MkldnnBatchNormLayer::submitDnnBwd(const UpdateCallback &callback) {
   real* botdata = getPrev(0)->getOutputValue()->getData();
   real* topdiff = getOutputGrad()->getData();
   real* botdiff = getPrev(0)->getOutputGrad()->getData();
-//  LOG(INFO) << "-------ex botdiff wgtdiff:" << botdiff[0] << "," << botdiff[1] << "," << weight_->getWGrad()->getData()[0] << "," << weight_->getWGrad()->getData()[1] << "," << biases_->getWGrad()->getData()[0] << "," << biases_->getWGrad()->getData()[1];
+/*  LOG(INFO) << "-------ex botdiff wgtdiff:" << botdiff[0]
+<< "," << botdiff[1] << "," << weight_->getWGrad()->getData()[0]
+<< "," << weight_->getWGrad()->getData()[1] << ","
+<< biases_->getWGrad()->getData()[0] << ","
+<< biases_->getWGrad()->getData()[1];*/
   std::vector<primitive> pipeline;
   // push inputs
   diffTop_->submitCvt(pipeline, topdiff);
@@ -703,7 +707,11 @@ void MkldnnBatchNormLayer::submitDnnBwd(const UpdateCallback &callback) {
         selfScaleShiftDiff_->getData(), sizeof(real) * oc_);
       memcpy(biases_->getWGrad_mutable()->getData(),
         selfScaleShiftDiff_->getData() + oc_, sizeof(real) * oc_);
-//  LOG(INFO) << "-------my botdiff wgtdiff:" << botdiff[0] << "," << botdiff[1] << "," <<weight_->getWGrad()->getData()[0] << "," << weight_->getWGrad()->getData()[1] << "," << biases_->getWGrad()->getData()[0] << "," << biases_->getWGrad()->getData()[1];
+/*  LOG(INFO) << "-------my botdiff wgtdiff:" << botdiff[0] << "," << botdiff[1]
+<< "," <<weight_->getWGrad()->getData()[0] << ","
+<< weight_->getWGrad()->getData()[1] << ","
+<< biases_->getWGrad()->getData()[0] << ","
+<< biases_->getWGrad()->getData()[1];*/
       weight_->getParameterPtr()->incUpdate(callback);
       biases_->getParameterPtr()->incUpdate(callback);
     } else {

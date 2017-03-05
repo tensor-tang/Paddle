@@ -29,7 +29,7 @@ bool MkldnnConvLayer::initDnn(const LayerMap &layerMap,
   if (biasParameter_.get() != NULL && !sharedBiases) {
     LOG(FATAL) << "Only support shared bias with MKL DNN yet!";
   }
-  LOG(INFO) << "input layer size:" << inputLayers_.size();
+  VLOG(1) << "input layer size:" << inputLayers_.size();
   if (inputLayers_.size() != 1) {
      // TODO(TJ): considerate more than One input
     LOG(FATAL) << "Only support one input layer with MKL-DNN by now!";
@@ -476,7 +476,7 @@ void MkldnnConvLayer::resetDnnBwd() {
     // then prepare backward data ----------------------------------------------
     LayerPtr prevLayer = getPrev(i);
     if (NULL == prevLayer->getOutputGrad()) {
-      continue; // data layer has not diff
+      continue;  // data layer has not diff
     }
     // 1. create buffer and init user
     real* botDiff = prevLayer->getOutputGrad()->getData();
@@ -491,13 +491,13 @@ void MkldnnConvLayer::resetDnnBwd() {
     std::shared_ptr<convolution_backward_data::primitive_desc> bwdDataPD;
     bwdDataFwdDesc.reset(new convolution_forward::desc(
       fwdpk, algo,
-      getAnyMD(botDims_[i]), //dataBot_->getIntlMD(),
+      getAnyMD(botDims_[i]),  // dataBot_->getIntlMD(),
       getAnyMD(wgtDims_[i]),
       diffTop_->getIntlMD(),
       strides, padding, padR, padKind));
     bwdDataDesc.reset(new convolution_backward_data::desc(
       algo,
-      getAnyMD(botDims_[i]), //dataBot_->getIntlMD(),
+      getAnyMD(botDims_[i]),  // dataBot_->getIntlMD(),
       getAnyMD(wgtDims_[i]),
       diffTop_->getIntlMD(),
       strides, padding, padR, padKind));
@@ -586,7 +586,7 @@ void MkldnnConvLayer::submitBwdData(int idx) {
 }
 
 void MkldnnConvLayer::submitBwdWgts(int idx) {
-  real* botdata = getInputValue(idx)->getData();  
+  real* botdata = getInputValue(idx)->getData();
   real* topdiff = getOutputGrad()->getData();
   real* wgtdiff = weights_[idx]->getWGrad()->getData();
   if (!useMkldnnWgt_) {
@@ -600,7 +600,7 @@ void MkldnnConvLayer::submitBwdWgts(int idx) {
   diffWgt_->submitCvt(pipeline, wgtdiff);
   // no need to submit cvt bias since biasfmt would not be changed
   stream(stream::kind::eager).submit(pipeline).wait();
-  
+
   if (!useMkldnnWgt_) {
     // save to actual weight param
     selfWgtDiff_[idx]->transpose(weights_[idx]->getWGrad_mutable(), false);

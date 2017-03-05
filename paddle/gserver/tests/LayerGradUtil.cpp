@@ -99,8 +99,8 @@ void testLayerFunc(std::vector<TestConfig>& cfg, size_t batchSize,
   for (size_t i = 0; i < 2; ++i) {
     cfg[i].layerConfig.set_name(layerNames[i]);
     // data layer initialize
-    initDataLayer(cfg[i], &(dataLayers[i]), &(datas[i]), &(layerMap[i]), layerNames[i],
-                  batchSize, trans, useGpu);
+    initDataLayer(cfg[i], &(dataLayers[i]), &(datas[i]),
+      &(layerMap[i]), layerNames[i], batchSize, trans, useGpu);
     initTestLayer(cfg[i], &(layerMap[i]), &(parameters[i]), &(testLayer[i]));
     /* // spare for future support
     LayerStatePtr state = std::make_shared<LayerState>();
@@ -771,7 +771,7 @@ void testLayerGradKernel(TestConfig testConf, string testLayerName,
     testLayer->resetState();
     testLayer->setState(state);
   }
-  
+
   testLayer->forward(PASS_GC);
   if (useWeight && weights == nullptr) {
     weights = testLayer->getOutput().value->clone(0, 0, useGpu);

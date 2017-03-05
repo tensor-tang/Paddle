@@ -28,7 +28,7 @@ protected:
   MkldnnBufferPtr dataScaleShift_;  // wgt includes scale and shift in mkldnn
   MkldnnBufferPtr mean_;
   MkldnnBufferPtr var_;
-  /// diff buffer 
+  /// diff buffer
   MkldnnBufferPtr diffScaleShift_;
 
   MatrixPtr selfScaleShiftData_;  // scale and shift value, 2*oc

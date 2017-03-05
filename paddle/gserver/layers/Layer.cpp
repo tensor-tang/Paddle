@@ -104,7 +104,7 @@ bool Layer::init(const LayerMap& layerMap, const ParameterMap& parameterMap) {
   CHECK(activation_);
 #ifdef PADDLE_USE_MKLDNN
   if (hasActivation())
-      LOG(INFO) << getName() << ": action type: " << action_type;
+      VLOG(1) << getName() << ": action type: " << action_type;
 #endif
   initNeedFlags();
   markInBackward_.assign(inputLayers_.size(), false);
@@ -117,7 +117,7 @@ ClassRegistrar<Layer, LayerConfig> Layer::registrar_;
 LayerPtr Layer::create(const LayerConfig& config) {
   std::string type = config.type();
 
-  LOG(INFO) << "layer type: " << type;
+  VLOG(1) << "layer type: " << type;
 
   if (type == "multi-class-cross-entropy")
     return LayerPtr(new MultiClassCrossEntropy(config));

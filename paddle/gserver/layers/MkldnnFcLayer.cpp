@@ -346,7 +346,7 @@ void MkldnnFcLayer::resetDnnBwd() {
     CHECK(dataWgt_->getIntlPD() == bwdWgtPD->diff_weights_primitive_desc());
     CHECK(dataBias_->getIntlPD() == bwdWgtPD->diff_bias_primitive_desc());
 
-    // 3. init conversion    
+    // 3. init conversion
     if (useMkldnnWgt_) {
       wgtDiff = weights_[i]->getWGrad()->getData();
       diffWgt_->resetUser(wgtDiff, dataWgt_->getIntlPD());
@@ -388,7 +388,7 @@ void MkldnnFcLayer::resetDnnBwd() {
     // then prepare backward data ----------------------------------------------
     LayerPtr prevLayer = getPrev(i);
     if (NULL == prevLayer->getOutputGrad()) {
-      continue; // data layer has not diff
+      continue;  // data layer has not diff
     }
     // 1. create buffer and init user
     real* botDiff = prevLayer->getOutputGrad()->getData();
@@ -459,7 +459,7 @@ void MkldnnFcLayer::submitBwdData(int idx, const MatrixPtr& botGrad) {
 }
 
 void MkldnnFcLayer::submitBwdWgts(int idx, const MatrixPtr& botVal) {
-  real* botdata = botVal->getData();  
+  real* botdata = botVal->getData();
   real* topdiff = getOutputGrad()->getData();
   real* wgtdiff = weights_[idx]->getWGrad()->getData();
   if (!useMkldnnWgt_) {
@@ -473,7 +473,7 @@ void MkldnnFcLayer::submitBwdWgts(int idx, const MatrixPtr& botVal) {
   diffWgt_->submitCvt(pipeline, wgtdiff);
   // no need to submit cvt bias since biasfmt would not be changed
   stream(stream::kind::eager).submit(pipeline).wait();
-  
+
   if (!useMkldnnWgt_) {
     // save to actual weight param
     selfWgtDiff_[idx]->transpose(weights_[idx]->getWGrad_mutable(), false);
@@ -487,7 +487,7 @@ void MkldnnFcLayer::submitDnnBwd(const UpdateCallback &callback) {
     submitBwdData(i, getPrev(i)->getOutputGrad());
     if (weights_[i]->getWGrad()) {
       submitBwdWgts(i, getPrev(i)->getOutputValue());
-      weights_[i]->getParameterPtr()->incUpdate(callback);   
+      weights_[i]->getParameterPtr()->incUpdate(callback);
     }
   }
   if (biases_ && biases_->getWGrad()) {

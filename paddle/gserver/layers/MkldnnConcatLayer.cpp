@@ -142,7 +142,6 @@ void MkldnnConcatLayer::resetDnnFwd(PassType passType) {
 }
 
 void MkldnnConcatLayer::resetDnnBwd() {
-
 }
 
 void MkldnnConcatLayer::myFwd(PassType passType) {

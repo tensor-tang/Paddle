@@ -89,11 +89,11 @@ public:
   void resetDnnBwd();
 
   void submitDnnFwd(PassType passType);
-  
+
   void submitBwdData(int idx, const MatrixPtr& botGrad);
 
   void submitBwdWgts(int idx, const MatrixPtr& botVal);
-  
+
   void submitDnnBwd(const UpdateCallback& callback);
 
   // keep as paddle did
