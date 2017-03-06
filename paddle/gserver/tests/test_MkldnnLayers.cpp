@@ -313,7 +313,7 @@ void testActivation(std::string act, const int bs, const size_t sz) {
 }
 
 TEST(MkldnnLayer, activations) {
-  testActivation("mkldnn_softmax", /* batch_size */ 1, /* size */ 100);
+  testActivation("mkldnn_softmax", /* batch_size */ 1, /* size */ 1000);
   testActivation("mkldnn_softmax", /* batch_size */ 100, /* size */ 10);
   testActivation("mkldnn_relu", /* batch_size */ 1, /* size */ 100);
   testActivation("mkldnn_relu", /* batch_size */ 100, /* size */ 10);
