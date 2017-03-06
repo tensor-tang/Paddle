@@ -21,9 +21,6 @@ protected:
   std::shared_ptr<mkldnn::batch_normalization_backward> bwd_;
   std::shared_ptr<mkldnn::batch_normalization_forward::primitive_desc> fwdPD_;
 
-  // use paddle weight format
-  bool usePaddleFmt_;
-
   /// data buffers
   MkldnnBufferPtr dataScaleShift_;  // wgt includes scale and shift in mkldnn
   MkldnnBufferPtr mean_;
@@ -41,10 +38,6 @@ protected:
 
   /// Epsilon value used in the batch normalization formula.
   static const real EPS;
-
-  /// Feature dimension. If the input layer is conv layer, it is the channels
-    /// of feature map of the conv layer. If the input layer is fully-connected
-    /// layer, it is the dimension of fc layer.
 
   /// here weight_ in paddle is scale in mkldnn
   std::unique_ptr<Weight> weight_;
@@ -100,14 +93,14 @@ public:
       fwd_(nullptr),
       bwd_(nullptr),
       fwdPD_(nullptr),
-      usePaddleFmt_(true),
       dataScaleShift_(nullptr),
       mean_(nullptr),
       var_(nullptr),
       diffScaleShift_(nullptr),
 //      diffBias_(nullptr),
 //      bwdWgtPD_(nullptr)
-      useScaleShift_(true)
+      useScaleShift_(true),
+      useGlobalStats_(false)
     {}
 
   ~MkldnnBatchNormLayer() {}

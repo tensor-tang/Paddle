@@ -35,9 +35,7 @@ bool MkldnnBatchNormLayer::initDnn(const LayerMap &layerMap,
                            const ParameterMap &parameterMap) {
   /* initialize the weightList */
   // first is Input in configure
-  // other two is created in config_parser.py
-  // TODO(TJ): why other two is created in config_parser.py???
-  // actually only use 1 input
+  // other two are created in config_parser.py saving moving mean and var
   CHECK_EQ(inputLayers_.size(), 3U);
   CHECK_EQ(inputLayers_.size(), parameters_.size());
   CHECK_EQ(inputLayers_.size(), size_t(config_.inputs_size()));
@@ -61,13 +59,17 @@ bool MkldnnBatchNormLayer::initDnn(const LayerMap &layerMap,
   getOutput().setFrameHeight(oh_[0]);
   getOutput().setFrameWidth(ow_[0]);
 
-  // should add this flag to layer proto and get from it
-  usePaddleFmt_ = true;
-  if (!usePaddleFmt_)
-    LOG(FATAL) << "have not considerated do not use paddle fmt here yet";
+  if (config_.has_add_size()) {
+    addSize_ = config_.add_size();
+  }
+  if (config_.has_use_mkldnn_wgt()) {
+    useMkldnnWgt_ = config_.use_mkldnn_wgt();
+  }
   if (config_.has_use_global_stats()) {
     useGlobalStats_ = config_.use_global_stats();
   }
+  LOG(INFO) << "--- " << (useGlobalStats_ ? "use" : "do not use")
+    << " --- global stats";
   movingAvgFraction_ = config_.moving_average_fraction();
   weight_.reset(new Weight(1, oc_, parameters_[0]));
   movingMean_.reset(new Weight(1, oc_, parameters_[1]));
@@ -77,11 +79,12 @@ bool MkldnnBatchNormLayer::initDnn(const LayerMap &layerMap,
     biases_ = std::unique_ptr<Weight>(new Weight(1, oc_, biasParameter_));
   }
 
-  if (usePaddleFmt_) {
+  if (!useMkldnnWgt_) {
     selfScaleShiftData_ = Matrix::create(2, oc_, false, false);
     selfScaleShiftDiff_ = Matrix::create(2, oc_, false, false);
     selfScaleShiftData_->zeroMem();
     selfScaleShiftDiff_->zeroMem();
+  } else {
   }
   localMean_ = Matrix::create(1, oc_, false, false);
   localVar_ = Matrix::create(1, oc_, false, false);
@@ -331,8 +334,8 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   dataTop_->initCvt(fwdPD_->dst_primitive_desc(), dnnCvtIntl2User);
   // weight(scale) and bias(shift)
   if (useScaleShift_) {
-    real *ssData = usePaddleFmt_ ? selfScaleShiftData_->getData()
-      : weight_->getW()->getData();
+    real *ssData = useMkldnnWgt_ ? weight_->getW()->getData()
+      : selfScaleShiftData_->getData();
     dataScaleShift_->initUser(ssData, wgtDims_[0], wgtFmt_[0], eg);
     CHECK(dataScaleShift_->getUserPD() == fwdPD_->weights_primitive_desc())
       << "scaleshiftPD should be {2, oc} with nc format, check mkldnn version.";
@@ -439,8 +442,8 @@ void MkldnnBatchNormLayer::resetDnnBwd() {
   diffBot_->initCvt(dataBot_->getIntlPD(), dnnCvtIntl2User);
   // weight(scale) and bias(shift)
   if (useScaleShift_) {
-    real *ssDiff = usePaddleFmt_ ? selfScaleShiftDiff_->getData()
-      : weight_->getWGrad()->getData();
+    real *ssDiff = useMkldnnWgt_ ? weight_->getWGrad()->getData()
+      : selfScaleShiftDiff_->getData();
     diffScaleShift_->initUser(ssDiff, wgtDims_[0], wgtFmt_[0], eg);
     CHECK(diffScaleShift_->getUserPD() == bwdPD->diff_weights_primitive_desc())
       << "scaleshiftPD should be {2,oc} with nc format, check mkldnn version.";
@@ -471,7 +474,7 @@ void MkldnnBatchNormLayer::myFwd(PassType passType) {
   // prepare weight data of scale and shift
   if (useScaleShift_) {
     real *wgtdata;
-    if (usePaddleFmt_) {
+    if (!useMkldnnWgt_) {
       // copy data from paddle weight and bias
       memcpy(selfScaleShiftData_->getData(), weight_->getW()->getData(),
         sizeof(real) * oc_);
@@ -681,8 +684,8 @@ void MkldnnBatchNormLayer::submitDnnBwd(const UpdateCallback &callback) {
   diffTop_->submitCvt(pipeline, topdiff);
   dataBot_->submitCvt(pipeline, botdata);
   if (useScaleShift_) {
-    real *wgtdata = usePaddleFmt_
-      ? selfScaleShiftData_->getData() : weight_->getW()->getData();
+    real *wgtdata = useMkldnnWgt_ ? weight_->getW()->getData()
+      : selfScaleShiftData_->getData();
     dataScaleShift_->submitCvt(pipeline, wgtdata);
   }
   // then add bwd
@@ -691,8 +694,8 @@ void MkldnnBatchNormLayer::submitDnnBwd(const UpdateCallback &callback) {
   diffBot_->submitCvt(pipeline, botdiff);
   // output scaleshift diff
   if (useScaleShift_) {
-    real *wgtdiff = usePaddleFmt_
-      ? selfScaleShiftDiff_->getData() : weight_->getWGrad()->getData();
+    real *wgtdiff = useMkldnnWgt_ ? weight_->getWGrad()->getData()
+      : selfScaleShiftDiff_->getData();
     diffScaleShift_->submitCvt(pipeline, wgtdiff);
   }
 //  LOG(INFO) << "size:" << pipeline.size() << "== 1 or 3";
@@ -701,7 +704,7 @@ void MkldnnBatchNormLayer::submitDnnBwd(const UpdateCallback &callback) {
 
   // update diff
   if (useScaleShift_) {
-    if (usePaddleFmt_) {
+    if (!useMkldnnWgt_) {
       // copy scale and shift diff to paddle weight and bias
       memcpy(weight_->getWGrad_mutable()->getData(),
         selfScaleShiftDiff_->getData(), sizeof(real) * oc_);

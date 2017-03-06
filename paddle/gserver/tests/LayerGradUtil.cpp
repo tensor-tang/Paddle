@@ -85,6 +85,7 @@ void testLayerFunc(std::vector<TestConfig>& cfg, size_t batchSize,
   CHECK(isMkldnnLayer(cfg[0].layerConfig)
     || isMkldnnAct(cfg[0].layerConfig)) << "test type go first";
 
+  const bool isBN = cfg[0].layerConfig.type() == "mkldnn_batch_norm";
   bool trans = false;
   bool useGpu = false;
   FLAGS_use_gpu = useGpu;
@@ -114,7 +115,7 @@ void testLayerFunc(std::vector<TestConfig>& cfg, size_t batchSize,
   LOG(INFO) << "Test functionality: "
     << cfg[0].layerConfig.type() << " vs " << cfg[1].layerConfig.type();
 
-  size_t iter = 3;
+  const size_t iter = 3;
   vector<double> deltaFwd;
   vector<double> deltaBwd;
   vector<double> deltaParam;
@@ -122,11 +123,15 @@ void testLayerFunc(std::vector<TestConfig>& cfg, size_t batchSize,
   EXPECT_EQ(parameters[0].size(), parameters[1].size());
   for (size_t i = 0; i < parameters[0].size(); ++i) {
     parameters[0][i]->randomize();
-    VectorPtr src = parameters[0][i]->getBuf(PARAMETER_VALUE);
-    VectorPtr dst = parameters[1][i]->getBuf(PARAMETER_VALUE);
-    dst->copyFrom(*src);
-    parameters[0][i]->getBuf(PARAMETER_GRADIENT)->zeroMem();
-    parameters[1][i]->getBuf(PARAMETER_GRADIENT)->zeroMem();
+    VectorPtr srcValue = parameters[0][i]->getBuf(PARAMETER_VALUE);
+    VectorPtr dstValue = parameters[1][i]->getBuf(PARAMETER_VALUE);
+    const VectorPtr& tstGrad = parameters[0][i]->getBuf(PARAMETER_GRADIENT);
+    const VectorPtr& refGrad = parameters[1][i]->getBuf(PARAMETER_GRADIENT);
+    dstValue->copyFrom(*srcValue);
+    if (tstGrad)
+      tstGrad->zeroMem();
+    if (refGrad)
+      refGrad->zeroMem();
   }
   // clear botdiff
   for (size_t idx = 0; idx < dataLayers[0].size(); ++idx) {
@@ -164,13 +169,20 @@ void testLayerFunc(std::vector<TestConfig>& cfg, size_t batchSize,
       diffA = dataLayers[0][idx]->getOutputGrad();
       diffB = dataLayers[1][idx]->getOutputGrad();
       deltaBwd.push_back(compareMatrix(diffA, diffB));
+      if (isBN)
+        // the other two inputs in batch norm are for moving mean and var
+        break;
     }
     for (size_t idx = 0; idx < parameters[0].size(); ++idx) {
+      if (isBN && (idx == 1 || idx ==2)) {
+        // only skip the middle two, the last param may be bias(idx==3)
+        VLOG(1) << "skip param" << parameters[0][idx]->getName();
+        continue;
+      }
       CpuVector tgt(*(parameters[0][idx]->getBuf(PARAMETER_VALUE)));
       CpuVector ref(*(parameters[0][idx]->getBuf(PARAMETER_VALUE)));
-//      LOG(INFO) << parameters[0][idx]->getName()
-//          << " value: my: " << tgt.getData()[0]
-//          << ", ex: " << ref.getData()[0];
+      VLOG(5) << parameters[0][idx]->getName()
+        << " value: my: " << tgt.getData()[0] << ", ex: " << ref.getData()[0];
       deltaParam.push_back(compareVector(tgt, ref));
     }
 
@@ -186,8 +198,12 @@ void testLayerFunc(std::vector<TestConfig>& cfg, size_t batchSize,
       }
       // clear param diff
       for (size_t idx = 0; idx < parameters[0].size(); ++idx) {
-        parameters[0][idx]->getBuf(PARAMETER_GRADIENT)->zeroMem();
-        parameters[1][idx]->getBuf(PARAMETER_GRADIENT)->zeroMem();
+        const VectorPtr& gradA = parameters[0][idx]->getBuf(PARAMETER_GRADIENT);
+        const VectorPtr& gradB = parameters[1][idx]->getBuf(PARAMETER_GRADIENT);
+        if (gradA)
+          gradA->zeroMem();
+        if (gradB)
+          gradB->zeroMem();
       }
     }
   }
@@ -199,12 +215,19 @@ void testLayerFunc(std::vector<TestConfig>& cfg, size_t batchSize,
   }
   // check Bwd delta
   for (size_t i = 0; i < deltaBwd.size(); ++i) {
-    VLOG(1) << "Check Bot" << i % dataLayers[0].size() << " diff";
+    VLOG(1) << "Check Bot" << (!isBN ? i % dataLayers[0].size() : 0) << " diff";
     EXPECT_LE(fabs(deltaBwd[i]), epsilon);
   }
   // check Param delta
   for (size_t i = 0; i < deltaParam.size(); ++i) {
-    VLOG(1) << "Check " << parameters[0][i % parameters[0].size()]->getName();
+    if (!isBN) {
+      VLOG(1) << "Check " << parameters[0][i % parameters[0].size()]->getName();
+    } else {
+      if (deltaParam.size() / iter)  // has bias
+        VLOG(1) << "Check " << parameters[0][(i % 2 == 0 ? 0 : 3)]->getName();
+      else
+        VLOG(1) << "Check " << parameters[0][0]->getName();
+    }
     EXPECT_LE(fabs(deltaParam[i]), epsilon);
   }
 }
@@ -594,7 +617,6 @@ void initTestLayer(TestConfig testConf, LayerMap* layerMap,
     bool sparse = inputDef.sparse.sparse;
     LayerInputConfig& input = *(testConfig.mutable_inputs(i));
     input.set_input_layer_name(inputDef.name);
-
     if (paraSize) {
       constexpr int kParaNameLen = 20;
       char paraName[kParaNameLen];

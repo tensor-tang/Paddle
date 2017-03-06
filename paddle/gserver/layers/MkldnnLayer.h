@@ -130,6 +130,9 @@ public:
             << DNN_FMTS[dataBot_->getIntlFmt()] << " >>> "
             << DNN_FMTS[dataTop_->getIntlFmt()] << ") >>> "
             << DNN_FMTS[dataTop_->getUserFmt()];
+        // in batch norm layer, the other two will be moving mean and var
+        if (getType() == "mkldnn_batch_norm")
+          break;
       }
       needResetBwd_ = true;
     }
@@ -158,6 +161,9 @@ public:
             << DNN_FMTS[diffBot_->getIntlFmt()] << " <<< "
             << DNN_FMTS[diffTop_->getIntlFmt()] << ") <<< "
             << DNN_FMTS[diffTop_->getUserFmt()];
+        // in batch norm layer, the other two will be moving mean and var
+        if (getType() == "mkldnn_batch_norm")
+          break;
       }
     }
 
