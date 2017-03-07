@@ -64,29 +64,28 @@ bool MkldnnBatchNormLayer::initDnn(const LayerMap &layerMap,
   }
   LOG(INFO) << "--- " << (useGlobalStats_ ? "use" : "do not use")
     << " --- global stats";
-  movingAvgFraction_ = config_.moving_average_fraction();
-  weight_.reset(new Weight(1, oc_, parameters_[0]));
-  movingMean_.reset(new Weight(1, oc_, parameters_[1]));
-  movingVar_.reset(new Weight(1, oc_, parameters_[2]));
-
-  if (biasParameter_.get() != NULL) {
-    biases_ = std::unique_ptr<Weight>(new Weight(1, oc_, biasParameter_));
-  }
 
   if (!useMkldnnWgt_) {
     selfScaleShiftData_ = Matrix::create(2, oc_, false, false);
     selfScaleShiftDiff_ = Matrix::create(2, oc_, false, false);
     selfScaleShiftData_->zeroMem();
     selfScaleShiftDiff_->zeroMem();
+    weight_.reset(new Weight(1, oc_, parameters_[0]));
+    if (biasParameter_.get() != NULL) {
+      biases_ = std::unique_ptr<Weight>(new Weight(1, oc_, biasParameter_));
+    }
   } else {
-    // TODO:
-    LOG(FATAL) << "do not support mkldnn wgt yet!";
+    weight_.reset(new Weight(2, oc_, parameters_[0]));
   }
+
   localMean_ = Matrix::create(1, oc_, false, false);
   localVar_ = Matrix::create(1, oc_, false, false);
   localMean_->zeroMem();
   localVar_->zeroMem();
 
+  movingAvgFraction_ = config_.moving_average_fraction();
+  movingMean_.reset(new Weight(1, oc_, parameters_[1]));
+  movingVar_.reset(new Weight(1, oc_, parameters_[2]));
   return true;
 }
 
@@ -117,11 +116,15 @@ void MkldnnBatchNormLayer::reshape() {
 
 void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   CHECK(bs_ == getInput(0).getBatchSize()) << "batchsize should equal";
-  bool hasShift = (biases_ && biases_->getW());
-  bool hasScale = (weight_ && weight_->getW());
-  CHECK_EQ(hasScale, hasShift)
-    << "only support both weigt and bias at same time, or neither";
-  useScaleShift_ = (hasShift && hasScale);
+  if (useMkldnnWgt_) {
+    useScaleShift_ = weight_ && weight_->getW();
+  } else {
+    bool hasShift = (biases_ && biases_->getW());
+    bool hasScale = (weight_ && weight_->getW());
+    CHECK_EQ(hasScale, hasShift)
+      << "only support both weigt and bias at same time, or neither";
+    useScaleShift_ = (hasShift && hasScale);
+  }
 
   // in train always calculate mean and var, so GlobalStats must be false
   // in test depends on manual choice
@@ -143,7 +146,23 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
     flags_ = (flags_ | batch_normalization_flag::use_global_stats);
   if (useScaleShift_)
     flags_ = (flags_ | batch_normalization_flag::use_scale_shift);
-
+  if (!hasInited_) {
+    hasInited_ = true;
+    // only do once
+    if (useGlobalStats_) {
+      localMean_->copyFrom(*(movingMean_->getW()));
+      localVar_->copyFrom(*(movingVar_->getW()));
+    }
+    if (useScaleShift_ && useMkldnnWgt_ && passType != PASS_TEST) {
+      // re-randomize scale and zero shift(bias in paddle) just as paddle did
+      const ParameterConfig& wgtConfig = parameters_[0]->getConfig();
+      VectorPtr wgt = parameters_[0]->getBuf(PARAMETER_VALUE);
+      VectorPtr scale(new CpuVector(oc_, wgt->getMemoryHandle(), 0));
+      VectorPtr shift(new CpuVector(oc_, wgt->getMemoryHandle(), oc_));
+      Parameter::randomize(scale, wgtConfig);
+      shift->zeroMem();
+    }
+  }
   /// init mkldnn forward ******************************************************
   // 1. create mkldnn data buffer
   dataBot_.reset(new MkldnnBuffer());
@@ -154,10 +173,6 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   if (useGlobalStats_ || passType != PASS_TEST) {
     mean_.reset(new MkldnnBuffer());
     var_.reset(new MkldnnBuffer());
-  }
-  if (useGlobalStats_) {
-    localMean_->copyFrom(*(movingMean_->getW()));
-    localVar_->copyFrom(*(movingVar_->getW()));
   }
   // init dim structure that describes user data.
   botDims_[0] = {bs_, ic_[0], ih_[0], iw_[0]};
@@ -397,17 +412,17 @@ void MkldnnBatchNormLayer::submitDnnBwd(const UpdateCallback &callback) {
   diffTop_->submitCvt(pipeline, topDiff);
   dataBot_->submitCvt(pipeline, botData);
   if (useScaleShift_) {
-    real *wgtdata = useMkldnnWgt_ ? weight_->getW()->getData()
+    real *wgtData = useMkldnnWgt_ ? weight_->getW()->getData()
       : selfScaleShiftData_->getData();
-    dataScaleShift_->submitCvt(pipeline, wgtdata);
+    dataScaleShift_->submitCvt(pipeline, wgtData);
   }
   pipeline.push_back(*bwd_);
   diffBot_->submitCvt(pipeline, botDiff);
   // output scaleshift diff
   if (useScaleShift_) {
-    real *wgtdiff = useMkldnnWgt_ ? weight_->getWGrad()->getData()
+    real *wgtDiff = useMkldnnWgt_ ? weight_->getWGrad()->getData()
       : selfScaleShiftDiff_->getData();
-    diffScaleShift_->submitCvt(pipeline, wgtdiff);
+    diffScaleShift_->submitCvt(pipeline, wgtDiff);
   }
   stream(stream::kind::eager).submit(pipeline).wait();
 

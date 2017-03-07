@@ -54,6 +54,8 @@ protected:
   // use to compute moving mean and variance.
   real movingAvgFraction_;
 
+  bool hasInited_;
+
 public:
   explicit MkldnnBatchNormLayer(const LayerConfig& config)
     : MkldnnLayer(config),
@@ -65,7 +67,8 @@ public:
       var_(nullptr),
       diffScaleShift_(nullptr),
       useScaleShift_(true),
-      useGlobalStats_(false)
+      useGlobalStats_(false),
+      hasInited_(false)
     {}
 
   ~MkldnnBatchNormLayer() {}

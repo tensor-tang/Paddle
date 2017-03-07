@@ -1918,12 +1918,16 @@ class BatchNormLayer(LayerBase):
 
         psize = self.calc_parameter_size(image_conf)
         dims = [1, psize]
-        self.create_input_parameter(0, psize)
-        self.create_input_parameter(1, psize, dims)
-        self.create_input_parameter(2, psize, dims)
-
-        self.create_bias_parameter(bias, psize)
-
+        if self.config.type == "mkldnn_batch_norm" and self.config.use_mkldnn_wgt:
+            self.create_input_parameter(0, psize * 2, [2, psize])
+            self.create_input_parameter(1, psize, dims)
+            self.create_input_parameter(2, psize, dims)
+            self.create_bias_parameter(False, 0)
+        else:
+            self.create_input_parameter(0, psize)
+            self.create_input_parameter(1, psize, dims)
+            self.create_input_parameter(2, psize, dims)
+            self.create_bias_parameter(bias, psize)
     def calc_parameter_size(self, image_conf):
         return image_conf.channels
 
