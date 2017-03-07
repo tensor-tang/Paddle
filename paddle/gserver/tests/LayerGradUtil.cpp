@@ -174,11 +174,6 @@ void testLayerFunc(std::vector<TestConfig>& cfg, size_t batchSize,
         break;
     }
     for (size_t idx = 0; idx < parameters[0].size(); ++idx) {
-      if (isBN && (idx == 1 || idx ==2)) {
-        // only skip the middle two, the last param may be bias(idx==3)
-        VLOG(1) << "skip param" << parameters[0][idx]->getName();
-        continue;
-      }
       CpuVector tgt(*(parameters[0][idx]->getBuf(PARAMETER_VALUE)));
       CpuVector ref(*(parameters[0][idx]->getBuf(PARAMETER_VALUE)));
       VLOG(5) << parameters[0][idx]->getName()
@@ -220,14 +215,7 @@ void testLayerFunc(std::vector<TestConfig>& cfg, size_t batchSize,
   }
   // check Param delta
   for (size_t i = 0; i < deltaParam.size(); ++i) {
-    if (!isBN) {
-      VLOG(1) << "Check " << parameters[0][i % parameters[0].size()]->getName();
-    } else {
-      if (deltaParam.size() / iter)  // has bias
-        VLOG(1) << "Check " << parameters[0][(i % 2 == 0 ? 0 : 3)]->getName();
-      else
-        VLOG(1) << "Check " << parameters[0][0]->getName();
-    }
+    VLOG(1) << "Check " << parameters[0][i % parameters[0].size()]->getName();
     EXPECT_LE(fabs(deltaParam[i]), epsilon);
   }
 }
