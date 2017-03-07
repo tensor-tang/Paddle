@@ -37,15 +37,12 @@ public:
 
   bool initDnn(const LayerMap& layerMap, const ParameterMap& parameterMap);
 
-  void clearAllDnnCvtFlags() {
+  virtual void clearAllDnnCvtFlags() {
+    MkldnnLayer::clearAllDnnCvtFlags();
     for (size_t i = 0; i < dataBottoms_.size(); ++i) {
       if (dataBottoms_[i])
         dataBottoms_[i]->clearCvtFlag();
     }
-    if (dataBot_) dataBot_->clearCvtFlag();
-    if (dataTop_) dataTop_->clearCvtFlag();
-    if (diffBot_) diffBot_->clearCvtFlag();
-    if (diffTop_) diffTop_->clearCvtFlag();
   }
 
   void reshape();

@@ -43,13 +43,6 @@ public:
 
   bool initDnn(const LayerMap& layerMap, const ParameterMap& parameterMap);
 
-  void clearAllDnnCvtFlags() {
-    if (dataBot_) dataBot_->clearCvtFlag();
-    if (dataTop_) dataTop_->clearCvtFlag();
-    if (diffBot_) diffBot_->clearCvtFlag();
-    if (diffTop_) diffTop_->clearCvtFlag();
-  }
-
   void reshape();
 
   void clearDataDiff();

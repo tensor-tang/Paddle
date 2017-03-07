@@ -42,18 +42,10 @@ public:
 
   ~MkldnnAddtoLayer() {}
 
-  /** 
-   * Intialization of MkldnnAddtoLayer. 
-   */
   bool initDnn(const LayerMap& layerMap, const ParameterMap& parameterMap);
 
-  void clearAllDnnCvtFlags() {
-    // TODO(TJ): use below of all other layers
-    //MkldnnLayer::clearAllDnnCvtFlags();// todo remove below here
-    if (dataBot_) dataBot_->clearCvtFlag();
-    if (dataTop_) dataTop_->clearCvtFlag();
-    if (diffBot_) diffBot_->clearCvtFlag();
-    if (diffTop_) diffTop_->clearCvtFlag();
+  virtual void clearAllDnnCvtFlags() {
+    MkldnnLayer::clearAllDnnCvtFlags();
     for (size_t i = 0; i < dataBottoms_.size(); ++i) {
       if (dataBottoms_[i])
         dataBottoms_[i]->clearCvtFlag();
@@ -68,20 +60,21 @@ public:
 
   void resetDnnBwd();
 
-  /** 
-   * Forward propagation.
-   * @note There is no weight matrix for each input, 
-   *       because it just a simple add operation.
-   */
   void submitDnnFwd(PassType passType);
 
-  /** 
-   * Backward propagation. 
-   */
   void submitDnnBwd(const UpdateCallback& callback);
 
-private:
+  void printInfo() {
+    for (size_t i = 0; i < ic_.size(); ++i) {
+      VLOG(2)
+        << "ic: " << ic_[i]
+        << ", ih: " << ih_[i] << ", iw: " << iw_[i]
+        << ", oc: " << oc_
+        << ", oh: " << oh_[i] << ", ow: " << ow_[i];
+    }
+  }
 
+private:
   int getMDFmt(const mkldnn::memory::desc & md) {
     return md.data.format;
   }
@@ -103,18 +96,7 @@ private:
     }
     return res && (md1.data.data_type == md2.data.data_type);
   }
-  void exFwd(PassType passType);
-  void exBwd(const UpdateCallback &callback);
 
-  void printInfo() {
-    for (size_t i = 0; i < ic_.size(); ++i) {
-      VLOG(2)
-        << "ic: " << ic_[i]
-        << ", ih: " << ih_[i] << ", iw: " << iw_[i]
-        << ", oc: " << oc_
-        << ", oh: " << oh_[i] << ", ow: " << ow_[i];
-    }
-  }
 };
 
 }  // namespace paddle

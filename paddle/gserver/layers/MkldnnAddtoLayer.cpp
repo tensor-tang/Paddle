@@ -152,16 +152,6 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
     << DNN_FMTS[dataTop_->getUserFmt()];
 }
 
-void MkldnnAddtoLayer::exFwd(PassType passType) {
-  MatrixPtr outV = Matrix::create(bs_, oc_, false, false);
-  for (size_t i = 0; i != inputLayers_.size(); ++i) {
-    MatrixPtr input = getInputValue(i);
-    i == 0 ? outV->assign(*input) : outV->add(*input);
-  }
-//  real *topData = outV->getData();
-//  LOG(INFO) << "ex-" << topData[0] << "," << topData[1] << "," << topData[2];
-}
-
 void MkldnnAddtoLayer::resetDnnBwd() {
 }
 
@@ -185,13 +175,11 @@ void MkldnnAddtoLayer::submitDnnFwd(PassType passType) {
   forwardActivation();
 }
 
-void MkldnnAddtoLayer::exBwd(const UpdateCallback& callback) {
-  /* Do derivation */ { backwardActivation(); }
-
+void MkldnnAddtoLayer::submitDnnBwd(const UpdateCallback& callback) {
+  backwardActivation();
   if (biases_ && biases_->getWGrad()) {
+    // TODO(TJ): try to use mkldnn speedup this
     biases_->getWGrad()->collectBias(*getOutputGrad(), 1);
-
-    /* Increasing the number of gradient */
     biases_->getParameterPtr()->incUpdate(callback);
   }
 
@@ -202,12 +190,6 @@ void MkldnnAddtoLayer::exBwd(const UpdateCallback& callback) {
       preGrad->add(*getOutputGrad());
     }
   }
-}
-
-void MkldnnAddtoLayer::submitDnnBwd(const UpdateCallback& callback) {
-  // there is no backward for eltwise in mkldnn
-  // so use the backward in paddle
-  exBwd(callback);
 }
 
 }  // namespace paddle

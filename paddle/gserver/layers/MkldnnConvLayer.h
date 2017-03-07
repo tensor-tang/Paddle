@@ -88,14 +88,11 @@ public:
     return type.compare(0, dnn.length(), dnn) == 0 ? true : false;
   }
 
-  void clearAllDnnCvtFlags() {
-    if (dataBot_) dataBot_->clearCvtFlag();
-    if (dataTop_) dataTop_->clearCvtFlag();
+  virtual void clearAllDnnCvtFlags() {
+    MkldnnLayer::clearAllDnnCvtFlags();
     if (dataBias_) dataBias_->clearCvtFlag();
     if (dataWgt_) dataWgt_->clearCvtFlag();
     if (dataWgtBwd_) dataWgtBwd_->clearCvtFlag();
-    if (diffBot_) diffBot_->clearCvtFlag();
-    if (diffTop_) diffTop_->clearCvtFlag();
     if (diffBias_) diffBias_->clearCvtFlag();
     if (diffWgt_) diffWgt_->clearCvtFlag();
   }

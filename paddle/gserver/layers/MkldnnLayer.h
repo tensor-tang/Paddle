@@ -296,7 +296,12 @@ public:
    * each dnn layer should have function
    * to clear all the MkldnnBuffer cvt flags
    */
-  virtual void clearAllDnnCvtFlags() = 0;
+  virtual void clearAllDnnCvtFlags() {
+    if (dataBot_) dataBot_->clearCvtFlag();
+    if (dataTop_) dataTop_->clearCvtFlag();
+    if (diffBot_) diffBot_->clearCvtFlag();
+    if (diffTop_) diffTop_->clearCvtFlag();
+  }
 
   virtual void submitDnnFwd(PassType passType) = 0;
   virtual void submitDnnBwd(const UpdateCallback& callback) = 0;
