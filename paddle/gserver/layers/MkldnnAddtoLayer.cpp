@@ -12,6 +12,9 @@ REGISTER_LAYER(mkldnn_addto, MkldnnAddtoLayer);
 
 bool MkldnnAddtoLayer::initDnn(const LayerMap& layerMap,
                       const ParameterMap& parameterMap) {
+  if (config_.has_add_size()) {
+    addSize_ = config_.add_size();
+  }
   bs_ = 0;
   oc_ = 0;
   layerSize_ = getSize();
@@ -32,7 +35,7 @@ bool MkldnnAddtoLayer::initDnn(const LayerMap& layerMap,
 }
 
 void MkldnnAddtoLayer::clearDataDiff() {
-  reserveOutput(bs_, getSize());
+//  reserveOutput(bs_, getSize());
 }
 
 void MkldnnAddtoLayer::reshape() {
@@ -168,7 +171,7 @@ void MkldnnAddtoLayer::submitDnnFwd(PassType passType) {
 
   /* add the bias-vector */
   if (biases_.get() != NULL) {
-    // TODO(TJ): try to use mkldnn speedup this
+    // TODO(TJ): use mkldnn to speedup this
     getOutputValue()->addBias(*(biases_->getW()), 1);
   }
 
@@ -182,11 +185,15 @@ void MkldnnAddtoLayer::submitDnnBwd(const UpdateCallback& callback) {
     biases_->getWGrad()->collectBias(*getOutputGrad(), 1);
     biases_->getParameterPtr()->incUpdate(callback);
   }
-
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
-    /* Calculate the input layers error */
     MatrixPtr preGrad = getInputGrad(i);
-    if (NULL != preGrad) {
+    if (NULL == preGrad)
+      continue;
+    if (addSize_ == 0) {
+      // directly set the diff, do not copy
+      getPrev(i)->getOutput().grad = getOutput().grad;
+    } else {
+      // TODO(TJ): use mkldnn sum to speedup
       preGrad->add(*getOutputGrad());
     }
   }

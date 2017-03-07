@@ -32,12 +32,12 @@ P_DECLARE_bool(thread_local_rand_use_global_seed);
 P_DECLARE_bool(prev_batch_state);
 
 struct testConvDesc {
-    int bs, gp;
-    int ic, ih, iw;
-    int oc, oh, ow;
-    int kh, kw;
-    int ph, pw;
-    int sh, sw;
+  int bs, gp;
+  int ic, ih, iw;
+  int oc, oh, ow;
+  int kh, kw;
+  int ph, pw;
+  int sh, sw;
 };
 
 void testConvLayer(const testConvDesc& pm) {
@@ -107,12 +107,12 @@ TEST(MkldnnLayer, convLayer) {
 }
 
 struct testPoolDesc {
-    int bs, cl;
-    int ih, iw;
-    int oh, ow;
-    int kh, kw;
-    int ph, pw;
-    int sh, sw;
+  int bs, cl;
+  int ih, iw;
+  int oh, ow;
+  int kh, kw;
+  int ph, pw;
+  int sh, sw;
 };
 
 void testPoolLayer(const string& poolType, const testPoolDesc& pm) {
@@ -175,10 +175,10 @@ TEST(MkldnnLayer, PoolLayer) {
 }
 
 struct testFCDesc {
-    int bs;
-    int ic;
-    int oc;
-    int ih, iw;  // oh == ow == 1
+  int bs;
+  int ic;
+  int oc;
+  int ih, iw;  // oh == ow == 1
 };
 
 void testFcLayer(const testFCDesc& pm) {
@@ -222,9 +222,9 @@ TEST(MkldnnLayer, fcLayer) {
 }
 
 struct testBNDesc {
-    int bs;
-    int ic;
-    int ih, iw;
+  int bs;
+  int ic;
+  int ih, iw;
 };
 
 void testBatchNormLayer(const testBNDesc& pm) {
@@ -285,6 +285,60 @@ TEST(MkldnnLayer, BatchNormLayer) {
   testBatchNormLayer({64, 10, 16, 16});
 }
 
+struct testAddtoDesc {
+  int nInputs;
+  int bs;
+  int ic;
+  int ih, iw;
+};
+
+void testAddtoLayer(const testAddtoDesc& pm) {
+  CHECK_GE(pm.nInputs, 1);
+  TestConfig config;
+  size_t layerSize = pm.ic * pm.ih * pm.iw;
+  config.layerConfig.set_type("mkldnn_addto");
+  config.layerConfig.set_use_mkldnn_wgt(false);  // has no wgt
+  config.layerConfig.set_size(layerSize);
+  for (int idx = 0; idx < pm.nInputs; ++idx) {
+    std::stringstream ss;
+    ss << "layer_" << idx;
+    config.inputDefs.push_back({INPUT_DATA, ss.str(), layerSize, 0});
+  }
+  
+  LayerInputConfig* input = config.layerConfig.add_inputs();
+  for (int idx = 1; idx < pm.nInputs; ++idx) {
+    config.layerConfig.add_inputs();
+  }
+
+  ImageConfig* img_conf = input->mutable_image_conf();
+  img_conf->set_channels(pm.ic);
+  // if image size == 1, do not treat as an image
+  if (pm.iw > 1) {
+    CHECK_EQ(pm.iw, pm.ih);
+    img_conf->set_img_size(pm.iw);
+  }
+  // TODO(TJ): check bias both false and true
+  for (auto biasSize : {0, int(layerSize)}) {
+    config.biasSize = biasSize;
+    // only test functionality, no need to check grad
+    TestConfig ref = config;
+    ref.layerConfig.set_type("addto");
+    std::vector<TestConfig> cfg = {config, ref};
+
+    // TODO(TJ): use {0, 1} if AddToMode ready
+    for (auto addSize : {0}) {
+      config.layerConfig.set_add_size(addSize);
+      testLayerFunc(cfg, pm.bs);
+    }
+  }
+}
+
+
+TEST(MkldnnLayer, AddtoLayer) {
+  testAddtoLayer({3, 64, 128, 1, 1});
+  testAddtoLayer({3, 1, 256, 8, 8});
+}
+
 void testActivation(std::string act, const int bs, const size_t sz) {
   const std::string dnn("mkldnn_");
   CHECK_EQ(act.compare(0, dnn.length(), dnn), 0);
@@ -313,7 +367,7 @@ void testActivation(std::string act, const int bs, const size_t sz) {
 }
 
 TEST(MkldnnLayer, activations) {
-  testActivation("mkldnn_softmax", /* batch_size */ 1, /* size */ 1000);
+  testActivation("mkldnn_softmax", /* batch_size */ 1, /* size */ 1280);
   testActivation("mkldnn_softmax", /* batch_size */ 100, /* size */ 10);
   testActivation("mkldnn_relu", /* batch_size */ 1, /* size */ 100);
   testActivation("mkldnn_relu", /* batch_size */ 100, /* size */ 10);
