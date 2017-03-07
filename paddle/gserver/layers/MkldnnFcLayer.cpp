@@ -16,11 +16,6 @@ limitations under the License. */
 #include "paddle/utils/Stat.h"
 #include "MkldnnFcLayer.h"
 
-// ex fc
-#include "paddle/math/SparseMatrix.h"
-#include <vector>
-#include <algorithm>
-
 using namespace mkldnn;  // NOLINT
 
 namespace paddle {

@@ -30,8 +30,8 @@ protected:
 
   MatrixPtr selfScaleShiftData_;  // scale and shift value, 2*oc
   MatrixPtr selfScaleShiftDiff_;  // scale and shift diff, 2*oc
-  MatrixPtr localMean_;  // m
-  MatrixPtr localVar_;  // v^2
+  MatrixPtr localMean_;  // output of mkldnn: m
+  MatrixPtr localVar_;  // output of mkldnn: v^2
 
   bool useScaleShift_;
   unsigned flags_;
@@ -48,44 +48,11 @@ protected:
   /// Moving average of variance.
   std::unique_ptr<Weight> movingVar_;
 
-  /// Save intermediate results computed during the forward pass,
-  /// these can then be reused to speed up the backward pass.
-  MatrixPtr savedInvVar_;
-
-  /// Height or width of input image feature, now height is equal to width.
-  /// imgSize is 1 if the input is fully-connected layer.
-
-  /// Height * Width.
-  int imgPixels_;
-
   // if useGlobalStats_ is true, will use the loaded mean and variance.
   // otherwise, calculate mean and variance in this mini-batch.
   bool useGlobalStats_;
   // use to compute moving mean and variance.
   real movingAvgFraction_;
-
-  /// Load pre-calculated mean and std.
-  void setMeanAndStd();
-
-  /// Calculate mean and std.
-  void calMeanAndStd(const MatrixPtr& mat);
-
-  /// Calculate moving mean and variance.
-  void calMovingMeanAndVar();
-
-  /// expand a Matrix from batch, channels* imagePixels to
-  /// batch * ImagePixels * channels.
-  void expandMat(const MatrixPtr& in, MatrixPtr& out);
-
-  /// Shrink a Matrix from  from batch * ImagePixels * channels
-  /// to batch, channels* imagePixels.
-  void shrinkMat(const MatrixPtr& in, MatrixPtr& out);
-
-  /// Load mean and variance only once flag.
-  MatrixPtr tmpMat_, tmpGrad_;
-  MatrixPtr expandedIn_, expandedOut_;
-  MatrixPtr expandedInGrad_, expandedOutGrad_, inGrad_;
-  MatrixPtr normIn_, normInGrad_, meanGrad_, stdGrad_;
 
 public:
   explicit MkldnnBatchNormLayer(const LayerConfig& config)
@@ -97,8 +64,6 @@ public:
       mean_(nullptr),
       var_(nullptr),
       diffScaleShift_(nullptr),
-//      diffBias_(nullptr),
-//      bwdWgtPD_(nullptr)
       useScaleShift_(true),
       useGlobalStats_(false)
     {}
@@ -119,6 +84,9 @@ public:
   //  if (diffBias_) diffBias_->clearCvtFlag();
   }
 
+  /// Calculate moving mean and variance.
+  void calMovingMeanAndVar();
+
   void reshape();
 
   void clearDataDiff();
@@ -135,13 +103,8 @@ public:
    * cudnn_batch_norm. If do not set norm_type, it will automatically select
    * cudnn_batch_norm for GPU and batch_norm for CPU.
    */
-  // keep for paddle
+  /// keep for paddle
   static Layer* create(const LayerConfig& config);
-
-private:
-  void myFwd(PassType passType);
-  void exFwd(PassType passType);
-  void exBwd(const UpdateCallback &callback);
 
   void printInfo() {
     for (size_t i = 0; i < iw_.size(); ++i) {

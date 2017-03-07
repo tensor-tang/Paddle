@@ -16,12 +16,6 @@ limitations under the License. */
 #include "paddle/utils/Logging.h"
 #include "paddle/utils/Stat.h"
 #include "MkldnnBatchNormLayer.h"
-#include <string.h>
-
-// ex fc
-#include "paddle/math/SparseMatrix.h"
-#include <vector>
-#include <algorithm>
 
 using namespace mkldnn;  // NOLINT
 
@@ -55,7 +49,7 @@ bool MkldnnBatchNormLayer::initDnn(const LayerMap &layerMap,
     ow_.push_back(inputLayers_[0]->getOutput().getFrameWidth());
     oh_.push_back(inputLayers_[0]->getOutput().getFrameHeight());
   }
-  imgPixels_ = ih_[0] * iw_[0];  // TODO(TJ):  remove when all dnn done
+
   getOutput().setFrameHeight(oh_[0]);
   getOutput().setFrameWidth(ow_[0]);
 
@@ -85,142 +79,19 @@ bool MkldnnBatchNormLayer::initDnn(const LayerMap &layerMap,
     selfScaleShiftData_->zeroMem();
     selfScaleShiftDiff_->zeroMem();
   } else {
+    // TODO:
+    LOG(FATAL) << "do not support mkldnn wgt yet!";
   }
   localMean_ = Matrix::create(1, oc_, false, false);
   localVar_ = Matrix::create(1, oc_, false, false);
   localMean_->zeroMem();
   localVar_->zeroMem();
 
-  savedInvVar_ = Matrix::create(1, oc_, false, useGpu_);
-  savedInvVar_->zeroMem();
-
   return true;
 }
 
-void MkldnnBatchNormLayer::calMeanAndStd(const MatrixPtr& mat) {
-  int numSamples = mat->getHeight();
-  Matrix::resizeOrCreate(tmpMat_, numSamples, oc_, false, useGpu_);
-  localMean_->zeroMem();
-  localMean_->accumulateColSum(*mat);
-  localMean_->mulScalar(1.0 / numSamples);  // E[x]
-
-  tmpMat_->assign(*mat);
-  tmpMat_->square();
-  savedInvVar_->zeroMem();
-  savedInvVar_->accumulateColSum(*tmpMat_);
-  savedInvVar_->mulScalar(1.0 / numSamples);  // E[x^2]
-  savedInvVar_->addSquare(*localMean_, -1.0);      // E[x^2] - E^2[x]
-
-  // Variance may be small negative value
-  // because of the subtraction operation.
-  // Here using clipping.
-  savedInvVar_->downClip(real(0.0));
-
-// LOG(INFO) << "ex mean var" << localMean_->getData()[1]
-// << "," << savedInvVar_->getData()[1];
-
-  calMovingMeanAndVar();
-
-  savedInvVar_->subScalar(-EPS);
-  savedInvVar_->sqrt(*savedInvVar_);
-}
-
-void MkldnnBatchNormLayer::calMovingMeanAndVar() {
-  // calculating and saving moving mean and variance
-  MatrixPtr movingMean = movingMean_->getW();
-  MatrixPtr movingVar = movingVar_->getW();
-
-  if (!useGpu_ && FLAGS_trainer_count > 1) {
-    auto mvMean = std::dynamic_pointer_cast<SharedCpuMatrix>(movingMean);
-    auto mvVar = std::dynamic_pointer_cast<SharedCpuMatrix>(movingVar);
-    CHECK(mvMean && mvVar);
-
-    mvMean->add(*localMean_, movingAvgFraction_, 1.0 - movingAvgFraction_);
-    mvVar->add(*savedInvVar_, movingAvgFraction_, 1.0 - movingAvgFraction_);
-  } else {
-    // movingMean =  movingMean * movingAvgFraction_
-    //            + savedMean_ * (1 - movingAvgFraction_)
-    movingMean->add(*localMean_, movingAvgFraction_, 1.0 - movingAvgFraction_);
-    // movingVar =  movingVar * movingAvgFraction_
-    //           + savedInvVar_ * (1 - movingAvgFraction_)
-    movingVar->add(*savedInvVar_, movingAvgFraction_, 1.0 - movingAvgFraction_);
-  }
-}
-
-void MkldnnBatchNormLayer::setMeanAndStd() {
-  localMean_->copyFrom(*(movingMean_->getW()));
-  savedInvVar_->copyFrom(*(movingVar_->getW()));
-
-  savedInvVar_->downClip(real(0.0));
-
-  savedInvVar_->subScalar(-EPS);
-  savedInvVar_->sqrt(*savedInvVar_);
-}
-
-void MkldnnBatchNormLayer::expandMat(const MatrixPtr& in, MatrixPtr& out) {
-  CHECK_EQ(in->getWidth(), static_cast<size_t>(oc_ * imgPixels_));
-  CHECK_EQ(out->getWidth(), static_cast<size_t>(oc_));
-  CHECK(!in->isTransposed());
-  CHECK(!out->isTransposed());
-  if (imgPixels_ == 1) {
-    out->assign(*in);
-    return;
-  }
-  size_t batchSize = in->getHeight();
-  CHECK_EQ(out->getHeight(), batchSize * imgPixels_);
-  if (useGpu_) {
-#ifdef PADDLE_ONLY_CPU
-    LOG(FATAL) << "paddle is compiled only for cpu";
-#else
-    batchTranspose(in->getData(), out->getData(), imgPixels_,
-                   channels_, batchSize);
-#endif
-  } else {
-    for (size_t i = 0; i < batchSize; i++) {
-      const MatrixPtr inTmp =
-          Matrix::create(in->getData() + i * imgPixels_ * oc_, oc_,
-                         imgPixels_, false, useGpu_);
-      MatrixPtr outTmp =
-          Matrix::create(out->getData() + i * imgPixels_ * oc_,
-                         imgPixels_, oc_, false, useGpu_);
-      inTmp->transpose(outTmp, false);
-    }
-  }
-}
-
-void MkldnnBatchNormLayer::shrinkMat(const MatrixPtr& in, MatrixPtr& out) {
-  CHECK_EQ(in->getWidth(), static_cast<size_t>(oc_));
-  CHECK_EQ(out->getWidth(), static_cast<size_t>(oc_ * imgPixels_));
-  size_t batchSize = out->getHeight();
-  CHECK(!in->isTransposed());
-  CHECK(!out->isTransposed());
-  if (imgPixels_ == 1) {
-    out->assign(*in);
-    return;
-  }
-  CHECK_EQ(in->getHeight(), static_cast<size_t>(batchSize * imgPixels_));
-  if (useGpu_) {
-#ifdef PADDLE_ONLY_CPU
-    LOG(FATAL) << "paddle is compiled only for cpu";
-#else
-    batchTranspose(in->getData(), out->getData(), oc_,
-                   imgPixels_, batchSize);
-#endif
-  } else {
-    for (size_t i = 0; i < batchSize; i++) {
-      const MatrixPtr inTmp =
-          Matrix::create(in->getData() + i * oc_ * imgPixels_, imgPixels_,
-                         oc_, false, useGpu_);
-      MatrixPtr outTmp =
-          Matrix::create(out->getData() + i * imgPixels_ * oc_, oc_,
-                         imgPixels_, useGpu_);
-      inTmp->transpose(outTmp, false);
-    }
-  }
-}
-
 void MkldnnBatchNormLayer::clearDataDiff() {
-  resetOutput(bs_, getSize());
+//  resetOutput(bs_, getSize());
 }
 
 void MkldnnBatchNormLayer::reshape() {
@@ -421,7 +292,7 @@ void MkldnnBatchNormLayer::resetDnnBwd() {
       VLOG(4) << "use prev diff fmt: " << DNN_FMTS[diffTop_->getUserFmt()];
     }
   }
-  // 3. create backward desc ----------------------------------------
+  // 3. create backward desc ---------------------------------------------------
   std::shared_ptr<batch_normalization_backward::desc> bwdDesc;
   std::shared_ptr<batch_normalization_backward::primitive_desc> bwdPD;
   bwdDesc.reset(new batch_normalization_backward::desc(prop_kind::backward,
@@ -463,243 +334,81 @@ void MkldnnBatchNormLayer::resetDnnBwd() {
         *diffTop_->getIntlMem(), *diffBot_->getIntlMem()));
 }
 
-void MkldnnBatchNormLayer::myFwd(PassType passType) {
-  real *botdata = getPrev(0)->getOutputValue()->getData();
-  real *topdata = getOutputValue()->getData();
+void MkldnnBatchNormLayer::calMovingMeanAndVar() {
+  // calculating and saving moving mean and variance
+  CHECK_EQ(useGlobalStats_, false);
+  MatrixPtr movingMean = movingMean_->getW();
+  MatrixPtr movingVar = movingVar_->getW();
+  if (!useGpu_ && FLAGS_trainer_count > 1) {
+    auto mvMean = std::dynamic_pointer_cast<SharedCpuMatrix>(movingMean);
+    auto mvVar = std::dynamic_pointer_cast<SharedCpuMatrix>(movingVar);
+    CHECK(mvMean && mvVar);
+    mvMean->add(*localMean_, movingAvgFraction_, 1.0 - movingAvgFraction_);
+    mvVar->add(*localVar_, movingAvgFraction_, 1.0 - movingAvgFraction_);
+  } else {
+    movingMean->add(*localMean_, movingAvgFraction_, 1.0 - movingAvgFraction_);
+    // here var is v^2
+    movingVar->add(*localVar_, movingAvgFraction_, 1.0 - movingAvgFraction_);
+  }
+}
+
+void MkldnnBatchNormLayer::submitDnnFwd(PassType passType) {
+  real *botData = getPrev(0)->getOutputValue()->getData();
+  real *topData = getOutputValue()->getData();
 
   std::vector<primitive> pipeline;
   // data bottom
-  dataBot_->submitCvt(pipeline, botdata);
+  dataBot_->submitCvt(pipeline, botData);
 
   // prepare weight data of scale and shift
   if (useScaleShift_) {
-    real *wgtdata;
+    real *wgtData = useMkldnnWgt_ ? weight_->getW()->getData()
+      : selfScaleShiftData_->getData();
     if (!useMkldnnWgt_) {
       // copy data from paddle weight and bias
       memcpy(selfScaleShiftData_->getData(), weight_->getW()->getData(),
         sizeof(real) * oc_);
       memcpy(selfScaleShiftData_->getData() + oc_, biases_->getW()->getData(),
         sizeof(real) * oc_);
-      wgtdata = selfScaleShiftData_->getData();
-    } else {
-      wgtdata = weight_->getW()->getData();
     }
-    dataScaleShift_->submitCvt(pipeline, wgtdata);
+    dataScaleShift_->submitCvt(pipeline, wgtData);
   }
-
   pipeline.push_back(*fwd_);
-
-  dataTop_->submitCvt(pipeline, topdata);
-/* LOG(INFO) << botdata[1] << "," << localMean_->getData()[1]
- << "," << localVar_->getData()[1] << ","
- << selfScaleShiftData_->getData()[1] << topdata[1];*/
-
+  dataTop_->submitCvt(pipeline, topData);
   stream(stream::kind::eager).submit(pipeline).wait();
 
   // calculating and saving moving mean and variance
   if (passType != PASS_TEST) {
-    // LOG(INFO) << "cal moving .............. should not in testing";
-    CHECK(useGlobalStats_ == false);
-    MatrixPtr movingMean = movingMean_->getW();
-    MatrixPtr movingVar = movingVar_->getW();
-    if (!useGpu_ && FLAGS_trainer_count > 1) {
-      auto mvMean = std::dynamic_pointer_cast<SharedCpuMatrix>(movingMean);
-      auto mvVar = std::dynamic_pointer_cast<SharedCpuMatrix>(movingVar);
-      CHECK(mvMean && mvVar);
-      mvMean->add(*localMean_, movingAvgFraction_, 1.0 - movingAvgFraction_);
-      mvVar->add(*localVar_, movingAvgFraction_, 1.0 - movingAvgFraction_);
-    } else {
-      movingMean->add(
-        *localMean_, movingAvgFraction_, 1.0 - movingAvgFraction_);
-      // here var is v^2
-      movingVar->add(*localVar_, movingAvgFraction_, 1.0 - movingAvgFraction_);
-    }
-  }
-/*  if (passType != PASS_TEST)
-//    LOG(INFO) << "my mean var" << localMean_->getData()[1] << "," << localVar_->getData()[1];
-//  LOG(INFO) << "my ------------" << topdata[0] << "," << topdata[1] << "," << topdata[2] << "," << topdata[oc_*oh_[0]*ow_[0]-1];
-*/
-}
-
-void MkldnnBatchNormLayer::exFwd(PassType passType) {
-  int batchSize = getInputValue(0)->getHeight();
-  // for testing in training peroid
-  useGlobalStats_ = (passType == PASS_TEST);
-  if (passType == PASS_TEST && config_.has_use_global_stats()) {
-    useGlobalStats_ = config_.use_global_stats();
+    calMovingMeanAndVar();
   }
 
-  Matrix::resizeOrCreate(expandedIn_, batchSize * imgPixels_, oc_, false,
-                         useGpu_);
-  Matrix::resizeOrCreate(normIn_, batchSize * imgPixels_, oc_, false,
-                         useGpu_);
-  Matrix::resizeOrCreate(expandedOut_, batchSize * imgPixels_, oc_, false,
-                         useGpu_);
-  expandMat(getInputValue(0), expandedIn_);
-/*
-  if (useGlobalStats_) {
-    if (firstTest_) {
-      setMeanAndStd();
-      firstTest_ = false;
-    }
-  } else {
-    calMeanAndStd(expandedIn_);
-    firstTest_ = true;
-  }
-  */
-  normIn_->assign(*expandedIn_);
-  normIn_->addBias(*localMean_, -1);  // subtract mean.
-  normIn_->divRowVector(*savedInvVar_);  // divide std.
-  expandedOut_->assign(*normIn_);
-
-/*  if (!useEx_){
-    LOG(INFO) << localMean_->getData()[1] << "," << savedInvVar_->getData()[1] << "," << normIn_->getData()[1];
-  }*/
-  expandedOut_->mulRowVector(*weight_->getW());  // multiple gamma.
-  if (biases_) {
-    expandedOut_->addBias(*(biases_->getW()), 1);  // add beta.
-  }
-/*
-  if (useEx_) {
-    // acutal in use
-    MatrixPtr out = getOutputValue();
-    shrinkMat(expandedOut_, out);
-  } else {
-    // just for my test to compare with my result
-    // can be remove when finish this layer
-    MatrixPtr out = Matrix::create(bs_, oc_*oh_[0]*ow_[0], false, false);
-    // MatrixPtr out = getOutputValue();
-    shrinkMat(expandedOut_, out);
-//  real *topdata = out->getData();
-//  LOG(INFO) << "ex ------------" << topdata[0] << "," << topdata[1] << "," << topdata[2] << "," << topdata[oc_*oh_[0]*ow_[0]-1];
-  }*/
-}
-
-void MkldnnBatchNormLayer::submitDnnFwd(PassType passType) {
-  //  exFwd(passType);
-  myFwd(passType);
-
-/*
-{ // check mean and var
-  localVar_->sqrt(*localVar_);  // mkldnn var is v^2
-  LOG(INFO) << "my mean var:" << localMean_->getData()[1] << "," << localVar_->getData()[1] << "," << selfScaleShiftData_->getData()[1];
-  
-  localMean_->zeroMem();
-    Matrix::resizeOrCreate(expandedIn_, bs_ * imgPixels_, oc_, false,
-                         useGpu_);
-  expandMat(getInputValue(0), expandedIn_);
-  calMeanAndStd(expandedIn_);
-  
- LOG(INFO) << "ex mean var:" << localMean_->getData()[1] << "," << savedInvVar_->getData()[1] << "," << selfScaleShiftData_->getData()[1];
-  }
-*/
   // activation
   forwardActivation();
-}
-
-void MkldnnBatchNormLayer::exBwd(const UpdateCallback &callback) {
-  int batchSize = getInputValue(0)->getHeight();
-
-  Matrix::resizeOrCreate(meanGrad_, 1, oc_, false, useGpu_);
-  Matrix::resizeOrCreate(stdGrad_, 1, oc_, false, useGpu_);
-
-  Matrix::resizeOrCreate(expandedInGrad_, batchSize * imgPixels_, oc_,
-                         false, useGpu_);
-  Matrix::resizeOrCreate(inGrad_, batchSize, imgPixels_ * oc_, false,
-                         useGpu_);
-  Matrix::resizeOrCreate(normInGrad_, batchSize * imgPixels_, oc_, false,
-                         useGpu_);
-  Matrix::resizeOrCreate(expandedOutGrad_, batchSize * imgPixels_, oc_,
-                         false, useGpu_);
-  Matrix::resizeOrCreate(tmpMat_, batchSize * imgPixels_, oc_, false,
-                         useGpu_);
-  Matrix::resizeOrCreate(tmpGrad_, batchSize * imgPixels_, oc_, false,
-                         useGpu_);
-  if (true) {
-    // when use mkldnn should  prepare some matrix for ex Bwd
-    Matrix::resizeOrCreate(normIn_, bs_ * imgPixels_, oc_, false, useGpu_);
-    Matrix::resizeOrCreate(expandedIn_, bs_ * imgPixels_, oc_, false, useGpu_);
-    savedInvVar_->copyFrom(*localVar_);
-    savedInvVar_->sqrt(*savedInvVar_);
-    expandMat(getInputValue(0), expandedIn_);
-    normIn_->assign(*expandedIn_);
-    normIn_->addBias(*localMean_, -1);  // subtract mean.
-    normIn_->divRowVector(*savedInvVar_);  // divide std.
-// LOG(INFO) << localMean_->getData()[1] << ","
-// << savedInvVar_->getData()[1] << "," << normIn_->getData()[1];
-  }
-  expandMat(getOutputGrad(), expandedOutGrad_);
-  // compute derivatives.
-  if (biases_ && biases_->getWGrad()) {
-    biases_->getWGrad()->collectBias(*expandedOutGrad_, 1);
-//    biases_->getParameterPtr()->incUpdate(callback);
-  }
-  if (weight_->getWGrad()) {
-    tmpMat_->dotMul(*expandedOutGrad_, *normIn_);
-    weight_->getWGrad()->collectBias(*tmpMat_, 1);
-  }
-
-  // compute input gradients.
-  normInGrad_->assign(*expandedOutGrad_);
-  normInGrad_->mulRowVector(*(weight_->getW()));  // multiple gamma.
-  // normInGrad * (x - \mu)/ \sqrt(\delta^2)
-  tmpMat_->dotMul(*normInGrad_, *normIn_);
-  stdGrad_->zeroMem();
-  stdGrad_->collectBias(*tmpMat_, -1.0 / (batchSize * imgPixels_));
-  tmpGrad_->assign(*normIn_);
-  tmpGrad_->mulRowVector(*stdGrad_);
-
-  meanGrad_->zeroMem();
-  meanGrad_->collectBias(*normInGrad_, -1.0 / (batchSize * imgPixels_));
-
-  expandedInGrad_->zeroMem();
-  expandedInGrad_->add(*normInGrad_, *tmpGrad_);
-  expandedInGrad_->addRowVector(*meanGrad_);
-  expandedInGrad_->divRowVector(*savedInvVar_);
-
-  shrinkMat(expandedInGrad_, inGrad_);
-  if (getInputGrad(0)) {
-    getInputGrad(0)->add(*getInputGrad(0), *inGrad_);
-  }
-  {
-//    weight_->getParameterPtr()->incUpdate(callback);
-  }
 }
 
 void MkldnnBatchNormLayer::submitDnnBwd(const UpdateCallback &callback) {
   backwardActivation();
 
-//  exBwd(nullptr);
+  real* botData = getPrev(0)->getOutputValue()->getData();
+  real* topDiff = getOutputGrad()->getData();
+  real* botDiff = getPrev(0)->getOutputGrad()->getData();
 
-  real* botdata = getPrev(0)->getOutputValue()->getData();
-  real* topdiff = getOutputGrad()->getData();
-  real* botdiff = getPrev(0)->getOutputGrad()->getData();
-/*  LOG(INFO) << "-------ex botdiff wgtdiff:" << botdiff[0]
-<< "," << botdiff[1] << "," << weight_->getWGrad()->getData()[0]
-<< "," << weight_->getWGrad()->getData()[1] << ","
-<< biases_->getWGrad()->getData()[0] << ","
-<< biases_->getWGrad()->getData()[1];*/
   std::vector<primitive> pipeline;
-  // push inputs
-  diffTop_->submitCvt(pipeline, topdiff);
-  dataBot_->submitCvt(pipeline, botdata);
+  diffTop_->submitCvt(pipeline, topDiff);
+  dataBot_->submitCvt(pipeline, botData);
   if (useScaleShift_) {
     real *wgtdata = useMkldnnWgt_ ? weight_->getW()->getData()
       : selfScaleShiftData_->getData();
     dataScaleShift_->submitCvt(pipeline, wgtdata);
   }
-  // then add bwd
   pipeline.push_back(*bwd_);
-  // output bot diff
-  diffBot_->submitCvt(pipeline, botdiff);
+  diffBot_->submitCvt(pipeline, botDiff);
   // output scaleshift diff
   if (useScaleShift_) {
     real *wgtdiff = useMkldnnWgt_ ? weight_->getWGrad()->getData()
       : selfScaleShiftDiff_->getData();
     diffScaleShift_->submitCvt(pipeline, wgtdiff);
   }
-//  LOG(INFO) << "size:" << pipeline.size() << "== 1 or 3";
-  // execute pipeline
   stream(stream::kind::eager).submit(pipeline).wait();
 
   // update diff
@@ -710,11 +419,6 @@ void MkldnnBatchNormLayer::submitDnnBwd(const UpdateCallback &callback) {
         selfScaleShiftDiff_->getData(), sizeof(real) * oc_);
       memcpy(biases_->getWGrad_mutable()->getData(),
         selfScaleShiftDiff_->getData() + oc_, sizeof(real) * oc_);
-/*  LOG(INFO) << "-------my botdiff wgtdiff:" << botdiff[0] << "," << botdiff[1]
-<< "," <<weight_->getWGrad()->getData()[0] << ","
-<< weight_->getWGrad()->getData()[1] << ","
-<< biases_->getWGrad()->getData()[0] << ","
-<< biases_->getWGrad()->getData()[1];*/
       weight_->getParameterPtr()->incUpdate(callback);
       biases_->getParameterPtr()->incUpdate(callback);
     } else {
