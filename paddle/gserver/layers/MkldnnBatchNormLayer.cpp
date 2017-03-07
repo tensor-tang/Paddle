@@ -62,7 +62,7 @@ bool MkldnnBatchNormLayer::initDnn(const LayerMap &layerMap,
   if (config_.has_use_global_stats()) {
     useGlobalStats_ = config_.use_global_stats();
   }
-  LOG(INFO) << "--- " << (useGlobalStats_ ? "use" : "do not use")
+  VLOG(1) << "--- " << (useGlobalStats_ ? "use" : "do not use")
     << " --- global stats";
 
   if (!useMkldnnWgt_) {

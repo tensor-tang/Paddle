@@ -157,7 +157,6 @@ void MkldnnConcatLayer::myFwd(PassType passType) {
   dataTop_->submitCvt(pipeline, topdata);
 
   // start forward
-  REGISTER_TIMER_INFO("mkldnnPoolFwd", getName().c_str());
   stream(stream::kind::eager).submit(pipeline).wait();
 //  LOG(INFO) << "------------my" << topdata[0]
 //    << "," << topdata[1] << "," << topdata[2];
