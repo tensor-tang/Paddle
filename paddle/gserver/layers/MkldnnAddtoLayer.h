@@ -65,6 +65,7 @@ public:
   void submitDnnBwd(const UpdateCallback& callback);
 
   void printInfo() {
+    VLOG(1) << "sum number: " << dataBottoms_.size();
     for (size_t i = 0; i < ic_.size(); ++i) {
       VLOG(2)
         << "ic: " << ic_[i]

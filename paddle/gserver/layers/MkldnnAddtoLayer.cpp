@@ -108,8 +108,10 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
     dataBottoms_[i]->initUser(botData, botDims_[i], botFmt_[i], eg);
     const std::shared_ptr<memory::desc> prvMD = getPrev(i)->getTopDataMD();
     if (prvMD) {
+      // this layer support both nc and internal format
       dataBottoms_[i]->resetUser(botData, *prvMD, eg);
-      VLOG(4) << "use prev format: " << DNN_FMTS[dataBottoms_[i]->getUserFmt()];
+      VLOG(4) << "use prev data fmt: "
+        << DNN_FMTS[dataBottoms_[i]->getUserFmt()];
       prvMDs.push_back(prvMD);
     }
     botPDs.push_back(dataBottoms_[i]->getUserPD());
@@ -121,24 +123,24 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
   }
   // check all inputs format should be the same
   CHECK(prvMDs.size() == 0 || prvMDs.size() == inputLayers_.size())
-    << "input format size does not match: "
+    << "intl input size does not match: "
     << prvMDs.size() << " vs " << inputLayers_.size();
-  if (prvMDs.size() > 1) {
-    for (size_t i = 1; i < prvMDs.size(); ++i) {
-      CHECK(compareMD(*(prvMDs[i-1]), *(prvMDs[i])))
-        << "all input formats should be the same";
-    }
+  for (size_t i = 1; i < prvMDs.size(); ++i) {
+    CHECK(compareMD(*(prvMDs[i-1]), *(prvMDs[i])))
+      << "all input formats should be the same";
   }
+  
 
   // 3. create fwd PD
   std::shared_ptr<sum::primitive_desc> fwdPD;
   fwdPD.reset(new sum::primitive_desc(
     prvMDs.size() > 0 ? *(prvMDs[0]) : getAnyMD(topDims_), scales_, botPDs));
+  // reset top user using internal fmt if next is dnn
   if (setDnnTopDataFmt_) {
     // fwdPD should be init with any type before, if in here.
     dataTop_->resetUser(topData, fwdPD->dst_primitive_desc());
     setTopDataMD(dataTop_->getUserMD());
-    VLOG(4) << "set next format: " << DNN_FMTS[dataTop_->getUserFmt()];
+    VLOG(4) << "set next data fmt: " << DNN_FMTS[dataTop_->getUserFmt()];
   }
 
   // 4. init top cvt

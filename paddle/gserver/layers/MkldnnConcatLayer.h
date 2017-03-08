@@ -21,15 +21,19 @@ protected:
   // std::shared_ptr<convolution_backward_data::primitive_desc> bwdDataPD_;
   // std::shared_ptr<convolution_backward_weights::primitive_desc> bwdWgtPD_;
   std::vector<MkldnnBufferPtr> dataBottoms_;
-
-  int num_concats_;
+  
+  /*** concat_dimension in MKLDNN
+   * if axis_ == 0, concat batchsize
+   * if axis_ == 1, concat channel (default)
+   */
+  size_t axis_;
 
 
 public:
   explicit MkldnnConcatLayer(const LayerConfig& config)
     : MkldnnLayer(config),
       fwd_(nullptr),
-      num_concats_(0)
+      axis_(1)
 //      bwdWgtPD_(nullptr)
     {}
 
@@ -63,7 +67,7 @@ private:
   void exBwd(const UpdateCallback &callback);
 
   void printInfo() {
-    VLOG(1) << "concats number: " << num_concats_;
+    VLOG(1) << "concats number: " << dataBottoms_.size();
     for (size_t i = 0; i < iw_.size(); ++i) {
       VLOG(2)
         << "ih: " << ih_[i] << ", iw: " << iw_[i]
