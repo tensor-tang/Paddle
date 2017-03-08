@@ -92,12 +92,13 @@ void testConvLayer(const testConvDesc& pm) {
   // TODO(TJ): use {0, 1} if AddToMode ready
   for (auto addSize : {0}) {
     config.layerConfig.set_add_size(addSize);
-    testLayerFunc(cfg, pm.bs);
+    for (auto bs : {1, pm.bs}) {
+      testLayerFunc(cfg, bs);
+    }
   }
 }
 
 TEST(MkldnnLayer, convLayer) {
-  testConvLayer({1, 1, 3, 32, 32, 64, 32, 32, 3, 3, 1, 1, 1, 1});
   testConvLayer({64, 1, 3, 32, 32, 64, 32, 32, 3, 3, 1, 1, 1, 1});
   testConvLayer({100, 1, 8, 32, 32, 64, 32, 32, 3, 3, 1, 1, 1, 1});
   testConvLayer({128, 1, 64, 14, 14, 32, 14, 14, 3, 3, 1, 1, 1, 1});
@@ -162,7 +163,9 @@ void testPoolLayer(const string& poolType, const testPoolDesc& pm) {
   // TODO(TJ): use {0, 1} if AddToMode ready
   for (auto addSize : {0}) {
     config.layerConfig.set_add_size(addSize);
-    testLayerFunc(cfg, pm.bs);
+    for (auto bs : {1, pm.bs}) {
+      testLayerFunc(cfg, bs);
+    }
   }
 }
 
@@ -170,7 +173,6 @@ TEST(MkldnnLayer, PoolLayer) {
   testPoolLayer("max-projection", {10, 64, 32, 32, 16, 16, 2, 2, 0, 0, 2, 2});
   testPoolLayer("max-projection", {100, 16, 14, 14, 7, 7, 3, 3, 0, 0, 2, 2});
   testPoolLayer("max-projection", {64, 192, 56, 56, 28, 28, 3, 3, 0, 0, 2, 2});
-  testPoolLayer("max-projection", {1, 64, 56, 56, 28, 28, 3, 3, 0, 0, 2, 2});
 //  testPoolLayer("avg-projection");
 }
 
@@ -201,7 +203,9 @@ void testFcLayer(const testFCDesc& pm) {
   // TODO(TJ): use {0, 1} if AddToMode ready
   for (auto addSize : {0}) {
     config.layerConfig.set_add_size(addSize);
-    testLayerFunc(cfg, pm.bs);
+    for (auto bs : {1, pm.bs}) {
+      testLayerFunc(cfg, bs);
+    }
   }
 
   // test layer grad
@@ -216,7 +220,6 @@ void testFcLayer(const testFCDesc& pm) {
 
 TEST(MkldnnLayer, fcLayer) {
   testFcLayer({100, 512, 128, 1, 1});
-  testFcLayer({1, 8, 16, 1, 1});
 // TODO(TJ): test iw and ih both > 1
 // do not support sparse yet
 }
@@ -265,7 +268,9 @@ void testBatchNormLayer(const testBNDesc& pm) {
     // TODO(TJ): use {0, 1} if AddToMode ready
     for (auto addSize : {0}) {
       config.layerConfig.set_add_size(addSize);
-      testLayerFunc(cfg, pm.bs);
+      for (auto bs : {1, pm.bs}) {
+        testLayerFunc(cfg, bs);
+      }
     }
   }
 
@@ -328,7 +333,9 @@ void testAddtoLayer(const testAddtoDesc& pm) {
     // TODO(TJ): use {0, 1} if AddToMode ready
     for (auto addSize : {0}) {
       config.layerConfig.set_add_size(addSize);
-      testLayerFunc(cfg, pm.bs);
+      for (auto bs : {1, pm.bs}) {
+        testLayerFunc(cfg, bs);
+      }
     }
   }
 }
@@ -336,10 +343,15 @@ void testAddtoLayer(const testAddtoDesc& pm) {
 
 TEST(MkldnnLayer, AddtoLayer) {
   testAddtoLayer({3, 64, 128, 1, 1});
-  testAddtoLayer({3, 1, 256, 8, 8});
+  testAddtoLayer({3, 64, 100, 8, 8});
 }
 
-void testActivation(std::string act, const int bs, const size_t sz) {
+struct testActDesc {
+  int bs;
+  int sz;
+};
+
+void testActivation(std::string act, const testActDesc& pm) {
   const std::string dnn("mkldnn_");
   CHECK_EQ(act.compare(0, dnn.length(), dnn), 0);
   LOG(INFO) << "test activation: " << act;
@@ -347,12 +359,12 @@ void testActivation(std::string act, const int bs, const size_t sz) {
   TestConfig config;
   config.biasSize = 0;
   config.layerConfig.set_type("addto");
-  config.layerConfig.set_size(sz);
+  config.layerConfig.set_size(pm.sz);
   config.layerConfig.set_active_type(act);
-  config.inputDefs.push_back({INPUT_DATA, "layer_0", sz, 0});
+  config.inputDefs.push_back({INPUT_DATA, "layer_0", size_t(pm.sz), 0});
   config.layerConfig.add_inputs();
   // test gradient
-  testLayerGrad(config, act + "_activation", bs, false, false, true);
+  testLayerGrad(config, act + "_activation", pm.bs, false, false, true);
 
   // test functionality
   TestConfig ref = config;
@@ -362,15 +374,15 @@ void testActivation(std::string act, const int bs, const size_t sz) {
   // TODO(TJ): use {0, 1} if AddToMode ready
   for (auto addSize : {0}) {
     config.layerConfig.set_add_size(addSize);
-    testLayerFunc(cfg, bs);
+    for (auto bs : {1, pm.bs}) {
+      testLayerFunc(cfg, bs);
+    }
   }
 }
 
 TEST(MkldnnLayer, activations) {
-  testActivation("mkldnn_softmax", /* batch_size */ 1, /* size */ 1280);
-  testActivation("mkldnn_softmax", /* batch_size */ 100, /* size */ 10);
-  testActivation("mkldnn_relu", /* batch_size */ 1, /* size */ 100);
-  testActivation("mkldnn_relu", /* batch_size */ 100, /* size */ 10);
+  testActivation("mkldnn_softmax", {100, 1000});
+  testActivation("mkldnn_relu", {100, 1000});
 }
 
 int main(int argc, char** argv) {
