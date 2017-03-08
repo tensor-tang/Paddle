@@ -75,10 +75,6 @@ public:
   }
 
 private:
-  int getMDFmt(const mkldnn::memory::desc & md) {
-    return md.data.format;
-  }
-
   int getMDDimSize(const mkldnn::memory::desc & md) {
     return md.data.ndims;
   }
@@ -87,7 +83,8 @@ private:
   bool compareMD(const mkldnn::memory::desc & md1,
     const mkldnn::memory::desc & md2) {
     // skip mkldnn_primitive_kind_t and mkldnn_blocking_desc_t comparasion
-    if (getMDFmt(md1) != getMDFmt(md2)) return false;
+    if (MkldnnBuffer::getMDFmt(md1) != MkldnnBuffer::getMDFmt(md2))
+      return false;
     int ndims = getMDDimSize(md1);
     if (ndims != getMDDimSize(md2)) return false;
     bool res = true;
@@ -96,7 +93,6 @@ private:
     }
     return res && (md1.data.data_type == md2.data.data_type);
   }
-
 };
 
 }  // namespace paddle

@@ -90,6 +90,7 @@ public:
     pUser_.reset(new mkldnn::memory(pd, pdata));
   }
 
+  /// functions for getting infos
   size_t getSize(size_t sz) {
     size_t unit;
     switch (tp_) {
@@ -142,21 +143,26 @@ public:
     return pUser_->get_primitive_desc().desc();
   }
 
-  // get user memory format
-  int getUserFmt() {
-    CHECK(pUser_) << "haven't init user layout";
-    return getUserMD().data.format;
+  // get format from MD
+  static int getMDFmt(const mkldnn::memory::desc& md) {
+    return md.data.format;
   }
 
   // get format from PD
-  int getFmt(mkldnn::memory::primitive_desc pd) {
+  static int getPDFmt(mkldnn::memory::primitive_desc pd) {
     return pd.desc().data.format;
+  }
+
+  // get user memory format
+  int getUserFmt() {
+    CHECK(pUser_) << "haven't init user layout";
+    return getMDFmt(getUserMD());
   }
 
   // get user memory format
   int getIntlFmt() {
     CHECK(pIntl_) << "haven't init internal layout, call initUser then initCvt";
-    return getIntlMD().data.format;
+    return getMDFmt(getIntlMD());
   }
 
   // get internal data handle

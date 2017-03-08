@@ -171,7 +171,12 @@ void MkldnnAddtoLayer::submitDnnFwd(PassType passType) {
 
   /* add the bias-vector */
   if (biases_.get() != NULL) {
-    // TODO(TJ): use mkldnn to speedup this
+    // TODO(TJ): try to use mkldnn
+    if (dataTop_->getIntlFmt() != topFmt_) {
+      // not nc or nchw
+      LOG(FATAL) << "not implemented with internal format";
+    }
+    LOG(WARNING) << "not speedup with MKLDNN yet";
     getOutputValue()->addBias(*(biases_->getW()), 1);
   }
 
@@ -181,7 +186,12 @@ void MkldnnAddtoLayer::submitDnnFwd(PassType passType) {
 void MkldnnAddtoLayer::submitDnnBwd(const UpdateCallback& callback) {
   backwardActivation();
   if (biases_ && biases_->getWGrad()) {
-    // TODO(TJ): try to use mkldnn speedup this
+    // TODO(TJ): try to use mkldnn
+    const std::shared_ptr<mkldnn::memory::desc> prvMD = getTopDiffMD();
+    if (prvMD && MkldnnBuffer::getMDFmt(*prvMD) != topFmt_) {
+      LOG(FATAL) << "not implemented with internal format";
+    }
+    LOG(WARNING) << "not speedup with MKLDNN yet";
     biases_->getWGrad()->collectBias(*getOutputGrad(), 1);
     biases_->getParameterPtr()->incUpdate(callback);
   }
@@ -193,7 +203,12 @@ void MkldnnAddtoLayer::submitDnnBwd(const UpdateCallback& callback) {
       // directly set the diff, do not copy
       getPrev(i)->getOutput().grad = getOutput().grad;
     } else {
-      // TODO(TJ): use mkldnn sum to speedup
+      const std::shared_ptr<mkldnn::memory::desc> prvMD = getTopDiffMD();
+      if (prvMD && MkldnnBuffer::getMDFmt(*prvMD) != topFmt_) {
+        LOG(FATAL) << "not implemented when addsize > 0 with internal format";
+      }
+      LOG(WARNING) << "not speedup with MKLDNN yet";
+      // TODO(TJ): try to use mkldnn
       preGrad->add(*getOutputGrad());
     }
   }
