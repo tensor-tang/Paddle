@@ -11,30 +11,26 @@
 namespace paddle {
 
 /**
- * @brief A subclass of pool layer.
+ * @brief A subclass of concat layer.
  *
  * The config file api is 
  */
 class MkldnnConcatLayer : public MkldnnLayer {
 protected:
   std::shared_ptr<mkldnn::concat::primitive> fwd_;
-  // std::shared_ptr<convolution_backward_data::primitive_desc> bwdDataPD_;
-  // std::shared_ptr<convolution_backward_weights::primitive_desc> bwdWgtPD_;
   std::vector<MkldnnBufferPtr> dataBottoms_;
-  
+
   /*** concat_dimension in MKLDNN
    * if axis_ == 0, concat batchsize
    * if axis_ == 1, concat channel (default)
    */
   size_t axis_;
 
-
 public:
   explicit MkldnnConcatLayer(const LayerConfig& config)
     : MkldnnLayer(config),
       fwd_(nullptr),
       axis_(1)
-//      bwdWgtPD_(nullptr)
     {}
 
   ~MkldnnConcatLayer() {}
@@ -60,11 +56,6 @@ public:
   void submitDnnFwd(PassType passType);
 
   void submitDnnBwd(const UpdateCallback& callback);
-
-private:
-  void myFwd(PassType passType);
-  void exFwd(PassType passType);
-  void exBwd(const UpdateCallback &callback);
 
   void printInfo() {
     VLOG(1) << "concats number: " << dataBottoms_.size();

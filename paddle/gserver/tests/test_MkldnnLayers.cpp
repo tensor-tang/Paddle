@@ -308,20 +308,16 @@ void testAddtoLayer(const testAddtoDesc& pm) {
     std::stringstream ss;
     ss << "layer_" << idx;
     config.inputDefs.push_back({INPUT_DATA, ss.str(), layerSize, 0});
-  }
-  
-  LayerInputConfig* input = config.layerConfig.add_inputs();
-  for (int idx = 1; idx < pm.nInputs; ++idx) {
-    config.layerConfig.add_inputs();
+    LayerInputConfig* input = config.layerConfig.add_inputs();
+    ImageConfig* img_conf = input->mutable_image_conf();
+    img_conf->set_channels(pm.ic);
+    // if image size == 1, do not treat as an image
+    if (pm.iw > 1) {
+      CHECK_EQ(pm.iw, pm.ih);
+      img_conf->set_img_size(pm.iw);
+    }
   }
 
-  ImageConfig* img_conf = input->mutable_image_conf();
-  img_conf->set_channels(pm.ic);
-  // if image size == 1, do not treat as an image
-  if (pm.iw > 1) {
-    CHECK_EQ(pm.iw, pm.ih);
-    img_conf->set_img_size(pm.iw);
-  }
   // TODO(TJ): check bias both false and true
   for (auto biasSize : {0, int(layerSize)}) {
     config.biasSize = biasSize;
@@ -343,7 +339,62 @@ void testAddtoLayer(const testAddtoDesc& pm) {
 
 TEST(MkldnnLayer, AddtoLayer) {
   testAddtoLayer({3, 64, 128, 1, 1});
-  testAddtoLayer({3, 64, 100, 8, 8});
+  testAddtoLayer({2, 64, 100, 8, 8});
+  testAddtoLayer({1, 64, 50, 14, 14});
+}
+
+struct testConcatDesc {
+  size_t axis;
+  std::vector<std::vector<int>> inputs;
+};
+
+void testConcatLayer(const testConcatDesc& pm) {
+  const int N =0, C = 1, H = 2, W =3;
+  CHECK_GE(pm.inputs.size(), 2) << "at least two inputs";
+  CHECK(pm.axis == 0 || pm.axis == 1);
+  CHECK_EQ(pm.axis, 1) << "only support concat channel yet";
+  const std::vector<std::vector<int>>& in = pm.inputs;
+  std::vector<int> out(in[0]);  // nchw
+
+  out[C] = 0;
+  for (size_t i = 0; i < in.size(); ++i) {
+    out[C] += in[i][C];
+  }
+
+  TestConfig config;
+  size_t layerSize = out[C] * out[H] * out[W];
+  config.layerConfig.set_type("mkldnn_concat");
+  config.layerConfig.set_use_mkldnn_wgt(false);  // has no wgt
+  config.layerConfig.set_size(layerSize);
+  for (size_t idx = 0; idx < in.size(); ++idx) {
+    size_t in_size = in[idx][C] * in[idx][H] * in[idx][W];
+    std::stringstream ss;
+    ss << "layer_" << idx;
+    config.inputDefs.push_back({INPUT_DATA, ss.str(), in_size, 0});
+    LayerInputConfig* input = config.layerConfig.add_inputs();
+    ImageConfig* img_conf = input->mutable_image_conf();
+    img_conf->set_channels(in[idx][C]);
+    CHECK_EQ(in[idx][W], in[idx][H]);
+    img_conf->set_img_size(in[idx][W]);
+  }
+
+  // only test functionality, no need to check grad
+  TestConfig ref = config;
+  ref.layerConfig.set_type("concat");
+  std::vector<TestConfig> cfg = {config, ref};
+
+  // TODO(TJ): use {0, 1} if AddToMode ready
+  for (auto addSize : {0}) {
+    config.layerConfig.set_add_size(addSize);
+    for (auto bs : {1, out[N]}) {
+      testLayerFunc(cfg, bs);
+    }
+  }
+}
+
+TEST(MkldnnLayer, ConcatLayer) {
+  testConcatLayer({1, {{64, 128, 1, 1}, {64, 32, 1, 1}, {64, 64, 1, 1}}});
+  testConcatLayer({1, {{32, 100, 8, 8}, {32, 10, 8, 8}}});
 }
 
 struct testActDesc {

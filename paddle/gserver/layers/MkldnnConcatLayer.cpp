@@ -37,10 +37,16 @@ bool MkldnnConcatLayer::initDnn(const LayerMap &layerMap,
 
   bs_ = 0;
   oc_ = 0;
-  for (size_t i = 0; i < inputLayers_.size(); i++) {
+  for (auto &inputConfig : config_.inputs()) {
+    if (inputConfig.has_image_conf()) {
+      const ImageConfig &conf = inputConfig.image_conf();
+      iw_.push_back(conf.img_size());
+      ih_.push_back(conf.img_size());
+    } else {
+      iw_.push_back(0);
+      ih_.push_back(0);
+    }
     ic_.push_back(0);
-    iw_.push_back(0);
-    ih_.push_back(0);
     ow_.push_back(0);
     oh_.push_back(0);
     dataBottoms_.push_back(nullptr);
@@ -49,7 +55,7 @@ bool MkldnnConcatLayer::initDnn(const LayerMap &layerMap,
 }
 
 void MkldnnConcatLayer::clearDataDiff() {
-  reserveOutput(bs_, getSize());
+//  reserveOutput(bs_, getSize());
 }
 
 void MkldnnConcatLayer::reshape() {
@@ -58,9 +64,9 @@ void MkldnnConcatLayer::reshape() {
   for (size_t i = 0; i < inputLayers_.size(); i++) {
     int height = inputLayers_[i]->getOutput().getFrameHeight();
     int width = inputLayers_[i]->getOutput().getFrameWidth();
-    CHECK_NE(height * width, 0);
-    ih_[i] = height;
-    iw_[i] = width;
+    CHECK(height * width != 0 || ih_[i] * iw_[i] != 0);
+    if (height != 0) ih_[i] = height;
+    if (width != 0) iw_[i] = width;
     oh_[i] = ih_[i];
     ow_[i] = iw_[i];
     // check all image size equal
@@ -167,27 +173,6 @@ void MkldnnConcatLayer::resetDnnFwd(PassType passType) {
 }
 
 void MkldnnConcatLayer::resetDnnBwd() {
-}
-
-void MkldnnConcatLayer::exFwd(PassType passType) {
-  int batchSize = getInput(0).getBatchSize();
-  int size = getSize();
-  resetOutput(batchSize, size);
-
-  const MatrixPtr& out = getOutputValue();
-  int offset = 0;
-
-  for (size_t i = 0; i != inputLayers_.size(); ++i) {
-    const MatrixPtr& in = getInputValue(i);
-    size_t inSize = in->getWidth();
-    out->assignAtOffset(*in, offset);
-    offset += inSize;
-  }
-  CHECK_EQ(size, offset);
-
-//  real *topData = getOutputValue()->getData();
-//  LOG(INFO) << "------------ex" << topData[0]
-//    << "," << topData[1] << "," << topData[2];
 }
 
 void MkldnnConcatLayer::submitDnnFwd(PassType passType) {
