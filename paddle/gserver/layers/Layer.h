@@ -106,15 +106,18 @@ protected:
   std::vector<bool> markInBackward_;
 
 #ifdef PADDLE_USE_MKLDNN
-  /**
-   * MKLDNN memory desc
-   * if donot have MD, then their format are default nchw
-   * topDataMD_: it should be set by this layer, used by next layer
-   * topDiffMD_: it should be set by next layer, used by this layer
-   **/
+  /// MKLDNN memory desc
+  /// if donot have MD, then their format are default nchw
+  /// topDataMD_: it should be set by this layer, used by next layer
+  /// topDiffMD_: it should be set by next layer, used by this layer
   std::shared_ptr<mkldnn::memory::desc> topDataMD_;
   std::shared_ptr<mkldnn::memory::desc> topDiffMD_;
-  std::string nextType_;
+
+  /// Next layers pointer
+  /// to build the whole Bidirectional Topology
+  /// for compatibility with mixed un-MKLDNN type layers
+  /// and for the addSize of AddToMode within MKLDNN layers
+  std::vector<LayerPtr> nextLayers_;
 #endif
 
 public:
@@ -221,17 +224,20 @@ public:
   static ClassRegistrar<Layer, LayerConfig> registrar_;
 
 #ifdef PADDLE_USE_MKLDNN
-  bool isNextLayerTypeEmpty() {
-    return nextType_.empty();
-  }
+  /** 
+   * Add the next layer pointer.
+   */
+  void addNextLayer(LayerPtr l) { nextLayers_.push_back(l); }
 
-  void setNextLayerType(std::string type) {
-    nextType_ = type;
-  }
+  /** 
+   * Get the pointer of nextLayer[i].
+   */
+  const LayerPtr& getNextLayer(size_t i) { return nextLayers_[i]; }
 
-  const std::string& getNextLayerType() {
-    return nextType_;
-  }
+  /** 
+   * Get the number of nextLayers.
+   */
+  size_t getNumOfNextLayers() { return nextLayers_.size(); }
 
   bool hasActivation() {
     if (activation_ && !(activation_->getName().empty())) {
@@ -255,6 +261,53 @@ public:
     }
   }
 
+  /**
+   * is the type start with "mkldnn_"
+   */
+  bool isDnnType(const std::string& type) {
+    const std::string dnn("mkldnn_");
+    return type.compare(0, dnn.length(), dnn) == 0;
+  }
+
+  /**
+   * Are next layers all MKLDNN types
+   */
+  bool areNextAllDnn() {
+    bool hasAct = this->hasActivation();
+    bool hasMkldnnAct = this->hasMkldnnAct();
+    // if this layer has activation but it's not mkldnn type, return false
+    if (hasAct && !hasMkldnnAct)
+      return false;
+
+    // since activaion do not change format, so then depends on next layer
+    bool res = true;
+    for (size_t i = 0; i < nextLayers_.size(); ++i) {
+      res = res && isDnnType(nextLayers_[i]->getType());
+    }
+    return res;
+  }
+
+  /**
+   * Is the prev layer MKLDNN type
+   * If true
+   * then if the prev layer has several output layers
+   * all of them should also be MKLDNN type, otherwise return false 
+   */
+  bool isPrevDnn(size_t idx) {
+    const LayerPtr& prev = getPrev(idx);
+    if (nullptr == prev || prev->getType().empty())
+      return false;
+
+    // if prev layer has activation but it's not mkldnn type, return false
+    bool hasAct = prev->hasActivation();
+    bool hasMkldnnAct = prev->hasMkldnnAct();
+    if (hasAct && !hasMkldnnAct)
+      return false;
+    bool res = isDnnType(prev->getType());
+    return prev->getNumOfNextLayers() == 1 ?
+      res : (res && prev->areNextAllDnn());
+  }
+
   void setTopDataMD(const mkldnn::memory::desc md) {
     topDataMD_.reset(new mkldnn::memory::desc(md));
   }
@@ -267,26 +320,11 @@ public:
     return topDataMD_;
   }
 
-/*  // return format if has, otherwise return 0
-  int getTopDataFmt() const {
-    if (topDataMD_)
-      return topDataMD_->data.format;
-    else
-      return 0;
-  }
-
-  int getTopDiffFmt() const {
-    if (topDiffMD_)
-      return topDiffMD_->data.format;
-    else
-      return 0;
-  }
-*/
-
   const std::shared_ptr<mkldnn::memory::desc> getTopDiffMD() {
     return topDiffMD_;
   }
 #endif
+
   /** 
    * Get the flag whether layer need to compute gradient.
    */

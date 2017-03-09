@@ -12,6 +12,9 @@
 
 namespace paddle {
 
+class MkldnnLayer;
+typedef std::shared_ptr<MkldnnLayer> MkldnnLayerPtr;
+
 /**
  * @brief Base class of Dnnlayer.
  *
@@ -43,7 +46,8 @@ public:
   // batchsize
   int bs_;
 
-  // flags whether to set memory format of top data or bot diff
+  // flags whether to set memory format of top data or bots diff
+  // only one top data but may have several bot diff
   bool setDnnTopDataFmt_;
   std::vector<bool> setDnnBotDiffFmt_;
 
@@ -57,6 +61,8 @@ public:
   bool useMkldnnWgt_;
 
   bool needResetBwd_;
+  // the initflags functions should only be called once
+  bool hasInitFlags_;
 
 public:
   explicit MkldnnLayer(const LayerConfig& config)
@@ -68,7 +74,8 @@ public:
       setDnnTopDataFmt_(false),
       addSize_(0),
       useMkldnnWgt_(true),
-      needResetBwd_(true)
+      needResetBwd_(true),
+      hasInitFlags_(false)
     {}
 
   ~MkldnnLayer() {}
@@ -81,8 +88,6 @@ public:
   bool init(const LayerMap& layerMap, const ParameterMap& parameterMap) {
     /* Initialize the basic parent class */
     if (!Layer::init(layerMap, parameterMap)) return false;
-
-    initDnnflags();
 
     bs_ = 0;
     oc_ = 0;
@@ -108,6 +113,14 @@ public:
       // choose to clear top data or top diff
       clearDataDiff();
     } else {
+      if (!hasInitFlags_) {
+        // should not be called at init function
+        // this function can work only after all layers init done
+        // and should be called only once
+        initDnnflags();
+        hasInitFlags_ = true;
+      }
+
       bs_ = getInput(0).getBatchSize();
       VLOG(1) << "reset forward batch size to " << bs_
         << " of mkldnn layer: " << getName();
@@ -176,46 +189,18 @@ public:
    * init the flags whether to set memory desc
    * of top data or bot diff.
    * each layer can have its own implements.
+   * Caution: Do not call it at init function
+   *          this function can work only after all layers init have done
    */
-  virtual void initDnnflags() {
-    setDnnTopDataFmt_ = isNextLayerDnn();
+  void initDnnflags() {
+    // set topdata internal only if all next layers are MKLDNN layers
+    setDnnTopDataFmt_ = areNextAllDnn();
     for (size_t i = 0; i != inputLayers_.size(); ++i) {
-      setDnnBotDiffFmt_.push_back(isPrevLayerDnn(i));
+      setDnnBotDiffFmt_.push_back(isPrevDnn(i));
     }
-  }
-
-  bool isNextLayerDnn() {
-    bool useMkldnnAct = true;
-    if (hasActivation()) {
-      // so far has mkldnn relu and softmax activations
-      // activation mkldnn format: input == output
-      // relu: support nchw, nc, nChw8c and so on
-      // softmax: support nchw and nc
-      // since activaion do not change format, so alos depends on next layer
-      useMkldnnAct = hasMkldnnAct();
-    }
-    const std::string dnn("mkldnn");
-    return (!isNextLayerTypeEmpty()
-      // and type started with "mkldnn"
-      && getNextLayerType().compare(0, dnn.length(), dnn) == 0) ?
-      useMkldnnAct : false;
-  }
-
-  bool isPrevLayerDnn(size_t idx) {
-    if (getPrev(idx) == NULL || getPrev(idx)->getType().empty())
-      return false;
-    bool useMkldnnAct = true;
-    if (getPrev(idx)->hasActivation()) {
-      useMkldnnAct = getPrev(idx)->hasMkldnnAct();
-    }
-    const std::string dnn("mkldnn");
-    // type started with "mkldnn"
-    return getPrev(idx)->getType().compare(0, dnn.length(), dnn) == 0 ?
-      useMkldnnAct : false;
   }
 
   // for conv only support caffe mode by now
-  // TODO(TJ): figure out why pool use false caffe mode
   /**
    * Calculate output size based on caffeMode_.
    * - input(+padding): 0123456789

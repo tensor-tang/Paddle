@@ -84,6 +84,8 @@ private:
   bool compareMD(const mkldnn::memory::desc & md1,
     const mkldnn::memory::desc & md2) {
     // skip mkldnn_primitive_kind_t and mkldnn_blocking_desc_t comparasion
+    // TODO(TJ): MKLDNN sum seems support different format inputs
+    // TODO(TJ): maybe no need check format, double check necessary
     if (MkldnnBuffer::getMDFmt(md1) != MkldnnBuffer::getMDFmt(md2))
       return false;
     int ndims = getMDDimSize(md1);

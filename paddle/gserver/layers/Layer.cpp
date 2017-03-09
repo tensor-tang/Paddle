@@ -70,6 +70,10 @@ bool Layer::init(const LayerMap& layerMap, const ParameterMap& parameterMap) {
 
     inputLayer->addOutputArgument(deviceId_);
 
+#ifdef PADDLE_USE_MKLDNN
+    inputLayer->addNextLayer(static_cast<LayerPtr>(this));
+#endif
+
     if (inputConfig.has_input_parameter_name()) {
       ParameterPtr parameter;
       CHECK(

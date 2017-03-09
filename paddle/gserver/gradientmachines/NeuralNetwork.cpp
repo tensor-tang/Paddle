@@ -154,13 +154,6 @@ void NeuralNetwork::init(const ModelConfig& config, ParamInitCallback callback,
     }
   }
 
-#ifdef PADDLE_USE_MKLDNN
-  // init next layer's type
-  for (size_t i = 0; i < layers_.size() - 1; ++i) {
-    layers_[i]->setNextLayerType(layers_[i+1]->getType());
-  }
-#endif
-
   for (const auto& layer : layers_) {
     layer->init(layerMap_, parameterMap_);
     layer->initSubNetwork(this /*root*/, config_, parameterTypes, useGpu);
