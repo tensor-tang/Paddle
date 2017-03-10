@@ -71,7 +71,10 @@ bool Layer::init(const LayerMap& layerMap, const ParameterMap& parameterMap) {
     inputLayer->addOutputArgument(deviceId_);
 
 #ifdef PADDLE_USE_MKLDNN
-    inputLayer->addNextLayer(static_cast<LayerPtr>(this));
+    LayerPtr thisLayer;
+    CHECK(mapGet(getName(), layerMap, &thisLayer))
+      << "Cannot find this layer " << getName();
+    inputLayer->addNextLayer(thisLayer);
 #endif
 
     if (inputConfig.has_input_parameter_name()) {

@@ -280,7 +280,7 @@ public:
       return false;
 
     // since activaion do not change format, so then depends on next layer
-    bool res = true;
+    bool res = nextLayers_.size() > 1;
     for (size_t i = 0; i < nextLayers_.size(); ++i) {
       res = res && isDnnType(nextLayers_[i]->getType());
     }
