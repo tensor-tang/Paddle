@@ -114,7 +114,7 @@ void MkldnnConcatLayer::resetDnnFwd(PassType passType) {
     // 1. create bottom buffer and init user
     dataBottoms_[i].reset(new MkldnnBuffer());
     real *botData = getInputValue(i)->getData();
-    const std::shared_ptr<memory::desc> prvMD = getPrev(i)->getTopDataMD();
+    const std::shared_ptr<memory::desc>& prvMD = getPrev(i)->getTopDataMD();
     if (prvMD) {
       dataBottoms_[i]->resetUser(botData, *prvMD, eg);
       bool isNC = dataBottoms_[i]->getUserFmt() == memory::format::nc;
@@ -152,7 +152,7 @@ void MkldnnConcatLayer::resetDnnFwd(PassType passType) {
   std::shared_ptr<concat::primitive_desc> fwdPD;
   fwdPD.reset(new concat::primitive_desc(getAnyMD(topDims_), axis_, botPDs));
   // reset top user using best internal fmt if next is also dnn
-  if (setDnnTopDataFmt_) {
+  if (nextIsDnn_) {
     dataTop_->resetUser(topData, fwdPD->dst_primitive_desc());
     setTopDataMD(dataTop_->getUserMD());
     VLOG(4) << "set next data fmt: " << DNN_FMTS[dataTop_->getUserFmt()];
@@ -195,7 +195,7 @@ void MkldnnConcatLayer::submitDnnBwd(const UpdateCallback &callback) {
   backwardActivation();
 
   const MatrixPtr& out = getOutputGrad();
-  const std::shared_ptr<mkldnn::memory::desc> prvMD = getTopDiffMD();
+  const std::shared_ptr<mkldnn::memory::desc>& prvMD = getTopDiffMD();
   int offset = 0;
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     const MatrixPtr& in = getInputGrad(i);

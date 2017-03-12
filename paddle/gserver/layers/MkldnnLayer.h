@@ -35,6 +35,12 @@ public:
   mkldnn::memory::dims topDims_;
   mkldnn::memory::format topFmt_;
 
+  /// for summing topdiffs
+  std::vector<MkldnnBufferPtr> topDiffBuffers_;
+  std::shared_ptr<mkldnn::sum> sumTopDiffs_;
+  // tmp result of sum
+  MkldnnBufferPtr tmpDiff_;
+
   // The spatial dimensions of height and width of input feature map.
   std::vector<int> ih_, iw_;
   // The spatial dimensions of height and width of output feature map.
@@ -48,8 +54,8 @@ public:
 
   // flags whether to set memory format of top data or bots diff
   // only one top data but may have several bot diff
-  bool setDnnTopDataFmt_;
-  std::vector<bool> setDnnBotDiffFmt_;
+  bool nextIsDnn_;
+  std::vector<bool> prevIsDnn_;
 
   // each MKLDNN layers has WriteToMode and AddToMode
   // use WriteToMode if addSize_ == 0, otherwise use AddToMode
@@ -61,8 +67,10 @@ public:
   bool useMkldnnWgt_;
 
   bool needResetBwd_;
-  // the initflags functions should only be called once
-  bool hasInitFlags_;
+
+  // some operations should not be called at init function
+  // and should only do once : like initflags and prepare topdiffMD etc.
+  bool prepareOnce_;
 
 public:
   explicit MkldnnLayer(const LayerConfig& config)
@@ -71,11 +79,11 @@ public:
       dataTop_(nullptr),
       diffBot_(nullptr),
       diffTop_(nullptr),
-      setDnnTopDataFmt_(false),
+      nextIsDnn_(false),
       addSize_(0),
       useMkldnnWgt_(true),
       needResetBwd_(true),
-      hasInitFlags_(false)
+      prepareOnce_(true)
     {}
 
   ~MkldnnLayer() {}
@@ -113,12 +121,26 @@ public:
       // choose to clear top data or top diff
       clearDataDiff();
     } else {
-      if (!hasInitFlags_) {
-        // should not be called at init function
+      if (prepareOnce_) {
+        topDiffBuffers_.resize(nextLayers_.size(), nullptr);
+        dnnOutGrads_.resize(nextLayers_.size(), nullptr);
+        for (size_t i = 0; i < nextLayers_.size(); ++i) {
+          topDiffMDs_.push_back(nullptr);
+          dnnOutIdxMap_[nextLayers_[i]->getName()] = i;
+        //  LOG(INFO)<<"next name:" << nextLayers_[i]->getName();
+        }
+        if (nextLayers_.size() > 0 && topDiffMDs_.size() > nextLayers_.size()) {
+          // in base layer init will add one nullptr for PASS_grad check
+          // so remove the redundant one
+          topDiffMDs_.pop_back();
+          CHECK_EQ(topDiffMDs_.size(), nextLayers_.size());
+        } else {
+          CHECK_EQ(topDiffMDs_.size() - 1, nextLayers_.size());
+        }
         // this function can work only after all layers init done
         // and should be called only once
         initDnnflags();
-        hasInitFlags_ = true;
+        prepareOnce_ = false;
       }
 
       bs_ = getInput(0).getBatchSize();
@@ -147,6 +169,14 @@ public:
         if (getType() == "mkldnn_batch_norm")
           break;
       }
+      
+      if (passType != PASS_TEST && nextLayers_.size() > 1) {  // Training
+        sumTopDiffs_ = nullptr;
+        for (size_t i = 0; i < nextLayers_.size(); ++i) {
+          topDiffMDs_[i] = nullptr;
+          dnnOutGrads_[i] = Matrix::create(bs_, getSize(), false, false);
+        }
+      }
       needResetBwd_ = true;
     }
 
@@ -163,6 +193,8 @@ public:
       // mkldnn init or reset backward
       VLOG(1) << "reset backward batch size to " << bs_
         << " of mkldnn layer: " << getName();
+
+      prepareTopDiff();
       resetDnnBwd();
 
       // print the diff flow
@@ -182,7 +214,67 @@ public:
 
     // submit dnn backward
     REGISTER_TIMER_INFO("mkldnn_BwdTimer", getName().c_str());
+    if (nullptr != sumTopDiffs_) {
+      LOG(INFO)<<"---------------------------------------no here yet!!";
+      std::vector<mkldnn::primitive> sum;
+      sum.push_back(*sumTopDiffs_);
+      mkldnn::stream(mkldnn::stream::kind::eager).submit(sum).wait();
+    }
     submitDnnBwd(callback);
+  }
+
+  /**
+   * if have several input topdiffs
+   * then create handle to sum them
+   */
+  virtual void prepareTopDiff() {
+    sumTopDiffs_ = nullptr;
+    if (nextLayers_.size() <= 1)
+      return;
+    mkldnn::engine eg = CpuEngine::Instance().getEngine();
+    std::vector<mkldnn::memory::primitive_desc> srcPDs;
+    std::vector<std::shared_ptr<mkldnn::memory::desc>> prvMDs;
+    std::vector<mkldnn::primitive::at> srcMems;
+    std::vector<double> scales;
+    CHECK_EQ(nextLayers_.size(), topDiffBuffers_.size());
+    for (size_t i = 0; i < topDiffBuffers_.size(); ++i) {
+      // 1. create buffers and init user
+      real* diff = dnnOutGrads_[i]->getData();
+      topDiffBuffers_[i].reset(new MkldnnBuffer());
+      topDiffBuffers_[i]->initUser(diff, topDims_, topFmt_, eg);
+      // 2. use private MD when init user if has
+      const std::shared_ptr<mkldnn::memory::desc>& prvMD = getTopDiffMD(i);
+      if (prvMD) {
+        topDiffBuffers_[i]->resetUser(diff, *prvMD, eg);
+        prvMDs.push_back(prvMD);
+      }
+      // 3. init Intl with empty cvt
+      topDiffBuffers_[i]->initCvt();
+      CHECK(i == 0 || (topDiffBuffers_[i-1]->getIntlSize()
+        == topDiffBuffers_[i]->getIntlSize())) << "All size should be equal";
+      // 4. save buffers
+      scales.push_back(1.0);  // no scale
+      srcPDs.push_back(topDiffBuffers_[i]->getIntlPD());
+      srcMems.push_back(*(topDiffBuffers_[i]->getIntlMem()));
+    }
+    if (prvMDs.size() > 0) {
+      CHECK_EQ(prvMDs.size(), nextLayers_.size())
+        << "Do not support mixed layer type inside branch";
+    }
+    // 5. create sum PD
+    std::shared_ptr<mkldnn::sum::primitive_desc> sumPD;
+    sumPD.reset(new mkldnn::sum::primitive_desc(
+      getAnyMD(topDims_), scales, srcPDs));
+    // 6. init the buffer of result
+    tmpDiff_.reset(new MkldnnBuffer());
+    real *topDiff = getDnnOutputGrad()->getData();
+    tmpDiff_->initUser(topDiff, sumPD->dst_primitive_desc());
+    tmpDiff_->initCvt();
+    // change the first intl MD
+    topDiffMDs_[0].reset(new mkldnn::memory::desc(tmpDiff_->getIntlMD()));
+    // 7. create sum handle
+    sumTopDiffs_.reset(
+      new mkldnn::sum(*sumPD, srcMems, *(tmpDiff_->getIntlMem())));
   }
 
   /**
@@ -194,9 +286,9 @@ public:
    */
   void initDnnflags() {
     // set topdata internal only if all next layers are MKLDNN layers
-    setDnnTopDataFmt_ = areNextAllDnn();
+    nextIsDnn_ = areNextAllDnn();
     for (size_t i = 0; i != inputLayers_.size(); ++i) {
-      setDnnBotDiffFmt_.push_back(isPrevDnn(i));
+      prevIsDnn_.push_back(isPrevDnn(i));
     }
   }
 

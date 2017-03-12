@@ -117,7 +117,7 @@ public:
     return getSize(pUser_->get_primitive_desc().get_size());
   }
 
-  std::shared_ptr<mkldnn::memory> getIntlMem() {
+  const std::shared_ptr<mkldnn::memory>& getIntlMem() {
      return this->pIntl_;
   }
 

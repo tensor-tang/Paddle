@@ -29,7 +29,6 @@ bool MkldnnConvLayer::initDnn(const LayerMap &layerMap,
   if (biasParameter_.get() != NULL && !sharedBiases) {
     LOG(FATAL) << "Only support shared bias with MKL DNN yet!";
   }
-  VLOG(1) << "input layer size:" << inputLayers_.size();
   if (inputLayers_.size() != 1) {
      // TODO(TJ): considerate more than One input
     LOG(FATAL) << "Only support one input layer with MKL-DNN by now!";
@@ -182,7 +181,7 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
     dataBot_->initUser(botData, botDims_[i], botFmt_[i], eg);
     dataWgt_->initUser(wgtData, wgtDims_[i], wgtFmt_[i], eg);
     // use internal bottom data if use prv input
-    const std::shared_ptr<memory::desc> prvMD = getPrev(i)->getTopDataMD();
+    const std::shared_ptr<memory::desc>& prvMD = getPrev(i)->getTopDataMD();
     if (prvMD) {
       dataBot_->resetUser(botData, *prvMD, eg);
       bool isNC = dataBot_->getUserFmt() == memory::format::nc;
@@ -284,10 +283,10 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
           << "all bias formats should equal";
       }
     }
-    // cvt topdata buffer only once, set dnn MemDesc if next is also mkldnn
+    // cvt topData buffer only once, set dnn MemDesc if next is also mkldnn
     if (!hasCvtTopData_) {
       hasCvtTopData_ = true;
-      if (setDnnTopDataFmt_) {
+      if (nextIsDnn_) {
         dataTop_->resetUser(topData, fwdPD->dst_primitive_desc());
         setTopDataMD(dataTop_->getUserMD());
         VLOG(4) << "set next data fmt: " << DNN_FMTS[dataTop_->getUserFmt()];
@@ -344,14 +343,14 @@ void MkldnnConvLayer::resetDnnBwd() {
     diffBias_.reset(new MkldnnBuffer());
   }
   // 2. init user
-  real *topDiff = getOutputGrad()->getData();
+  real *topDiff = getDnnOutputGrad()->getData();
   diffTop_->initUser(topDiff, topDims_, topFmt_, eg);
   if (hasBias) {
     real* biasDiff = biases_->getWGrad()->getData();
     diffBias_->initUser(biasDiff, biasDims_[0], biasFmt_[0], eg);
   }
   // use internal top diff if use dnn input
-  const std::shared_ptr<mkldnn::memory::desc> prvMD = getTopDiffMD();
+  const std::shared_ptr<mkldnn::memory::desc>& prvMD = getTopDiffMD();
   if (prvMD) {
     diffTop_->resetUser(topDiff, *prvMD, eg);
     bool isNC = diffTop_->getUserFmt() == memory::format::nc;
@@ -454,7 +453,7 @@ void MkldnnConvLayer::resetDnnBwd() {
       diffTop_->initCvt(bwdWgtPD->diff_dst_primitive_desc(), dnnCvtUser2Intl);
     } else {
       CHECK(diffTop_->getIntlPD() == bwdWgtPD->diff_dst_primitive_desc())
-        << "all topdiff formats should equal";
+        << "all topDiff formats should equal";
     }
     // 4. create bwdwgt handle
     if (hasBias) {
@@ -479,7 +478,7 @@ void MkldnnConvLayer::resetDnnBwd() {
       continue;  // data layer has not diff
     }
     // 1. create buffer and init user
-    real* botDiff = prevLayer->getOutputGrad()->getData();
+    real* botDiff = getDnnInputGrad(i)->getData();
     diffBot_.reset(new MkldnnBuffer());
     dataWgtBwd_.reset(new MkldnnBuffer());
     diffBot_->initUser(botDiff, botDims_[i], botFmt_[i], eg);
@@ -515,9 +514,9 @@ void MkldnnConvLayer::resetDnnBwd() {
           << " >>> "
           << DNN_FMTS[dataWgtBwd_->getIntlFmt()];
     }
-    if (setDnnBotDiffFmt_[i]) {
+    if (prevIsDnn_[i]) {
       diffBot_->resetUser(botDiff, bwdDataPD->diff_src_primitive_desc());
-      prevLayer->setTopDiffMD(diffBot_->getUserMD());
+      prevLayer->setTopDiffMD(this->getName(), diffBot_->getUserMD());
       VLOG(4) << "set next diff fmt: " << DNN_FMTS[diffBot_->getUserFmt()];
     }
     diffBot_->initCvt(bwdDataPD->diff_src_primitive_desc(), dnnCvtIntl2User);
@@ -529,16 +528,16 @@ void MkldnnConvLayer::resetDnnBwd() {
 }
 
 void MkldnnConvLayer::submitDnnFwd(PassType passType) {
-  real* topdata = getOutputValue()->getData();
+  real* topData = getOutputValue()->getData();
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
-    real* botdata = getPrev(i)->getOutputValue()->getData();
+    real* botData = getPrev(i)->getOutputValue()->getData();
     std::vector<primitive> pipeline;
-    dataBot_->submitCvt(pipeline, botdata);
+    dataBot_->submitCvt(pipeline, botData);
     if (!useMkldnnWgt_ && passType != PASS_TEST) {
       // transpose and cvt every time in training if do not use mkldnn wgt
       weights_[i]->getW()->transpose(selfWgtData_[i], false);
-      real* wgtdata = selfWgtData_[i]->getData();
-      dataWgt_->submitCvt(pipeline, wgtdata);
+      real* wgtData = selfWgtData_[i]->getData();
+      dataWgt_->submitCvt(pipeline, wgtData);
     }
     // no need to cvt bias
   //  if (biases_ && biases_->getW()) {
@@ -546,7 +545,7 @@ void MkldnnConvLayer::submitDnnFwd(PassType passType) {
   //    dataBias_->submitCvt(pipeline, biasdata);
   //  }
     pipeline.push_back(*fwd_);
-    dataTop_->submitCvt(pipeline, topdata);
+    dataTop_->submitCvt(pipeline, topData);
     stream(stream::kind::eager).submit(pipeline).wait();
   }
 
@@ -571,33 +570,33 @@ void MkldnnConvLayer::submitDnnFwd(PassType passType) {
 }
 
 void MkldnnConvLayer::submitBwdData(int idx) {
-  const MatrixPtr& botGrad = getPrev(idx)->getOutputGrad();
+  const MatrixPtr& botGrad = getDnnInputGrad(idx);
   if (botGrad == NULL) {
     return;
   }
-  real* botdiff = botGrad->getData();
-  real* topdiff = getOutputGrad()->getData();
+  real* botDiff = botGrad->getData();
+  real* topDiff = getOutputGrad()->getData();
   std::vector<primitive> pipeline;
   dataWgtBwd_->submitCvt(pipeline, dataWgt_->getIntlData());
-  diffTop_->submitCvt(pipeline, topdiff);
+  diffTop_->submitCvt(pipeline, topDiff);
   pipeline.push_back(*bwdData_);
-  diffBot_->submitCvt(pipeline, botdiff);
+  diffBot_->submitCvt(pipeline, botDiff);
   stream(stream::kind::eager).submit(pipeline).wait();
 }
 
 void MkldnnConvLayer::submitBwdWgts(int idx) {
-  real* botdata = getInputValue(idx)->getData();
-  real* topdiff = getOutputGrad()->getData();
-  real* wgtdiff = weights_[idx]->getWGrad()->getData();
+  real* botData = getInputValue(idx)->getData();
+  real* topDiff = getOutputGrad()->getData();
+  real* wgtDiff = weights_[idx]->getWGrad()->getData();
   if (!useMkldnnWgt_) {
     CHECK(selfWgtDiff_[idx]);
-    wgtdiff = selfWgtDiff_[idx]->getData();
+    wgtDiff = selfWgtDiff_[idx]->getData();
   }
   std::vector<primitive> pipeline;
-  diffTop_->submitCvt(pipeline, topdiff);
-  dataBot_->submitCvt(pipeline, botdata);
+  diffTop_->submitCvt(pipeline, topDiff);
+  dataBot_->submitCvt(pipeline, botData);
   pipeline.push_back(*bwdWgt_);
-  diffWgt_->submitCvt(pipeline, wgtdiff);
+  diffWgt_->submitCvt(pipeline, wgtDiff);
   // no need to submit cvt bias since biasfmt would not be changed
   stream(stream::kind::eager).submit(pipeline).wait();
 

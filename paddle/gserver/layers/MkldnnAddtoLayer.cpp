@@ -106,7 +106,7 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
     dataBottoms_[i].reset(new MkldnnBuffer());
     real *botData = getInputValue(i)->getData();
     dataBottoms_[i]->initUser(botData, botDims_[i], botFmt_[i], eg);
-    const std::shared_ptr<memory::desc> prvMD = getPrev(i)->getTopDataMD();
+    const std::shared_ptr<memory::desc>& prvMD = getPrev(i)->getTopDataMD();
     if (prvMD) {
       // this layer support both nc and internal format
       dataBottoms_[i]->resetUser(botData, *prvMD, eg);
@@ -129,14 +129,13 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
     CHECK(compareMD(*(prvMDs[i-1]), *(prvMDs[i])))
       << "all input formats should be the same";
   }
-  
 
   // 3. create fwd PD
   std::shared_ptr<sum::primitive_desc> fwdPD;
   fwdPD.reset(new sum::primitive_desc(
     prvMDs.size() > 0 ? *(prvMDs[0]) : getAnyMD(topDims_), scales_, botPDs));
   // reset top user using internal fmt if next is dnn
-  if (setDnnTopDataFmt_) {
+  if (nextIsDnn_) {
     // fwdPD should be init with any type before, if in here.
     dataTop_->resetUser(topData, fwdPD->dst_primitive_desc());
     setTopDataMD(dataTop_->getUserMD());
@@ -155,9 +154,6 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
     << DNN_FMTS[dataBottoms_[0]->getIntlFmt()] << " >>> "
     << DNN_FMTS[dataTop_->getIntlFmt()] << ") >>> "
     << DNN_FMTS[dataTop_->getUserFmt()];
-}
-
-void MkldnnAddtoLayer::resetDnnBwd() {
 }
 
 void MkldnnAddtoLayer::submitDnnFwd(PassType passType) {
@@ -189,7 +185,7 @@ void MkldnnAddtoLayer::submitDnnBwd(const UpdateCallback& callback) {
   backwardActivation();
   if (biases_ && biases_->getWGrad()) {
     // TODO(TJ): try to use mkldnn
-    const std::shared_ptr<mkldnn::memory::desc> prvMD = getTopDiffMD();
+    const std::shared_ptr<mkldnn::memory::desc>& prvMD = getTopDiffMD();
     if (prvMD && MkldnnBuffer::getMDFmt(*prvMD) != topFmt_) {
       LOG(FATAL) << "not implemented with internal format";
     }
@@ -205,7 +201,7 @@ void MkldnnAddtoLayer::submitDnnBwd(const UpdateCallback& callback) {
       // directly set the diff, do not copy
       getPrev(i)->getOutput().grad = getOutput().grad;
     } else {
-      const std::shared_ptr<mkldnn::memory::desc> prvMD = getTopDiffMD();
+      const std::shared_ptr<mkldnn::memory::desc>& prvMD = getTopDiffMD();
       if (prvMD && MkldnnBuffer::getMDFmt(*prvMD) != topFmt_) {
         LOG(FATAL) << "not implemented when addsize > 0 with internal format";
       }

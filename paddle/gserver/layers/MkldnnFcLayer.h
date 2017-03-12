@@ -87,9 +87,9 @@ public:
 
   void submitDnnFwd(PassType passType);
 
-  void submitBwdData(int idx, const MatrixPtr& botGrad);
+  void submitBwdData(int idx);
 
-  void submitBwdWgts(int idx, const MatrixPtr& botVal);
+  void submitBwdWgts(int idx);
 
   void submitDnnBwd(const UpdateCallback& callback);
 

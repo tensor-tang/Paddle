@@ -117,6 +117,7 @@ public:
   void submitDnnBwd(const UpdateCallback& callback);
 
   void printInfo() {
+    VLOG(2) << "input layer size:" << inputLayers_.size();
     for (size_t i = 0; i < iw_.size(); ++i) {
       VLOG(2)
         << "gp: " << gp_[i]

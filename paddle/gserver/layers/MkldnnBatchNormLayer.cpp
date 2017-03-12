@@ -186,7 +186,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   real *topData = getOutputValue()->getData();
   // 2. init user
   dataTop_->initUser(topData, topDims_, topFmt_, eg);
-  const std::shared_ptr<memory::desc> prvMD = getPrev(0)->getTopDataMD();
+  const std::shared_ptr<memory::desc>& prvMD = getPrev(0)->getTopDataMD();
   if (prvMD) {
     dataBot_->resetUser(botData, *prvMD, eg);
     bool isNC = dataBot_->getUserFmt() == memory::format::nc;
@@ -212,7 +212,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   // 4. init  conversion
   // src_primitive_desc == dst_primitive_desc in batch_normalization_forward
   dataBot_->initCvt(fwdPD_->dst_primitive_desc(), dnnCvtUser2Intl);
-  if (setDnnTopDataFmt_) {
+  if (nextIsDnn_) {
     dataTop_->resetUser(topData, fwdPD_->dst_primitive_desc());
     setTopDataMD(dataTop_->getUserMD());
     VLOG(4) << "set next data fmt: " << DNN_FMTS[dataTop_->getUserFmt()];
@@ -289,11 +289,11 @@ void MkldnnBatchNormLayer::resetDnnBwd() {
     diffScaleShift_.reset(new MkldnnBuffer());
   }
   // 2. init user, prepare top diff if use dnn input
-  real* botDiff = prevLayer->getOutputGrad()->getData();
+  real* botDiff = getDnnInputGrad(0)->getData();
   real *topDiff = getOutputGrad()->getData();
   diffBot_->initUser(botDiff, botDims_[0], botFmt_[0], eg);
   diffTop_->initUser(topDiff, topDims_, topFmt_, eg);
-  const std::shared_ptr<mkldnn::memory::desc> inputDiffMD = getTopDiffMD();
+  const std::shared_ptr<mkldnn::memory::desc>& inputDiffMD = getTopDiffMD();
   if (inputDiffMD) {
     diffTop_->resetUser(topDiff, *inputDiffMD, eg);
     bool isNC = diffTop_->getUserFmt() == memory::format::nc;
@@ -320,9 +320,9 @@ void MkldnnBatchNormLayer::resetDnnBwd() {
   CHECK(bwdPD->variance_primitive_desc() == fwdPD_->variance_primitive_desc());
   // 4. init conversion
   diffTop_->initCvt(dataBot_->getIntlPD(), dnnCvtUser2Intl);
-  if (setDnnBotDiffFmt_[0]) {
+  if (prevIsDnn_[0]) {
     diffBot_->resetUser(botDiff, dataBot_->getIntlPD());
-    prevLayer->setTopDiffMD(diffBot_->getUserMD());
+    prevLayer->setTopDiffMD(this->getName(), diffBot_->getUserMD());
     VLOG(4) << "set next diff format: " << DNN_FMTS[diffBot_->getUserFmt()];
   }
   diffBot_->initCvt(dataBot_->getIntlPD(), dnnCvtIntl2User);
@@ -405,8 +405,8 @@ void MkldnnBatchNormLayer::submitDnnBwd(const UpdateCallback &callback) {
   backwardActivation();
 
   real* botData = getPrev(0)->getOutputValue()->getData();
-  real* topDiff = getOutputGrad()->getData();
-  real* botDiff = getPrev(0)->getOutputGrad()->getData();
+  real* topDiff = getDnnOutputGrad()->getData();
+  real* botDiff = getDnnInputGrad(0)->getData();
 
   std::vector<primitive> pipeline;
   diffTop_->submitCvt(pipeline, topDiff);

@@ -58,7 +58,7 @@ public:
 
   void resetDnnFwd(PassType passType);
 
-  void resetDnnBwd();
+  void resetDnnBwd() {}
 
   void submitDnnFwd(PassType passType);
 

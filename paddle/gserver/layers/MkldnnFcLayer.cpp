@@ -172,7 +172,7 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
     // 3. create fc desc
     std::shared_ptr<inner_product_forward::desc> fwdDesc;
     std::shared_ptr<mkldnn::inner_product_forward::primitive_desc> fwdPD;
-    const std::shared_ptr<memory::desc> prvMD = getPrev(i)->getTopDataMD();
+    const std::shared_ptr<memory::desc>& prvMD = getPrev(i)->getTopDataMD();
     if (prvMD) {
       dataBot_->resetUser(botData, *prvMD, eg);
       VLOG(4) << "use prev data fmt: " << DNN_FMTS[dataBot_->getUserFmt()];
@@ -248,7 +248,7 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
     // cvt topdata buffer only once, set dnn MemDesc if next is also mkldnn
     if (!hasCvtTopData_) {
       hasCvtTopData_ = true;
-      if (setDnnTopDataFmt_) {
+      if (nextIsDnn_) {
         dataTop_->resetUser(topData, fwdPD->dst_primitive_desc());
         setTopDataMD(dataTop_->getUserMD());
         VLOG(4) << "set next data fmt: " << DNN_FMTS[dataTop_->getUserFmt()];
@@ -291,14 +291,14 @@ void MkldnnFcLayer::resetDnnBwd() {
     diffBias_.reset(new MkldnnBuffer());
   }
   // 2. init user top and bias
-  real *topDiff = getOutputGrad()->getData();
+  real *topDiff = getDnnOutputGrad()->getData();
   diffTop_->initUser(topDiff, topDims_, topFmt_, eg);
   if (hasBias) {
     real* biasDiff = biases_->getWGrad()->getData();
     diffBias_->initUser(biasDiff, biasDims_[0], biasFmt_[0], eg);
   }
   // use internal top diff if use dnn input
-  const std::shared_ptr<mkldnn::memory::desc> prv = getTopDiffMD();
+  const std::shared_ptr<mkldnn::memory::desc>& prv = getTopDiffMD();
   if (prv) {
     diffTop_->resetUser(topDiff, *prv, eg);
     bool isNCHW = diffTop_->getUserFmt() == memory::format::nchw;
@@ -386,7 +386,7 @@ void MkldnnFcLayer::resetDnnBwd() {
       continue;  // data layer has not diff
     }
     // 1. create buffer and init user
-    real* botDiff = prevLayer->getOutputGrad()->getData();
+    real* botDiff = getDnnInputGrad(i)->getData();
     diffBot_.reset(new MkldnnBuffer());
     diffBot_->initUser(botDiff, botDims_[i], botFmt_[i], eg);
     // 2. init backward data primitive desc
@@ -403,9 +403,9 @@ void MkldnnFcLayer::resetDnnBwd() {
     CHECK(dataWgt_->getIntlPD() == bwdDataPD->weights_primitive_desc());
     CHECK(diffTop_->getIntlPD() == bwdDataPD->diff_dst_primitive_desc());
     // 3. init conversion
-    if (setDnnBotDiffFmt_[i]) {
+    if (prevIsDnn_[i]) {
       diffBot_->resetUser(botDiff, bwdDataPD->diff_src_primitive_desc());
-      prevLayer->setTopDiffMD(diffBot_->getUserMD());
+      prevLayer->setTopDiffMD(this->getName(), diffBot_->getUserMD());
       VLOG(4) << "set next diff fmt: " << DNN_FMTS[diffBot_->getUserFmt()];
     }
     diffBot_->initCvt(bwdDataPD->diff_src_primitive_desc(), dnnCvtIntl2User);
@@ -420,9 +420,9 @@ void MkldnnFcLayer::submitDnnFwd(PassType passType) {
   real *topdata = getOutputValue()->getData();
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     CHECK(getInput(i).value) << "The input of 'fc' layer must be matrix";
-    real *botdata = getPrev(0)->getOutputValue()->getData();
+    real *botData = getPrev(0)->getOutputValue()->getData();
     std::vector<primitive> pipeline;
-    dataBot_->submitCvt(pipeline, botdata);
+    dataBot_->submitCvt(pipeline, botData);
     if (!useMkldnnWgt_ && passType != PASS_TEST) {
       weights_[i]->getW()->transpose(selfWgtData_[i], false);
       real *wgtdata = selfWgtData_[i]->getData();
@@ -435,35 +435,36 @@ void MkldnnFcLayer::submitDnnFwd(PassType passType) {
   forwardActivation();
 }
 
-void MkldnnFcLayer::submitBwdData(int idx, const MatrixPtr& botGrad) {
+void MkldnnFcLayer::submitBwdData(int idx) {
+  const MatrixPtr& botGrad = getDnnInputGrad(idx);
   if (botGrad == NULL) {
     return;
   }
-  real* botdiff = botGrad->getData();
-  real* topdiff = getOutputGrad()->getData();
+  real* botDiff = botGrad->getData();
+  real* topDiff = getDnnOutputGrad()->getData();
   std::vector<primitive> pipeline;
   if (!useMkldnnWgt_) {  // no need cvt wgt without useMkldnnWgt_
     CHECK(selfWgtData_[idx]);
     real* wgtdata = selfWgtData_[idx]->getData();
     dataWgt_->submitCvt(pipeline, wgtdata);
   }
-  diffTop_->submitCvt(pipeline, topdiff);
+  diffTop_->submitCvt(pipeline, topDiff);
   pipeline.push_back(*bwdData_);
-  diffBot_->submitCvt(pipeline, botdiff);
+  diffBot_->submitCvt(pipeline, botDiff);
   stream(stream::kind::eager).submit(pipeline).wait();
 }
 
-void MkldnnFcLayer::submitBwdWgts(int idx, const MatrixPtr& botVal) {
-  real* botdata = botVal->getData();
-  real* topdiff = getOutputGrad()->getData();
+void MkldnnFcLayer::submitBwdWgts(int idx) {
+  real* botData = getInputValue(idx)->getData();
+  real* topDiff = getDnnOutputGrad()->getData();
   real* wgtdiff = weights_[idx]->getWGrad()->getData();
   if (!useMkldnnWgt_) {
     CHECK(selfWgtDiff_[idx]);
     wgtdiff = selfWgtDiff_[idx]->getData();
   }
   std::vector<primitive> pipeline;
-  diffTop_->submitCvt(pipeline, topdiff);
-  dataBot_->submitCvt(pipeline, botdata);
+  diffTop_->submitCvt(pipeline, topDiff);
+  dataBot_->submitCvt(pipeline, botData);
   pipeline.push_back(*bwdWgt_);
   diffWgt_->submitCvt(pipeline, wgtdiff);
   // no need to submit cvt bias since biasfmt would not be changed
@@ -479,9 +480,9 @@ void MkldnnFcLayer::submitDnnBwd(const UpdateCallback &callback) {
   backwardActivation();
 
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
-    submitBwdData(i, getPrev(i)->getOutputGrad());
+    submitBwdData(i);
     if (weights_[i]->getWGrad()) {
-      submitBwdWgts(i, getPrev(i)->getOutputValue());
+      submitBwdWgts(i);
       weights_[i]->getParameterPtr()->incUpdate(callback);
     }
   }

@@ -113,7 +113,7 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
   real *topData = getOutputValue()->getData();
   dataBot_->initUser(botData, botDims_[0], botFmt_[0], eg);
   dataTop_->initUser(topData, topDims_, topFmt_, eg);
-  const std::shared_ptr<memory::desc> prvMD = getPrev(0)->getTopDataMD();
+  const std::shared_ptr<memory::desc>& prvMD = getPrev(0)->getTopDataMD();
   if (prvMD) {
     dataBot_->resetUser(botData, *prvMD, eg);
     bool isNC = dataBot_->getUserFmt() == memory::format::nc;
@@ -139,7 +139,7 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
   // 4. init cvt
   dataBot_->initCvt();  // dnnCvtNoNeed
   // set topdata dnn MemDesc if next is also mkldnn
-  if (setDnnTopDataFmt_) {
+  if (nextIsDnn_) {
     dataTop_->resetUser(topData, fwdPD_->dst_primitive_desc());
     setTopDataMD(dataTop_->getUserMD());
     VLOG(4) << "set next data format: " << DNN_FMTS[dataTop_->getUserFmt()];
@@ -184,11 +184,11 @@ void MkldnnPoolLayer::resetDnnBwd() {
   diffBot_.reset(new MkldnnBuffer());
   diffTop_.reset(new MkldnnBuffer());
   // 2. init user
-  real *topDiff = getOutputGrad()->getData();
-  real* botDiff = getPrev(0)->getOutputGrad()->getData();
+  real *topDiff = getDnnOutputGrad()->getData();
+  real* botDiff = getDnnInputGrad(0)->getData();
   diffBot_->initUser(botDiff, dataBot_->getUserMD(), eg);
   diffTop_->initUser(topDiff, dataTop_->getUserMD(), eg);
-  const std::shared_ptr<mkldnn::memory::desc> prvMD = getTopDiffMD();
+  const std::shared_ptr<mkldnn::memory::desc>& prvMD = getTopDiffMD();
   if (prvMD) {
     diffTop_->resetUser(topDiff, *prvMD, eg);
     bool isNC = diffTop_->getUserFmt() == memory::format::nc;
@@ -203,9 +203,9 @@ void MkldnnPoolLayer::resetDnnBwd() {
       VLOG(4) << "use prev diff fmt: " << DNN_FMTS[diffTop_->getUserFmt()];
     }
   }
-  if (setDnnBotDiffFmt_[0]) {
+  if (prevIsDnn_[0]) {
     diffBot_->resetUser(botDiff, dataBot_->getIntlPD());
-    getPrev(0)->setTopDiffMD(diffBot_->getUserMD());
+    getPrev(0)->setTopDiffMD(this->getName(), diffBot_->getUserMD());
     VLOG(4) << "set next diff format: " << DNN_FMTS[diffBot_->getUserFmt()];
   }
   // 3. create bwd PD
@@ -239,7 +239,7 @@ void MkldnnPoolLayer::submitDnnFwd(PassType passType) {
   dataTop_->submitCvt(pipeline, topdata);
   stream(stream::kind::eager).submit(pipeline).wait();
 
-//  as paddle no forward activation
+//  kepp as paddle do not forward activation
 //  forwardActivation();
 }
 
@@ -249,12 +249,12 @@ void MkldnnPoolLayer::submitDnnBwd(const UpdateCallback &callback) {
     return;
   }
 
-  real* botdiff = getInputGrad(0)->getData();
-  real* topdiff = getOutputGrad()->getData();
+  real* botDiff = getDnnInputGrad(0)->getData();
+  real* topDiff = getOutputGrad()->getData();
   std::vector<primitive> pipeline;
-  diffTop_->submitCvt(pipeline, topdiff);
+  diffTop_->submitCvt(pipeline, topDiff);
   pipeline.push_back(*bwd_);
-  diffBot_->submitCvt(pipeline, botdiff);
+  diffBot_->submitCvt(pipeline, botDiff);
   stream(stream::kind::eager).submit(pipeline).wait();
 }
 

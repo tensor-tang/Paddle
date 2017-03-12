@@ -53,9 +53,10 @@ bool Layer::init(const LayerMap& layerMap, const ParameterMap& parameterMap) {
       useGpu_ = false;
     }
   }
+
 #ifdef PADDLE_USE_MKLDNN
   topDataMD_ = nullptr;
-  topDiffMD_ = nullptr;
+  topDiffMDs_.push_back(nullptr);
 #endif
 
   output_.deviceId = deviceId_;
@@ -74,7 +75,8 @@ bool Layer::init(const LayerMap& layerMap, const ParameterMap& parameterMap) {
     LayerPtr thisLayer;
     CHECK(mapGet(getName(), layerMap, &thisLayer))
       << "Cannot find this layer " << getName();
-    inputLayer->addNextLayer(thisLayer);
+    if (!inputLayer->hasNextLayer(thisLayer))
+      inputLayer->addNextLayer(thisLayer);
 #endif
 
     if (inputConfig.has_input_parameter_name()) {
@@ -110,8 +112,12 @@ bool Layer::init(const LayerMap& layerMap, const ParameterMap& parameterMap) {
   activation_.reset(ActivationFunction::create(action_type));
   CHECK(activation_);
 #ifdef PADDLE_USE_MKLDNN
-  if (hasActivation())
-      VLOG(1) << getName() << ": action type: " << action_type;
+  if (hasActivation()) {
+    VLOG(1) << getName() << ", type: " << getType()
+      << ", act: " << activation_->getName();
+  } else {
+    VLOG(1) << getName() << ", type: " << getType();
+  }
 #endif
   initNeedFlags();
   markInBackward_.assign(inputLayers_.size(), false);
@@ -123,8 +129,6 @@ ClassRegistrar<Layer, LayerConfig> Layer::registrar_;
 
 LayerPtr Layer::create(const LayerConfig& config) {
   std::string type = config.type();
-
-  VLOG(1) << "layer type: " << type;
 
   if (type == "multi-class-cross-entropy")
     return LayerPtr(new MultiClassCrossEntropy(config));
@@ -397,7 +401,7 @@ void Layer::backwardActivation() {
 #ifdef PADDLE_USE_MKLDNN
   if (hasMkldnnAct()) {
     activation_->resetDnnBwd(output_,
-      std::static_pointer_cast<void>(topDiffMD_));
+      std::static_pointer_cast<void>(topDiffMDs_[0]));
   }
 #endif
 
