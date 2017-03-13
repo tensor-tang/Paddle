@@ -202,16 +202,16 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
     if (hasBias) {
       fwdDesc.reset(new convolution_forward::desc(fwdpk, algo,
       // since conv have very solid policy to choose best format, so use any
-        getAnyMD(botDims_[i]),
-        getAnyMD(wgtDims_[i]),
-        getAnyMD(biasDims_[i]),
-        getAnyMD(topDims_),
+        MkldnnBuffer::getMD(botDims_[i]),
+        MkldnnBuffer::getMD(wgtDims_[i]),
+        MkldnnBuffer::getMD(biasDims_[i]),
+        MkldnnBuffer::getMD(topDims_),
         strides, padding, padR, padKind));
     } else {
       fwdDesc.reset(new convolution_forward::desc(fwdpk, algo,
-        getAnyMD(botDims_[i]),
-        getAnyMD(wgtDims_[i]),
-        getAnyMD(topDims_),
+        MkldnnBuffer::getMD(botDims_[i]),
+        MkldnnBuffer::getMD(wgtDims_[i]),
+        MkldnnBuffer::getMD(topDims_),
         strides, padding, padR, padKind));
     }
     fwdPD.reset(new convolution_forward::primitive_desc(*fwdDesc, eg));
@@ -392,31 +392,31 @@ void MkldnnConvLayer::resetDnnBwd() {
     if (hasBias) {
       fwdDesc.reset(new convolution_forward::desc(
         fwdpk, algo,
-        getAnyMD(botDims_[i]),
-        getAnyMD(wgtDims_[i]),
+        MkldnnBuffer::getMD(botDims_[i]),
+        MkldnnBuffer::getMD(wgtDims_[i]),
         dataBias_->getIntlMD(),
-        getAnyMD(topDims_),
+        MkldnnBuffer::getMD(topDims_),
         strides, padding, padR, padKind));
       // TODO(TJ): only bwd bias once with multi inputs layers, or sum them?
       bwdWgtDesc.reset(new convolution_backward_weights::desc(
         algo,
-        getAnyMD(botDims_[i]),
-        getAnyMD(wgtDims_[i]),
+        MkldnnBuffer::getMD(botDims_[i]),
+        MkldnnBuffer::getMD(wgtDims_[i]),
         dataBias_->getIntlMD(),
-        getAnyMD(topDims_),
+        MkldnnBuffer::getMD(topDims_),
         strides, padding, padR, padKind));
     } else {
       fwdDesc.reset(new convolution_forward::desc(
         fwdpk, algo,
-        getAnyMD(botDims_[i]),
-        getAnyMD(wgtDims_[i]),
-        getAnyMD(topDims_),
+        MkldnnBuffer::getMD(botDims_[i]),
+        MkldnnBuffer::getMD(wgtDims_[i]),
+        MkldnnBuffer::getMD(topDims_),
         strides, padding, padR, padKind));
       bwdWgtDesc.reset(new convolution_backward_weights::desc(
         algo,
-        getAnyMD(botDims_[i]),
-        getAnyMD(wgtDims_[i]),
-        getAnyMD(topDims_),
+        MkldnnBuffer::getMD(botDims_[i]),
+        MkldnnBuffer::getMD(wgtDims_[i]),
+        MkldnnBuffer::getMD(topDims_),
         strides, padding, padR, padKind));
     }
     fwdPD.reset(new convolution_forward::primitive_desc(*fwdDesc, eg));
@@ -488,23 +488,40 @@ void MkldnnConvLayer::resetDnnBwd() {
     std::shared_ptr<convolution_forward::primitive_desc> bwdDataFwdPD;
     std::shared_ptr<convolution_backward_data::desc> bwdDataDesc;
     std::shared_ptr<convolution_backward_data::primitive_desc> bwdDataPD;
+    memory::format bwdWgtFmt;
+    switch (dataWgt_->getIntlFmt()) {
+      case memory::format::OIhw8i8o:
+        bwdWgtFmt = memory::format::OIhw8o8i;
+        break;
+      case memory::format::gOIhw8i8o:
+        bwdWgtFmt = memory::format::gOIhw8o8i;
+        break;
+      case memory::format::OIhw16i16o:
+        bwdWgtFmt = memory::format::OIhw16o16i;
+        break;
+      case memory::format::gOIhw16i16o:
+        bwdWgtFmt = memory::format::gOIhw16o16i;
+        break;
+      default:
+        bwdWgtFmt = memory::format::any;
+    }
     bwdDataFwdDesc.reset(new convolution_forward::desc(
       fwdpk, algo,
-      getAnyMD(botDims_[i]),  // dataBot_->getIntlMD(),
-      getAnyMD(wgtDims_[i]),
+      dataBot_->getIntlMD(),  // MkldnnBuffer::getMD(botDims_[i]),
+      MkldnnBuffer::getMD(wgtDims_[i], bwdWgtFmt),
       diffTop_->getIntlMD(),
       strides, padding, padR, padKind));
     bwdDataDesc.reset(new convolution_backward_data::desc(
       algo,
-      getAnyMD(botDims_[i]),  // dataBot_->getIntlMD(),
-      getAnyMD(wgtDims_[i]),
+      dataBot_->getIntlMD(),  // MkldnnBuffer::getMD(botDims_[i]),
+      MkldnnBuffer::getMD(wgtDims_[i], bwdWgtFmt),
       diffTop_->getIntlMD(),
       strides, padding, padR, padKind));
     bwdDataFwdPD.reset(new convolution_forward::primitive_desc(
       *bwdDataFwdDesc, eg));
     bwdDataPD.reset(new convolution_backward_data::primitive_desc(
       *bwdDataDesc, eg, *bwdDataFwdPD));
-//    CHECK(dataBot_->getIntlPD() == bwdDataPD->diff_src_primitive_desc());
+    CHECK(dataBot_->getIntlPD() == bwdDataPD->diff_src_primitive_desc());
     CHECK(diffTop_->getIntlPD() == bwdDataPD->diff_dst_primitive_desc());
     // 3. init conversion
     if (dataWgtBwd_->initCvt(

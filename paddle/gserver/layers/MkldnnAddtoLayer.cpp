@@ -133,7 +133,8 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
   // 3. create fwd PD
   std::shared_ptr<sum::primitive_desc> fwdPD;
   fwdPD.reset(new sum::primitive_desc(
-    prvMDs.size() > 0 ? *(prvMDs[0]) : getAnyMD(topDims_), scales_, botPDs));
+    prvMDs.size() > 0 ? *(prvMDs[0]) : MkldnnBuffer::getMD(topDims_),
+    scales_, botPDs));
   // reset top user using internal fmt if next is dnn
   if (nextIsDnn_) {
     // fwdPD should be init with any type before, if in here.
@@ -154,6 +155,18 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
     << DNN_FMTS[dataBottoms_[0]->getIntlFmt()] << " >>> "
     << DNN_FMTS[dataTop_->getIntlFmt()] << ") >>> "
     << DNN_FMTS[dataTop_->getUserFmt()];
+}
+
+void MkldnnAddtoLayer::resetDnnBwd() {
+  const std::shared_ptr<mkldnn::memory::desc>& prvMD = getTopDiffMD();
+  for (size_t i = 0; i != inputLayers_.size(); ++i) {
+    CHECK(bs_ == getInput(i).getBatchSize()) << "batchsize should equal";
+    if (prevIsDnn_[i]) {
+      getPrev(i)->setTopDiffMD(this->getName(), *prvMD);
+      VLOG(4) << "set bot diff fmt: "
+        << DNN_FMTS[MkldnnBuffer::getMDFmt(*prvMD)];
+    }
+  }
 }
 
 void MkldnnAddtoLayer::submitDnnFwd(PassType passType) {
@@ -199,7 +212,7 @@ void MkldnnAddtoLayer::submitDnnBwd(const UpdateCallback& callback) {
       continue;
     if (addSize_ == 0) {
       // directly set the diff, do not copy
-      getPrev(i)->getOutput().grad = getOutput().grad;
+      getDnnInputGrad_mutable(i) = getDnnOutputGrad();
     } else {
       const std::shared_ptr<mkldnn::memory::desc>& prvMD = getTopDiffMD();
       if (prvMD && MkldnnBuffer::getMDFmt(*prvMD) != topFmt_) {

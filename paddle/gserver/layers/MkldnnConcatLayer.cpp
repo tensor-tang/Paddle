@@ -150,7 +150,8 @@ void MkldnnConcatLayer::resetDnnFwd(PassType passType) {
   
   // 3. create fwd PD  
   std::shared_ptr<concat::primitive_desc> fwdPD;
-  fwdPD.reset(new concat::primitive_desc(getAnyMD(topDims_), axis_, botPDs));
+  fwdPD.reset(new concat::primitive_desc(
+    MkldnnBuffer::getMD(topDims_), axis_, botPDs));
   // reset top user using best internal fmt if next is also dnn
   if (nextIsDnn_) {
     dataTop_->resetUser(topData, fwdPD->dst_primitive_desc());

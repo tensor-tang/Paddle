@@ -132,8 +132,8 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
   std::shared_ptr<pooling_forward::desc> fwdDesc;
   fwdDesc.reset(new pooling_forward::desc(pk, poolAlgo_,
     // since pool have poor policy to choose best format, so depends on prv
-    prvMD ? dataBot_->getUserMD() : getAnyMD(botDims_[0]),
-    getAnyMD(topDims_),
+    prvMD ? dataBot_->getUserMD() : MkldnnBuffer::getMD(botDims_[0]),
+    MkldnnBuffer::getMD(topDims_),
     strides, kernel, padding, padR, padKind));
   fwdPD_.reset(new pooling_forward::primitive_desc(*fwdDesc, eg));
   // 4. init cvt

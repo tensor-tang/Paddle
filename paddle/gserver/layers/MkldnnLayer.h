@@ -88,11 +88,6 @@ public:
 
   ~MkldnnLayer() {}
 
-  mkldnn::memory::desc getAnyMD(mkldnn::memory::dims & dm,
-    mkldnn::memory::data_type tp = mkldnn::memory::data_type::f32) {
-    return mkldnn::memory::desc({dm}, tp, mkldnn::memory::format::any);
-  }
-
   bool init(const LayerMap& layerMap, const ParameterMap& parameterMap) {
     /* Initialize the basic parent class */
     if (!Layer::init(layerMap, parameterMap)) return false;
@@ -215,7 +210,7 @@ public:
     // submit dnn backward
     REGISTER_TIMER_INFO("mkldnn_BwdTimer", getName().c_str());
     if (nullptr != sumTopDiffs_) {
-      LOG(INFO)<<"---------------------------------------no here yet!!";
+      LOG(INFO)<<"---------------------------------------" << getName();
       std::vector<mkldnn::primitive> sum;
       sum.push_back(*sumTopDiffs_);
       mkldnn::stream(mkldnn::stream::kind::eager).submit(sum).wait();
@@ -257,14 +252,20 @@ public:
       srcPDs.push_back(topDiffBuffers_[i]->getIntlPD());
       srcMems.push_back(*(topDiffBuffers_[i]->getIntlMem()));
     }
-    if (prvMDs.size() > 0) {
-      CHECK_EQ(prvMDs.size(), nextLayers_.size())
-        << "Do not support mixed layer type inside branch";
+    if (prvMDs.size() > 0 && prvMDs.size() != nextLayers_.size()) {
+      LOG(INFO) << "prvMDs.size() != nextLayers_.size(): " << prvMDs.size()
+        << " vs " << nextLayers_.size();
+      LOG(INFO) << "Next layers: ";
+      for (size_t i = 0; i < nextLayers_.size(); ++i) {
+        LOG(INFO) << nextLayers_[i]->getName()
+          << ", type: " << nextLayers_[i]->getType();
+      }
+      LOG(FATAL)  << "Do not support mixed layer type inside branch";
     }
     // 5. create sum PD
     std::shared_ptr<mkldnn::sum::primitive_desc> sumPD;
     sumPD.reset(new mkldnn::sum::primitive_desc(
-      getAnyMD(topDims_), scales, srcPDs));
+      MkldnnBuffer::getMD(topDims_), scales, srcPDs));
     // 6. init the buffer of result
     tmpDiff_.reset(new MkldnnBuffer());
     real *topDiff = getDnnOutputGrad()->getData();

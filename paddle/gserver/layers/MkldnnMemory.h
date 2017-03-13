@@ -143,6 +143,12 @@ public:
     return pUser_->get_primitive_desc().desc();
   }
 
+  static mkldnn::memory::desc getMD(mkldnn::memory::dims & dm,
+    mkldnn::memory::format fmt = mkldnn::memory::format::any,
+    mkldnn::memory::data_type tp = mkldnn::memory::data_type::f32) {
+    return mkldnn::memory::desc({dm}, tp, fmt);
+  }
+
   // get format from MD
   static int getMDFmt(const mkldnn::memory::desc& md) {
     return md.data.format;

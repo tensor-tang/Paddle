@@ -211,6 +211,29 @@ public:
     return getOutputGrad();
   }
 
+  /**
+   * MKLDNN layers use this function to get mutable BotDiff
+   */
+  MatrixPtr& getDnnInputGrad_mutable(int inputIndex) {
+    return inputLayers_[inputIndex]->getDnnOutputGrad_mutable(this->getName());
+  }
+
+  /**
+   * MKLDNN layers use this function to get mutable TopDiff
+   */
+  MatrixPtr& getDnnOutputGrad_mutable(
+    const std::string& nextName) {
+    if (nextLayers_.size() <= 1) {
+      return getOutput().grad;
+    } else {
+      int idx;
+      CHECK(mapGet(nextName, dnnOutIdxMap_, &idx))
+        << "Cannot find next layer " << nextName << " for layer "
+        << this->getName();
+      return dnnOutGrads_[idx];
+    }
+  }
+
   /** 
    * Add the next layer pointer.
    */
@@ -301,8 +324,10 @@ since MKLDNN layers would over wirte diff when backward.";
     if (passType_ != PASS_TEST) {
       // in training pass, the branch point should be MKLDNN type
       CHECK_EQ(prev->areNextAllDnn(), true)
-        << "Since this layer is " << getName() << " with type: " << getType()
-        << ", so all the outputs of inputlayer should also be MKLDNN type";
+        << "Since this layer " << getName() << " is with " << getType()
+        << "type , so all the outputs of inputlayer should also be MKLDNN type."
+        << "Prevlayer is " << prev->getName() << ", outsize of prevlayer: "
+        << prev->getNextSize();
     }
     // if prev layer has activation but it's not mkldnn type, return false
     bool hasAct = prev->hasActivation();

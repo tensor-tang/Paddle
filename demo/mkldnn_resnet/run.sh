@@ -84,7 +84,7 @@ if [ $task == "train" ]; then
     --config=$cfg \
     --use_gpu=False \
     --dot_period=1 \
-    --log_period=2 \
+    --log_period=1 \
     --test_period=100 \
     --trainer_count=1 \
     --num_passes=2 \

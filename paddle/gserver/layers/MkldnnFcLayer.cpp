@@ -179,12 +179,14 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
     }
     if (hasBias) {
       fwdDesc.reset(new inner_product_forward::desc(pk,
-          prvMD ? dataBot_->getUserMD() : getAnyMD(botDims_[i]),
-          getAnyMD(wgtDims_[i]), getAnyMD(biasDims_[i]), getAnyMD(topDims_)));
+          prvMD ? dataBot_->getUserMD() : MkldnnBuffer::getMD(botDims_[i]),
+          MkldnnBuffer::getMD(wgtDims_[i]),
+          MkldnnBuffer::getMD(biasDims_[i]),
+          MkldnnBuffer::getMD(topDims_)));
     } else {
       fwdDesc.reset(new inner_product_forward::desc(pk,
-          prvMD ? dataBot_->getUserMD() : getAnyMD(botDims_[i]),
-          getAnyMD(wgtDims_[i]), getAnyMD(topDims_)));
+          prvMD ? dataBot_->getUserMD() : MkldnnBuffer::getMD(botDims_[i]),
+          MkldnnBuffer::getMD(wgtDims_[i]), MkldnnBuffer::getMD(topDims_)));
     }
     fwdPD.reset(new inner_product_forward::primitive_desc(*fwdDesc, eg));
     // 4. init cvt
