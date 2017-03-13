@@ -7,7 +7,7 @@ export MKL_NUM_THREADS=$use_num
 
 prefix="googlenet"
 output=./models_googlenet
-model=models_googlenetv1/pass-00019/
+model=models_googlenet/pass-00001/
 train_list="data/train.list"
 test_list="data/test.list"
 if [ ! -d "data" ]; then

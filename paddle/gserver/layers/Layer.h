@@ -301,8 +301,8 @@ since MKLDNN layers would over wirte diff when backward.";
     if (passType_ != PASS_TEST) {
       // in training pass, the branch point should be MKLDNN type
       CHECK_EQ(prev->areNextAllDnn(), true)
-        << "This layer is MKLDNN type, so all the outputs of inputlayer \
-should also be MKLDNN type";
+        << "Since this layer is " << getName() << " with type: " << getType()
+        << ", so all the outputs of inputlayer should also be MKLDNN type";
     }
     // if prev layer has activation but it's not mkldnn type, return false
     bool hasAct = prev->hasActivation();
