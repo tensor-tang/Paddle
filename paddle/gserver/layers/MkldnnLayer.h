@@ -293,7 +293,6 @@ public:
     }
   }
 
-  // for conv only support caffe mode by now
   /**
    * Calculate output size based on caffeMode_.
    * - input(+padding): 0123456789
@@ -306,6 +305,7 @@ public:
    * - caffeMode_ is false:
    *   - output: (012), (234), (456), (678), (9)
    *   - outputSize = 5;
+   *** for conv only support caffe mode by now
    */
   int outputSize(int imageSize, int filterSize, int padding, int stride,
                        bool caffeMode = true) {

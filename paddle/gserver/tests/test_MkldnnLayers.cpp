@@ -172,8 +172,19 @@ void testPoolLayer(const string& poolType, const testPoolDesc& pm) {
 TEST(MkldnnLayer, PoolLayer) {
   testPoolLayer("max-projection", {10, 64, 32, 32, 16, 16, 2, 2, 0, 0, 2, 2});
   testPoolLayer("max-projection", {100, 16, 14, 14, 7, 7, 3, 3, 0, 0, 2, 2});
-  testPoolLayer("max-projection", {64, 192, 56, 56, 28, 28, 3, 3, 0, 0, 2, 2});
-//  testPoolLayer("avg-projection");
+  testPoolLayer("max-projection", {8, 192, 56, 56, 28, 28, 3, 3, 0, 0, 2, 2});
+  testPoolLayer("max-projection", {16, 64, 56, 56, 29, 29, 3, 3, 1, 1, 2, 2});
+/**
+ * Do not compare stride > 1 in avg-pool (avg = sum/poolSize)
+ * In MKLDNN: poolSize if always fw * fh, no matter if the kernel is out range
+ * of the image size, so avg = sum/(fw*fh)
+ * But in Paddle: poolSize is the element of valid element, do not included the
+ * out range of padding element (avg = sum/valid_num).
+ * So when kernel may scan out range of the input image size, the result BTW
+ * MKLDNN and Paddle are not the same
+ * However this will not impact max-pool, as the padding are always zeros.
+ */
+  testPoolLayer("avg-projection", {2, 64, 7, 7, 1, 1, 7, 7, 0, 0, 1, 1});
 }
 
 struct testFCDesc {
