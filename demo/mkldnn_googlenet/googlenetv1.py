@@ -11,6 +11,7 @@ img_size = 256
 crop_size = 224
 data_size = 3 * crop_size * crop_size
 num_classes = 1000
+layer_size = 1
 if not is_predict and data_provider:
     train_list = 'data/train.list' if not is_test else None
     test_list = 'data/test.list'
@@ -166,13 +167,13 @@ def inception(name, input, channels, \
     return cat
 
 
-lab = data_layer(name="label", size=1000)
-data = data_layer(name="input", size=data_size)
+lbl = data_layer(name="label", size=layer_size)
+img = data_layer(name="image", size=data_size)
 
 # stage 1
 conv1 = img_conv_layer(
     name="conv1",
-    input=data,
+    input=img,
     filter_size=7,
     num_channels=3,
     num_filters=64,
@@ -231,19 +232,19 @@ pool_o1 = img_pool_layer(name="pool_o1", input=ince4a, num_channels=512, pool_si
 conv_o1 = img_conv_layer(name="conv_o1", input=pool_o1, filter_size=1, num_filters=128, stride=1, padding=0)
 fc_o1 = fc_layer(name="fc_o1", input=conv_o1, size=1024, layer_attr=ExtraAttr(drop_rate=0.7), act=ReluActivation())
 out1 = fc_layer(name="output1", input=fc_o1,  size=1000, act=SoftmaxActivation())
-loss1 = cross_entropy(name='loss1', input=out1, label=lab, coeff=0.3) 
+loss1 = cross_entropy(name='loss1', input=out1, label=lbl, coeff=0.3) 
 
 # output 2
 pool_o2 = img_pool_layer(name="pool_o2", input=ince4d, num_channels=528, pool_size=5, stride=3, pool_type=AvgPooling())
 conv_o2 = img_conv_layer(name="conv_o2", input=pool_o2, filter_size=1, num_filters=128, stride=1, padding=0)
 fc_o2 = fc_layer(name="fc_o2", input=conv_o2, size=1024, layer_attr=ExtraAttr(drop_rate=0.7), act=ReluActivation())
 out2 = fc_layer(name="output2", input=fc_o2, size=1000, act=SoftmaxActivation())
-loss2 = cross_entropy(name='loss2', input=out2, label=lab, coeff=0.3) 
+loss2 = cross_entropy(name='loss2', input=out2, label=lbl, coeff=0.3) 
 
 # output 3
 dropout = dropout_layer(name="dropout", input=pool5, dropout_rate=0.4)
-out3 = fc_layer(
-    name="output3", input=dropout, size=1000, act=SoftmaxActivation())
-loss3 = cross_entropy(name='loss3', input=out3, label=lab)
+out3 = fc_layer(name="output3", input=dropout, size=1000, act=SoftmaxActivation())
+loss3 = cross_entropy(name='loss3', input=out3, label=lbl)
 
+inputs(img, lbl)
 outputs(loss3)

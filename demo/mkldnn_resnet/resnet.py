@@ -12,7 +12,7 @@ img_size = 256
 crop_size = 224
 data_size = 3 * crop_size * crop_size
 num_classes = 1000
-label_size = 1000 if not is_predict else 1
+label_size = 1
 if not is_predict and data_provider:
     train_list = 'data/train.list' if not is_test else None
     test_list = 'data/test.list'
@@ -147,8 +147,7 @@ def mid_projection(name, input, num_filters1, num_filters2, stride=2):
     return addto_layer(
         name=name + "_addto", input=[branch1, last_name], act=ReluActivation())
 
-lab = data_layer(name="label", size=1000)
-img = data_layer(name="input", size=data_size)
+img = data_layer(name="image", size=data_size)
 
 def deep_res_net(res2_num=3, res3_num=4, res4_num=6, res5_num=3):
     """
@@ -162,7 +161,7 @@ def deep_res_net(res2_num=3, res3_num=4, res4_num=6, res5_num=3):
     # conv1: 112x112
     tmp = conv_bn_layer(
         "conv1",
-        img,
+        input=img,
         filter_size=7,
         channels=3,
         num_filters=64,
@@ -214,38 +213,32 @@ def deep_res_net(res2_num=3, res3_num=4, res4_num=6, res5_num=3):
         stride=1,
         pool_type=AvgPooling())
 
-    output = fc_layer(
-        name='output', input=tmp, size=num_classes, act=SoftmaxActivation())
-    if not is_predict:
-        # choose one ???
-        classification_cost(input=output, label=lab)
-        #cross_entropy(name='loss', input=output, label=lab)
-
+    return fc_layer(input=tmp, size=num_classes, act=SoftmaxActivation())
 
 def res_net_50():
-    deep_res_net(3, 4, 6, 3)
+    return deep_res_net(3, 4, 6, 3)
 
 
 def res_net_101():
-    deep_res_net(3, 4, 23, 3)
+    return deep_res_net(3, 4, 23, 3)
 
 
 def res_net_152():
-    deep_res_net(3, 8, 36, 3)
-
-
-if not is_predict:
-    Inputs("input", "label")
-else:
-    Inputs("input")
-# Outputs("cost-softmax" if not is_predict else "output")
-Outputs("res5_3_branch2c_conv", "res5_3_branch2c_bn")
+    return deep_res_net(3, 8, 36, 3)
 
 if layer_num == 50:
-    res_net_50()
+    output = res_net_50()
 elif layer_num == 101:
-    res_net_101()
+    output = res_net_101()
 elif layer_num == 152:
-    res_net_152()
+    output = res_net_152()
 else:
     print("Wrong layer number.")
+
+if not is_predict:
+    lbl = data_layer(name="label", size=label_size)
+    loss = cross_entropy(name='loss', input=output, label=lbl)
+    inputs(img, lbl)
+    outputs(loss)
+else:
+    outpus(output)

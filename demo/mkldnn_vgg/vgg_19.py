@@ -1,17 +1,4 @@
-# Copyright (c) 2016 Baidu, Inc. All Rights Reserved
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
+#!/usr/bin/env python
 from paddle.trainer_config_helpers import *
 
 batch_size = get_config_arg('batch_size', int, 64)
@@ -24,6 +11,7 @@ img_size = 256
 crop_size = 224
 data_size = 3 * crop_size * crop_size
 num_classes = 1000
+label_size = 1
 if not is_predict and data_provider:
     train_list = 'data/train.list' if not is_test else None
     test_list = 'data/test.list'
@@ -130,14 +118,11 @@ def vgg_19_network(input_image, num_channels, num_classes=1000):
 
     return fc_layer(input=tmp, size=num_classes, act=SoftmaxActivation())
 
-label_size = num_classes if not is_predict else 1
 predict = vgg_19_network(input_image=img, num_channels=3, num_classes=num_classes)
-
-# small_vgg is predefined in trainer_config_helpers.networks
-#predict = small_vgg(input_image=img, num_channels=3, num_classes=label_size)
 
 if not is_predict:
     lbl = data_layer(name="label", size=label_size)
-    outputs(classification_cost(input=predict, label=lbl))
+    inputs(img, lbl)
+    outputs(classification_cost(name='loss', input=predict, label=lbl))
 else:
     outputs(predict)
