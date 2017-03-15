@@ -43,65 +43,67 @@ struct testConvDesc {
 void testConvLayer(const testConvDesc& pm) {
   bool trans = false;
   bool useGpu = false;
-  TestConfig config;
-  config.biasSize = pm.oc;
-  config.layerConfig.set_type("mkldnn_conv");
-  config.layerConfig.set_num_filters(pm.oc);
-  config.layerConfig.set_partial_sum(1);
-  config.layerConfig.set_shared_biases(true);
-  config.inputDefs.push_back({INPUT_DATA, "layer_0",
-    size_t(pm.ih * pm.iw * pm.ic),  // size of input layer
-    size_t(pm.kw * pm.kh * pm.oc * pm.ic / pm.gp)});  // param size
-  LayerInputConfig* input = config.layerConfig.add_inputs();
-  ConvConfig* conv = input->mutable_conv_conf();
-  conv->set_filter_size(pm.kw);
-  conv->set_filter_size_y(pm.kh);
-  conv->set_channels(pm.ic);
-  conv->set_padding(pm.pw);
-  conv->set_padding_y(pm.ph);
-  conv->set_stride(pm.sw);
-  conv->set_stride_y(pm.sh);
-  conv->set_groups(pm.gp);
-  conv->set_filter_channels(conv->channels() / conv->groups());
-  conv->set_img_size(pm.iw);
-  CHECK(conv->filter_channels() * pm.gp == conv->channels())
-    << "it is indivisible";
-  bool caffeMode = true;
-  int ow = outputSize(pm.iw, pm.kw, pm.pw, pm.sw, caffeMode);
-  CHECK(ow == pm.ow)
-    << "double check output size, " << ow << " vs " << pm.ow;
-  conv->set_output_x(ow);
-  config.layerConfig.set_size(conv->output_x() * conv->output_x() *
-                              config.layerConfig.num_filters());
+  for (auto bias : {0, pm.oc}) {
+    TestConfig config;
+    config.biasSize = bias;
+    config.layerConfig.set_type("mkldnn_conv");
+    config.layerConfig.set_num_filters(pm.oc);
+    config.layerConfig.set_partial_sum(1);
+    config.layerConfig.set_shared_biases(true);
+    config.inputDefs.push_back({INPUT_DATA, "layer_0",
+      size_t(pm.ih * pm.iw * pm.ic),  // size of input layer
+      size_t(pm.kw * pm.kh * pm.oc * pm.ic / pm.gp)});  // param size
+    LayerInputConfig* input = config.layerConfig.add_inputs();
+    ConvConfig* conv = input->mutable_conv_conf();
+    conv->set_filter_size(pm.kw);
+    conv->set_filter_size_y(pm.kh);
+    conv->set_channels(pm.ic);
+    conv->set_padding(pm.pw);
+    conv->set_padding_y(pm.ph);
+    conv->set_stride(pm.sw);
+    conv->set_stride_y(pm.sh);
+    conv->set_groups(pm.gp);
+    conv->set_filter_channels(conv->channels() / conv->groups());
+    conv->set_img_size(pm.iw);
+    CHECK(conv->filter_channels() * pm.gp == conv->channels())
+      << "it is indivisible";
+    bool caffeMode = true;
+    int ow = outputSize(pm.iw, pm.kw, pm.pw, pm.sw, caffeMode);
+    CHECK(ow == pm.ow)
+      << "double check output size, " << ow << " vs " << pm.ow;
+    conv->set_output_x(ow);
+    config.layerConfig.set_size(conv->output_x() * conv->output_x() *
+                                config.layerConfig.num_filters());
 
-  // TODO(TJ): test both true and false
-  config.layerConfig.set_use_mkldnn_wgt(false);
+    // TODO(TJ): test both true and false
+    config.layerConfig.set_use_mkldnn_wgt(false);
 
-  // TODO(TJ): use {0, 1} if AddToMode ready
-  for (auto addSize : {0}) {
-    config.layerConfig.set_add_size(addSize);
-    testLayerGrad(config, "mkldnn_conv", pm.bs, trans, useGpu);
-    // Use small batch_size and useWeight=true to test biasGrad
-    testLayerGrad(config, "mkldnn_conv", 2, trans, useGpu, true, 0.02);
-  }
+    // TODO(TJ): use {0, 1} if AddToMode ready
+    for (auto addSize : {0}) {
+      config.layerConfig.set_add_size(addSize);
+      testLayerGrad(config, "mkldnn_conv", pm.bs, trans, useGpu);
+      // Use small batch_size and useWeight=true to test biasGrad
+      testLayerGrad(config, "mkldnn_conv", 2, trans, useGpu, true, 0.02);
+    }
 
-  // test comparison with exconv
-  TestConfig ref = config;
-  ref.layerConfig.set_type("exconv");
-  std::vector<TestConfig> cfg = {config, ref};
-  // TODO(TJ): use {0, 1} if AddToMode ready
-  for (auto addSize : {0}) {
-    config.layerConfig.set_add_size(addSize);
-    for (auto bs : {1, pm.bs}) {
-      testLayerFunc(cfg, bs);
+    // test comparison with exconv
+    TestConfig ref = config;
+    ref.layerConfig.set_type("exconv");
+    std::vector<TestConfig> cfg = {config, ref};
+    // TODO(TJ): use {0, 1} if AddToMode ready
+    for (auto addSize : {0}) {
+      config.layerConfig.set_add_size(addSize);
+      for (auto bs : {1, pm.bs}) {
+        testLayerFunc(cfg, bs);
+      }
     }
   }
 }
 
 TEST(MkldnnLayer, convLayer) {
-  testConvLayer({64, 1, 3, 32, 32, 64, 32, 32, 3, 3, 1, 1, 1, 1});
-  testConvLayer({100, 1, 8, 32, 32, 64, 32, 32, 3, 3, 1, 1, 1, 1});
-  testConvLayer({128, 1, 64, 14, 14, 32, 14, 14, 3, 3, 1, 1, 1, 1});
+  testConvLayer({16, 1, 3, 32, 32, 64, 32, 32, 3, 3, 1, 1, 1, 1});
+  testConvLayer({10, 1, 8, 32, 32, 64, 32, 32, 3, 3, 1, 1, 1, 1});
+  testConvLayer({3, 1, 64, 14, 14, 32, 14, 14, 3, 3, 1, 1, 1, 1});
   testConvLayer({2, 1, 64, 14, 14, 32, 7, 7, 1, 1, 0, 0, 2, 2});
   // TODO(TJ): enable and test group != 1
 //  testConvLayer({1, 2, 4, 32, 32, 4, 32, 32, 3, 3, 1, 1, 1, 1});
