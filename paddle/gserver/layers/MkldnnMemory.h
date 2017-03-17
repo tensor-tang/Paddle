@@ -107,11 +107,13 @@ public:
     return sz / unit;
   }
 
+  /// it's the element size not memory size
   size_t getIntlSize() {
     CHECK(pIntl_) << "haven't init internal layout, call initUser then initCvt";
     return getSize(pIntl_->get_primitive_desc().get_size());
   }
 
+  /// it's the element size not memory size
   size_t getUserSize() {
     CHECK(pUser_) << "haven't init user layout";
     return getSize(pUser_->get_primitive_desc().get_size());

@@ -210,7 +210,6 @@ public:
     // submit dnn backward
     REGISTER_TIMER_INFO("mkldnn_BwdTimer", getName().c_str());
     if (nullptr != sumTopDiffs_) {
-      LOG(INFO)<<"---------------------------------------" << getName();
       std::vector<mkldnn::primitive> sum;
       sum.push_back(*sumTopDiffs_);
       mkldnn::stream(mkldnn::stream::kind::eager).submit(sum).wait();

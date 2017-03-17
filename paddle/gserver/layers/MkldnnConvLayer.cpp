@@ -257,7 +257,7 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
           tmp->submitCvt(cvtWgt);
           stream(stream::kind::eager).submit(cvtWgt).wait();
           real* dst = weights_[i]->getW()->getData();
-          memcpy(dst, tmp->getIntlData(), tmp->getIntlSize());
+          memcpy(dst, tmp->getIntlData(), tmp->getIntlSize() * sizeof(real));
         }
       } else {
         // load the initial paddle wgt and cvt only once when scoring
