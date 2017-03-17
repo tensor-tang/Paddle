@@ -174,6 +174,18 @@ void MkldnnConcatLayer::resetDnnFwd(PassType passType) {
 }
 
 void MkldnnConcatLayer::resetDnnBwd() {
+//  const std::shared_ptr<mkldnn::memory::desc>& prvMD = getTopDiffMD();
+  size_t sz = 0;
+  for (size_t i = 0; i != inputLayers_.size(); ++i) {
+    CHECK(bs_ == getInput(i).getBatchSize()) << "batchsize should equal";
+    if (prevIsDnn_[i]) {
+      getPrev(i)->setTopDiffMD(this->getName(), dataBottoms_[i]->getUserMD());
+      VLOG(4) << "set bot diff fmt: "
+        << DNN_FMTS[dataBottoms_[i]->getUserFmt()];
+    }
+    sz += dataBottoms_[i]->getUserSize();
+  }
+  CHECK_EQ(sz, getDnnOutputGrad()->getElementCnt());
 }
 
 void MkldnnConcatLayer::submitDnnFwd(PassType passType) {
@@ -195,25 +207,28 @@ void MkldnnConcatLayer::submitDnnBwd(const UpdateCallback &callback) {
   (void)callback;
   backwardActivation();
 
-  const MatrixPtr& out = getOutputGrad();
-  const std::shared_ptr<mkldnn::memory::desc>& prvMD = getTopDiffMD();
-  int offset = 0;
-  for (size_t i = 0; i != inputLayers_.size(); ++i) {
-    const MatrixPtr& in = getInputGrad(i);
-    if (NULL == in)
+  // TODO(TJ): use mkldnn when ready
+  const MatrixPtr& topGrad = getDnnOutputGrad();
+  real* topDiff = topGrad->getData();
+  std::vector<int> topOffsetStart;
+  int topStride = topGrad->getElementCnt() / bs_;
+  topOffsetStart.resize(inputLayers_.size(), 0);
+  for (size_t i = 1; i < inputLayers_.size(); ++i) {
+    topOffsetStart[i] = topOffsetStart[i - 1]
+      + dataBottoms_[i - 1]->getUserSize() / bs_;
+  }
+  for (size_t i = 0; i < inputLayers_.size(); ++i) {
+    if (nullptr == getDnnInputGrad(i))
       continue;
-    // TODO(TJ): use mkldnn with both addsize ==0 and >0
-    if (prvMD && MkldnnBuffer::getMDFmt(*prvMD) != topFmt_) {
-      LOG(FATAL) << "not implemented with internal format";
-    } else {
-      LOG(WARNING) << "not speedup with MKLDNN yet";
-      size_t inSize = getInputValue(i)->getWidth();
-      if (in) {
-        in->addAtOffset(*out, offset);
-      }
-      offset += inSize;
+    real* botDiff = getDnnInputGrad(i)->getData();
+    int botStride = dataBottoms_[i]->getUserSize() / bs_;
+    size_t oneBatchSize = botStride * sizeof(real);
+#   pragma omp parallel for collapse(1) schedule(static)
+    for (int n = 0; n < bs_; ++n) {
+      int botOffset = n * botStride;
+      int topOffset = topOffsetStart[i] + n * topStride;
+      memcpy(botDiff + botOffset, topDiff + topOffset, oneBatchSize);
     }
-    
   }
 }
 
