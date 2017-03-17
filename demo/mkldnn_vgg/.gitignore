@@ -1,9 +1,7 @@
 data
 data/*
-models_vgg_19/
-models_vgg_19/*
+model
+models/*
 plot.png
-log*
-*pyc
-train.list
-test.list
+*.log
+*.pyc

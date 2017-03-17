@@ -1,3 +1,4 @@
+#!/bin/bash
 set -e
 unset OMP_NUM_THREADS MKL_NUM_THREADS
 num=$((`nproc`-2))
@@ -6,52 +7,63 @@ export OMP_NUM_THREADS=$use_num
 export MKL_NUM_THREADS=$use_num
 
 function usage() {
-    echo "run test/train/pretrain (layer_num) (bs) (use_dummy) (use_mkldnn)"
+    echo "run.sh train/test/pretrain/time (bs) (use_dummy) (layer_num)\
+ (use_mkldnn) (use_mkldnn_wgt)"
 }
+
 if [ $# -lt 1 ]; then
     echo "At least one input"
     usage
     exit 0
 fi
 
-## inputs:
-task=$1
-layer_num=50
-bs=64
-use_dummy=1
-use_mkldnn=1
-if [ $2 ]; then
-    layer_num=$2
-fi
-if [ $3 ]; then
-    bs=$3
-fi
-if [ $4 ]; then
-    use_dummy=$4
-fi
-if [ $5 ]; then
-    use_mkldnn=$5
-fi
-
-prefix="resnet"
 cfg=resnet.py
-output=./model/${prefix}_${layer_num}
-model=model/${prefix}_${layer_num} #/pass-00001/
+topology="resnet"
 train_list="data/train.list"
 test_list="data/test.list"
 if [ ! -d "data" ]; then
     mkdir -p data
 fi
 
-## 
-is_test=0
+## inputs:
+task=$1
+bs=64
+use_dummy=1
+layer_num=50
+use_mkldnn=1
 use_mkldnn_wgt=1
+is_test=0
 if [ $task == "test" ]; then
     is_test=1
-    use_mkldnn_wgt=0
+    use_mkldnn_wgt=0 # the models are trained by CPU yet, so compatible with CPU weight
 fi
-log="log_${task}_${prefix}${layer_num}_bs${bs}.log"
-rm -f $log
+if [ $2 ]; then
+    bs=$2
+fi
+if [ $3 ]; then
+    use_dummy=$3
+fi
+if [ $4 ]; then
+    layer_num=$4
+fi
+if [ $5 ]; then
+    use_mkldnn=$5
+fi
+if [ $6 ]; then
+    use_mkldnn_wgt=$6
+fi
+
+output=./models/${topology}_${layer_num}
+model=models/${topology}_${layer_num}/pass-00001/
+if [ $use_dummy -eq 1 ]; then
+    log="log_${task}_${topology}_${layer_num}_bs${bs}_dummy.log"
+else
+    log="log_${task}_${topology}_${layer_num}_bs${bs}_image.log"
+fi
+if [ -f $log ]; then
+    echo "remove old log $log"
+    rm -f $log
+fi
 if [ $task == "train" ] || [ $task == "pretrain" ]; then
     if [ ! -f $train_list ]; then
         if [ $use_dummy -eq 1 ]; then
@@ -72,7 +84,8 @@ if [ ! -f $test_list ]; then
 fi
 if [ $is_test -eq 1 ] || [ $task == "pretrain" ]; then
     if [ ! -d $model ]; then
-      echo "model does not exist!"
+      echo "$model does not exist!"
+      exit 0
     fi
 fi
 
@@ -84,11 +97,19 @@ if [ $task == "train" ]; then
     --config=$cfg \
     --use_gpu=False \
     --dot_period=1 \
-    --log_period=1 \
-    --test_period=100 \
+    --log_period=2 \
+    --test_all_data_in_one_period=0 \
     --trainer_count=1 \
     --num_passes=2 \
     --save_dir=$output \
+    --config_args=$args \
+    2>&1 | tee -a $log 2>&1
+elif [ $task == "time" ]; then
+    paddle train --job=$task \
+    --config=$cfg \
+    --use_gpu=False \
+    --log_period=10 \
+    --test_period=100 \
     --config_args=$args \
     2>&1 | tee -a $log 2>&1 
 else  # pretrain or test
@@ -97,8 +118,6 @@ else  # pretrain or test
     --use_gpu=False \
     --log_period=1 \
     --init_model_path=$model \
-    --test_period=100 \
     --config_args=$args \
     2>&1 | tee -a $log 2>&1 
 fi
-

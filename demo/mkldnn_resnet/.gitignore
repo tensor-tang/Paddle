@@ -1,7 +1,7 @@
 data
 data/*
 model
-model/*
+models/*
 plot.png
 *.log
-*.pyc
+*.pyc

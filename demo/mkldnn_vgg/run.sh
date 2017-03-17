@@ -7,7 +7,7 @@ export OMP_NUM_THREADS=$use_num
 export MKL_NUM_THREADS=$use_num
 
 function usage() {
-    echo "run.sh train/test/pretrain/time (bs) (use_dummy) (version)\
+    echo "run.sh train/test/pretrain/time (bs) (use_dummy) (layer_num)\
  (use_mkldnn) (use_mkldnn_wgt)"
 }
 
@@ -17,8 +17,8 @@ if [ $# -lt 1 ]; then
     exit 0
 fi
 
-cfg=googlenet.py
-topology="googlenet"
+cfg=vgg.py
+topology="vgg"
 train_list="data/train.list"
 test_list="data/test.list"
 if [ ! -d "data" ]; then
@@ -29,7 +29,7 @@ fi
 task=$1
 bs=64
 use_dummy=1
-version="v1"
+layer_num=19
 use_mkldnn=1
 use_mkldnn_wgt=1
 is_test=0
@@ -44,7 +44,7 @@ if [ $3 ]; then
     use_dummy=$3
 fi
 if [ $4 ]; then
-    version=$4
+    layer_num=$4
 fi
 if [ $5 ]; then
     use_mkldnn=$5
@@ -53,12 +53,12 @@ if [ $6 ]; then
     use_mkldnn_wgt=$6
 fi
 
-output=./models/${topology}_${version}
-model=models/${topology}_${version}/pass-00001/
+output=./models/${topology}_${layer_num}
+model=models/${topology}_${layer_num}/pass-00001/
 if [ $use_dummy -eq 1 ]; then
-    log="log_${task}_${topology}_${version}_bs${bs}_dummy.log"
+    log="log_${task}_${topology}_${layer_num}_bs${bs}_dummy.log"
 else
-    log="log_${task}_${topology}_${version}_bs${bs}_image.log"
+    log="log_${task}_${topology}_${layer_num}_bs${bs}_image.log"
 fi
 if [ -f $log ]; then
     echo "remove old log $log"
@@ -89,7 +89,7 @@ if [ $is_test -eq 1 ] || [ $task == "pretrain" ]; then
     fi
 fi
 
-args="version=${version},batch_size=${bs},use_dummy=${use_dummy},use_mkldnn=${use_mkldnn},\
+args="layer_num=${layer_num},batch_size=${bs},use_dummy=${use_dummy},use_mkldnn=${use_mkldnn},\
 use_mkldnn_wgt=${use_mkldnn_wgt},is_test=${is_test}"
 
 if [ $task == "train" ]; then
@@ -121,4 +121,3 @@ else  # pretrain or test
     --config_args=$args \
     2>&1 | tee -a $log 2>&1 
 fi
-
