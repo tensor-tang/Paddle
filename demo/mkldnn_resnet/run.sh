@@ -37,6 +37,12 @@ if [ $task == "test" ]; then
     is_test=1
     use_mkldnn_wgt=0 # the models are trained by CPU yet, so compatible with CPU weight
 fi
+# default use mkldnn and mkldnn_wgt, and do not use dummy data when training
+if [ $task == "train" ] || [ $task == "pretrain" ]; then
+    use_dummy=0
+    use_mkldnn=1
+    use_mkldnn_wgt=1
+fi
 if [ $2 ]; then
     bs=$2
 fi
@@ -97,7 +103,7 @@ if [ $task == "train" ]; then
     --config=$cfg \
     --use_gpu=False \
     --dot_period=1 \
-    --log_period=2 \
+    --log_period=1 \
     --test_all_data_in_one_period=0 \
     --trainer_count=1 \
     --num_passes=2 \
@@ -116,7 +122,8 @@ else  # pretrain or test
     paddle train --job=$task \
     --config=$cfg \
     --use_gpu=False \
-    --log_period=1 \
+    --dot_period=1 \
+    --log_period=5 \
     --init_model_path=$model \
     --config_args=$args \
     2>&1 | tee -a $log 2>&1 
