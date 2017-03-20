@@ -40,10 +40,6 @@ protected:
 
   // use paddle weight format
   bool usePaddleFmt_;
-  bool hasCvtTopData_;
-  bool hasCvtTopDiff_;
-  bool hasCvtBiasData_;
-  bool hasCvtBiasDiff_;
   bool hasInited_;
 
   // input size (== ic*ih*iw) by batch size
@@ -58,10 +54,6 @@ public:
       dataBias_(nullptr),
       diffWgt_(nullptr),
       diffBias_(nullptr),
-      hasCvtTopData_(false),
-      hasCvtTopDiff_(false),
-      hasCvtBiasData_(false),
-      hasCvtBiasDiff_(false),
       hasInited_(false)
     {}
 

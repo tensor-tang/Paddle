@@ -138,8 +138,8 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
   // conv_relu only support scoring yet
   useConvRelu_ = (hasRelu_ && passType == PASS_TEST);
 
-  hasCvtTopData_ = false;
-  hasCvtBiasData_ = false;
+  bool hasCvtTopData = false;
+  bool hasCvtBiasData = false;
 
   // 1. create buffer, only have one output and bias buffer
   dataTop_.reset(new MkldnnBuffer());
@@ -273,8 +273,8 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
     }
     if (hasBias) {
       // only cvt once
-      if (!hasCvtBiasData_) {
-        hasCvtBiasData_ = true;
+      if (!hasCvtBiasData) {
+        hasCvtBiasData = true;
         CHECK(dataBias_->getUserPD() == fwdPD->bias_primitive_desc())
           << "should always be format::x, or changed in new mkldnn version";
         dataBias_->initCvt(dataBias_->getUserPD(), dnnCvtNoNeed);
@@ -284,8 +284,8 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
       }
     }
     // cvt topData buffer only once, set dnn MemDesc if next is also mkldnn
-    if (!hasCvtTopData_) {
-      hasCvtTopData_ = true;
+    if (!hasCvtTopData) {
+      hasCvtTopData = true;
       if (nextIsDnn_) {
         dataTop_->resetUser(topData, fwdPD->dst_primitive_desc());
         setTopDataMD(dataTop_->getUserMD());
@@ -334,9 +334,9 @@ void MkldnnConvLayer::resetDnnBwd() {
   prop_kind fwdpk = prop_kind::forward_training;
   bool hasBias = (biases_ && biases_->getWGrad());
 
-  hasCvtTopDiffBwdWgt_ = false;
-  hasCvtTopDiffBwdData_ = false;
-  hasCvtBiasDiff_ = false;
+  bool hasCvtTopDiffBwdWgt = false;
+  bool hasCvtTopDiffBwdData = false;
+  bool hasCvtBiasDiff = false;
 
   // 1. create buffer, only have one output and bias buffer
   topDiffBwdWgt_.reset(new MkldnnBuffer());
@@ -443,8 +443,8 @@ void MkldnnConvLayer::resetDnnBwd() {
         bwdWgtPD->diff_weights_primitive_desc(), dnnCvtIntl2User);
     }
     if (hasBias) {
-      if (!hasCvtBiasDiff_) {
-        hasCvtBiasDiff_ = true;
+      if (!hasCvtBiasDiff) {
+        hasCvtBiasDiff = true;
         CHECK(diffBias_->getUserPD() == bwdWgtPD->diff_bias_primitive_desc())
           << "should always be format::x, or changed in new mkldnn version";
         diffBias_->initCvt(diffBias_->getUserPD(), dnnCvtNoNeed);
@@ -453,8 +453,8 @@ void MkldnnConvLayer::resetDnnBwd() {
           << "all bias formats should equal";
       }
     }
-    if (!hasCvtTopDiffBwdWgt_) {
-      hasCvtTopDiffBwdWgt_ = true;
+    if (!hasCvtTopDiffBwdWgt) {
+      hasCvtTopDiffBwdWgt = true;
       topDiffBwdWgt_->initCvt(bwdWgtPD->diff_dst_primitive_desc(),
         dnnCvtUser2Intl);
       VLOG(3) << "bwd wgt top diff flow --- "
@@ -517,8 +517,8 @@ void MkldnnConvLayer::resetDnnBwd() {
 //    CHECK(dataBot_->getIntlPD() == bwdDataPD->diff_src_primitive_desc());
 //    CHECK(diffTop_->getIntlPD() == bwdDataPD->diff_dst_primitive_desc());
     // 3. init conversion
-    if (!hasCvtTopDiffBwdData_) {
-      hasCvtTopDiffBwdData_ = true;
+    if (!hasCvtTopDiffBwdData) {
+      hasCvtTopDiffBwdData = true;
       diffTop_->initCvt(bwdDataPD->diff_dst_primitive_desc(), dnnCvtUser2Intl);
     } else {
       CHECK(diffTop_->getIntlPD() == bwdDataPD->diff_dst_primitive_desc())

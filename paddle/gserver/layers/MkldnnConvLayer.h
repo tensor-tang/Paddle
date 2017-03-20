@@ -46,11 +46,6 @@ protected:
   /// If shared_biases is ture shape of bias: (oc, 1)
   std::unique_ptr<Weight> biases_;
   bool hasRelu_;
-  bool hasCvtTopData_;
-  bool hasCvtTopDiffBwdData_;
-  bool hasCvtTopDiffBwdWgt_;
-  bool hasCvtBiasData_;
-  bool hasCvtBiasDiff_;
   bool useConvRelu_;
   bool hasInited_;
   double negativeSlope_;
@@ -67,11 +62,6 @@ public:
       diffWgt_(nullptr),
       diffBias_(nullptr),
       hasRelu_(false),
-      hasCvtTopData_(false),
-      hasCvtTopDiffBwdData_(false),
-      hasCvtTopDiffBwdWgt_(false),
-      hasCvtBiasData_(false),
-      hasCvtBiasDiff_(false),
       useConvRelu_(false),
       hasInited_(false),
       negativeSlope_(-0.0)
