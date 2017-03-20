@@ -226,8 +226,8 @@ public:
     mkldnn::engine eg = CpuEngine::Instance().getEngine();
 
     real* pdata = arg.value->getData();
-    dataBot_.reset(new mkldnn::memory({*md_, eg}, pdata));
-    dataTop_.reset(new mkldnn::memory({*md_, eg}, pdata));
+    botData_.reset(new mkldnn::memory({*md_, eg}, pdata));
+    topData_.reset(new mkldnn::memory({*md_, eg}, pdata));
 
     // careful: should be -0, not 0
     negative_slope = -0.f;
@@ -235,7 +235,7 @@ public:
     auto fwdMD = mkldnn::relu_forward::desc(
       mkldnn::prop_kind::forward_training, *md_, negative_slope);
     fwdPD_.reset(new mkldnn::relu_forward::primitive_desc(fwdMD, eg));
-    fwd_.reset(new mkldnn::relu_forward(*fwdPD_, *dataBot_, *dataTop_));
+    fwd_.reset(new mkldnn::relu_forward(*fwdPD_, *botData_, *topData_));
 
     needResetBwd_ = true;
   }
@@ -246,13 +246,13 @@ public:
 
     mkldnn::engine eg = CpuEngine::Instance().getEngine();
     real* pdiff = arg.grad->getData();
-    diffBot_.reset(new mkldnn::memory({*md_, eg}, pdiff));
-    diffTop_.reset(new mkldnn::memory({*md_, eg}, pdiff));
+    botDiff_.reset(new mkldnn::memory({*md_, eg}, pdiff));
+    topDiff_.reset(new mkldnn::memory({*md_, eg}, pdiff));
 
     auto bwdMD = mkldnn::relu_backward::desc(*md_, *md_, negative_slope);
     auto bwdPD = mkldnn::relu_backward::primitive_desc(bwdMD, eg, *fwdPD_);
     bwd_.reset(new mkldnn::relu_backward(
-      bwdPD, *dataBot_, *diffTop_, *diffBot_));
+      bwdPD, *botData_, *topDiff_, *botDiff_));
     needResetBwd_ = false;
   }
 
@@ -300,8 +300,8 @@ public:
     mkldnn::engine eg = CpuEngine::Instance().getEngine();
 
     real* pdata = arg.value->getData();
-    dataBot_.reset(new mkldnn::memory({*md_, eg}, pdata));
-    dataTop_.reset(new mkldnn::memory({*md_, eg}, pdata));
+    botData_.reset(new mkldnn::memory({*md_, eg}, pdata));
+    topData_.reset(new mkldnn::memory({*md_, eg}, pdata));
     // TODO(TJ): check if OK use same pdata?
     // in forward src and dst memory can be the same,
     // but in backward not sure it's OK if they are the same, need double check
@@ -314,7 +314,7 @@ public:
       mkldnn::prop_kind::forward_scoring, *md_, axis);
     auto fwdPD = mkldnn::softmax_forward::primitive_desc(
       fwdMD, eg);
-    fwd_.reset(new mkldnn::softmax_forward(fwdPD, *dataBot_, *dataTop_));
+    fwd_.reset(new mkldnn::softmax_forward(fwdPD, *botData_, *topData_));
 
     needResetBwd_ = true;
   }

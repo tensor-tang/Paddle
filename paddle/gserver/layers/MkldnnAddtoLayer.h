@@ -1,4 +1,4 @@
-/* Copyright (c) 2016 */
+/* Copyright (c) 2017 */
 
 #pragma once
 
@@ -25,8 +25,6 @@ namespace paddle {
 class MkldnnAddtoLayer : public MkldnnLayer {
 protected:
   std::shared_ptr<mkldnn::sum> fwd_;
-  // TODO(TJ): replace when dataBot is vector
-  std::vector<MkldnnBufferPtr> dataBottoms_;
   std::vector<double> scales_;
 
   std::unique_ptr<Weight> biases_;
@@ -44,14 +42,6 @@ public:
 
   bool initDnn(const LayerMap& layerMap, const ParameterMap& parameterMap);
 
-  virtual void clearAllDnnCvtFlags() {
-    MkldnnLayer::clearAllDnnCvtFlags();
-    for (size_t i = 0; i < dataBottoms_.size(); ++i) {
-      if (dataBottoms_[i])
-        dataBottoms_[i]->clearCvtFlag();
-    }
-  }
-
   void reshape();
 
   void clearDataDiff();
@@ -65,7 +55,7 @@ public:
   void submitDnnBwd(const UpdateCallback& callback);
 
   void printInfo() {
-    VLOG(1) << "sum number: " << dataBottoms_.size();
+    VLOG(1) << "sum number: " << botDatas_.size();
     for (size_t i = 0; i < ic_.size(); ++i) {
       VLOG(2)
         << "ic: " << ic_[i]

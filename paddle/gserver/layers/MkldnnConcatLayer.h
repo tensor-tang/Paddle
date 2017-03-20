@@ -1,4 +1,4 @@
-/* Copyright (c) 2016 */
+/* Copyright (c) 2017 */
 
 #pragma once
 
@@ -18,7 +18,6 @@ namespace paddle {
 class MkldnnConcatLayer : public MkldnnLayer {
 protected:
   std::shared_ptr<mkldnn::concat::primitive> fwd_;
-  std::vector<MkldnnBufferPtr> dataBottoms_;
 
   /*** concat_dimension in MKLDNN
    * if axis_ == 0, concat batchsize
@@ -37,14 +36,6 @@ public:
 
   bool initDnn(const LayerMap& layerMap, const ParameterMap& parameterMap);
 
-  virtual void clearAllDnnCvtFlags() {
-    MkldnnLayer::clearAllDnnCvtFlags();
-    for (size_t i = 0; i < dataBottoms_.size(); ++i) {
-      if (dataBottoms_[i])
-        dataBottoms_[i]->clearCvtFlag();
-    }
-  }
-
   void reshape();
 
   void clearDataDiff();
@@ -58,7 +49,7 @@ public:
   void submitDnnBwd(const UpdateCallback& callback);
 
   void printInfo() {
-    VLOG(1) << "concats number: " << dataBottoms_.size();
+    VLOG(1) << "concats number: " << botDatas_.size();
     for (size_t i = 0; i < iw_.size(); ++i) {
       VLOG(2)
         << "ih: " << ih_[i] << ", iw: " << iw_[i]

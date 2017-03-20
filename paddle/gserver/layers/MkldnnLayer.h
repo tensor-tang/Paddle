@@ -1,10 +1,9 @@
-/* Copyright (c) 2016 */
+/* Copyright (c) 2017 */
 
 #pragma once
 
 #include "Layer.h"
 #include "paddle/math/Matrix.h"
-#include "paddle/utils/Stat.h"
 #include <vector>
 #include "mkldnn.hpp"
 #include "MkldnnBase.h"
@@ -21,17 +20,15 @@ typedef std::shared_ptr<MkldnnLayer> MkldnnLayerPtr;
  */
 class MkldnnLayer : public Layer {
 public:
-  /// data buffers
-  // TODO(TJ): need vector when know how RNN works
-  MkldnnBufferPtr dataBot_;
-  MkldnnBufferPtr dataTop_;
-  /// diff buffer
-  MkldnnBufferPtr diffBot_;
-  // top diff for backward data
-  MkldnnBufferPtr diffTop_;
-  /// top diff for backward weight, if needed
-  /// in some conditions it may have different format with backward data
-  MkldnnBufferPtr topDiffBwdWgt_;
+  /// bottom data and diff buffers, can be array
+  std::vector<MkldnnBufferPtr> botDatas_;
+  std::vector<MkldnnBufferPtr> botDiffs_;
+
+  /// top data and diff buffers
+  MkldnnBufferPtr topData_;
+  MkldnnBufferPtr topDiff_;  // top diff for backward data
+  // in some conditions it may have different format with topdiff backward data
+  MkldnnBufferPtr topDiffBwdWgt_;  // top diff for backward weight, if needed
 
   // dims and format for user buffer
   std::vector<mkldnn::memory::dims> botDims_, wgtDims_, biasDims_;
@@ -63,6 +60,7 @@ public:
 
   // each MKLDNN layers has WriteToMode and AddToMode
   // use WriteToMode if addSize_ == 0, otherwise use AddToMode
+  // TODO(TJ): maybe can remove this
   int addSize_;
 
   // layers with weight have an option to choose
@@ -79,10 +77,8 @@ public:
 public:
   explicit MkldnnLayer(const LayerConfig& config)
     : Layer(config),
-      dataBot_(nullptr),
-      dataTop_(nullptr),
-      diffBot_(nullptr),
-      diffTop_(nullptr),
+      topData_(nullptr),
+      topDiff_(nullptr),
       topDiffBwdWgt_(nullptr),
       nextIsDnn_(false),
       addSize_(0),
@@ -93,195 +89,7 @@ public:
 
   ~MkldnnLayer() {}
 
-  bool init(const LayerMap& layerMap, const ParameterMap& parameterMap) {
-    /* Initialize the basic parent class */
-    if (!Layer::init(layerMap, parameterMap)) return false;
-
-    bs_ = 0;
-    oc_ = 0;
-    topDims_ = {0};
-    topFmt_ = mkldnn::memory::format::nchw;
-    for (size_t i = 0; i < inputLayers_.size(); i++) {
-      botDims_.push_back({0});
-      wgtDims_.push_back({0});
-      biasDims_.push_back({0});
-      botFmt_.push_back(mkldnn::memory::format::nchw);
-      wgtFmt_.push_back(mkldnn::memory::format::format_undef);
-      biasFmt_.push_back(mkldnn::memory::format::x);
-    }
-
-    return initDnn(layerMap, parameterMap);
-  }
-
-  void forward(PassType passType) {
-    Layer::forward(passType);
-
-    // reshape if batch size changes
-    if (bs_ == getInput(0).getBatchSize()) {
-      // choose to clear top data or top diff
-      clearDataDiff();
-    } else {
-      if (prepareOnce_) {
-        topDiffBuffers_.resize(nextLayers_.size(), nullptr);
-        dnnOutGrads_.resize(nextLayers_.size(), nullptr);
-        for (size_t i = 0; i < nextLayers_.size(); ++i) {
-          topDiffMDs_.push_back(nullptr);
-          dnnOutIdxMap_[nextLayers_[i]->getName()] = i;
-        //  LOG(INFO)<<"next name:" << nextLayers_[i]->getName();
-        }
-        if (nextLayers_.size() > 0 && topDiffMDs_.size() > nextLayers_.size()) {
-          // in base layer init will add one nullptr for PASS_grad check
-          // so remove the redundant one
-          topDiffMDs_.pop_back();
-          CHECK_EQ(topDiffMDs_.size(), nextLayers_.size());
-        } else {
-          CHECK_EQ(topDiffMDs_.size() - 1, nextLayers_.size());
-        }
-        // this function can work only after all layers init done
-        // and should be called only once
-        initDnnflags();
-        prepareOnce_ = false;
-      }
-
-      bs_ = getInput(0).getBatchSize();
-      VLOG(1) << "reset forward batch size to " << bs_
-        << " of mkldnn layer: " << getName();
-
-      // reshape the input and output size
-      REGISTER_TIMER_INFO("mkldnn_ResetDnnTimer", getName().c_str());
-      reshape();
-      printInfo();
-
-      // mkldnn init or reset forward
-      resetOutput(bs_, getSize());
-      resetDnnFwd(passType);
-
-      // print the data flow
-      for (size_t i = 0; i != inputLayers_.size(); ++i) {
-        // TODO(TJ): consider multi input
-        if (dataBot_ && dataTop_)
-          VLOG(1) << "data format flow --- "
-            << DNN_FMTS[dataBot_->getUserFmt()] << " >>> ("
-            << DNN_FMTS[dataBot_->getIntlFmt()] << " >>> "
-            << DNN_FMTS[dataTop_->getIntlFmt()] << ") >>> "
-            << DNN_FMTS[dataTop_->getUserFmt()];
-        // in batch norm layer, the other two will be moving mean and var
-        if (getType() == "mkldnn_batch_norm")
-          break;
-      }
-      
-      if (passType != PASS_TEST && nextLayers_.size() > 1) {  // Training
-        sumTopDiffs_ = nullptr;
-        for (size_t i = 0; i < nextLayers_.size(); ++i) {
-          topDiffMDs_[i] = nullptr;
-          dnnOutGrads_[i] = Matrix::create(bs_, getSize(), false, false);
-        }
-      }
-      needResetBwd_ = true;
-    }
-
-    // all sumbit cvt should be clear
-    clearAllDnnCvtFlags();
-    // then submit dnn forward
-    REGISTER_TIMER_INFO("mkldnn_FwdTimer", getName().c_str());
-    submitDnnFwd(passType);
-  }
-
-  void backward(const UpdateCallback& callback) {
-    if (needResetBwd_) {
-      needResetBwd_ = false;
-      // mkldnn init or reset backward
-      VLOG(1) << "reset backward batch size to " << bs_
-        << " of mkldnn layer: " << getName();
-
-      prepareTopDiff();
-      resetDnnBwd();
-
-      // print the diff flow
-      for (size_t i = 0; i != inputLayers_.size(); ++i) {
-        // TODO(TJ): consider multi input
-        if (diffBot_ && diffTop_)
-          VLOG(1) << "diff format flow --- "
-            << DNN_FMTS[diffBot_->getUserFmt()] << " <<< ("
-            << DNN_FMTS[diffBot_->getIntlFmt()] << " <<< "
-            << DNN_FMTS[diffTop_->getIntlFmt()] << ") <<< "
-            << DNN_FMTS[diffTop_->getUserFmt()];
-        // in batch norm layer, the other two will be moving mean and var
-        if (getType() == "mkldnn_batch_norm")
-          break;
-      }
-    }
-
-    // submit dnn backward
-    REGISTER_TIMER_INFO("mkldnn_BwdTimer", getName().c_str());
-    if (nullptr != sumTopDiffs_) {
-      std::vector<mkldnn::primitive> sum;
-      sum.push_back(*sumTopDiffs_);
-      mkldnn::stream(mkldnn::stream::kind::eager).submit(sum).wait();
-    }
-    submitDnnBwd(callback);
-  }
-
-  /**
-   * if have several input topdiffs
-   * then create handle to sum them
-   */
-  virtual void prepareTopDiff() {
-    sumTopDiffs_ = nullptr;
-    if (nextLayers_.size() <= 1)
-      return;
-    mkldnn::engine eg = CpuEngine::Instance().getEngine();
-    std::vector<mkldnn::memory::primitive_desc> srcPDs;
-    std::vector<std::shared_ptr<mkldnn::memory::desc>> prvMDs;
-    std::vector<mkldnn::primitive::at> srcMems;
-    std::vector<double> scales;
-    CHECK_EQ(nextLayers_.size(), topDiffBuffers_.size());
-    for (size_t i = 0; i < topDiffBuffers_.size(); ++i) {
-      // 1. create buffers and init user
-      real* diff = dnnOutGrads_[i]->getData();
-      topDiffBuffers_[i].reset(new MkldnnBuffer());
-      topDiffBuffers_[i]->initUser(diff, topDims_, topFmt_, eg);
-      // 2. use private MD when init user if has
-      // TODO(TJ): any improvment if prvs are different format
-      const std::shared_ptr<mkldnn::memory::desc>& prvMD = getTopDiffMD(i);
-      if (prvMD) {
-        topDiffBuffers_[i]->resetUser(diff, *prvMD, eg);
-        prvMDs.push_back(prvMD);
-      }
-      // 3. init Intl with empty cvt
-      topDiffBuffers_[i]->initCvt();
-      CHECK(i == 0 || (topDiffBuffers_[i-1]->getIntlSize()
-        == topDiffBuffers_[i]->getIntlSize())) << "All size should be equal";
-      // 4. save buffers
-      scales.push_back(1.0);  // no scale
-      srcPDs.push_back(topDiffBuffers_[i]->getIntlPD());
-      srcMems.push_back(*(topDiffBuffers_[i]->getIntlMem()));
-    }
-    if (prvMDs.size() > 0 && prvMDs.size() != nextLayers_.size()) {
-      LOG(INFO) << "prvMDs.size() != nextLayers_.size(): " << prvMDs.size()
-        << " vs " << nextLayers_.size();
-      LOG(INFO) << "Next layers: ";
-      for (size_t i = 0; i < nextLayers_.size(); ++i) {
-        LOG(INFO) << nextLayers_[i]->getName()
-          << ", type: " << nextLayers_[i]->getType();
-      }
-      LOG(FATAL)  << "Do not support mixed layer type inside branch";
-    }
-    // 5. create sum PD
-    std::shared_ptr<mkldnn::sum::primitive_desc> sumPD;
-    sumPD.reset(new mkldnn::sum::primitive_desc(
-      MkldnnBuffer::getMD(topDims_), scales, srcPDs));
-    // 6. init the buffer of result
-    tmpDiff_.reset(new MkldnnBuffer());
-    real *topDiff = getDnnOutputGrad()->getData();
-    tmpDiff_->initUser(topDiff, sumPD->dst_primitive_desc());
-    tmpDiff_->initCvt();
-    // change the first intl MD
-    topDiffMDs_[0].reset(new mkldnn::memory::desc(tmpDiff_->getIntlMD()));
-    // 7. create sum handle
-    sumTopDiffs_.reset(
-      new mkldnn::sum(*sumPD, srcMems, *(tmpDiff_->getIntlMem())));
-  }
+  bool init(const LayerMap& layerMap, const ParameterMap& parameterMap);
 
   /**
    * init the flags whether to set memory desc
@@ -297,6 +105,27 @@ public:
       prevIsDnn_.push_back(isPrevDnn(i));
     }
   }
+
+  /** 
+   * each dnn layer should have function
+   * to clear all the MkldnnBuffer cvt flags
+   */
+  virtual void clearAllDnnCvtFlags();
+
+  /**
+   * if have several input topdiffs
+   * then create handle to sum them
+   */
+  virtual void prepareTopDiff();
+
+  void forward(PassType passType);
+
+  void backward(const UpdateCallback& callback);
+
+  /**
+   * print some info like input or output size
+   */
+  virtual void printInfo();
 
   /**
    * Calculate output size based on caffeMode_.
@@ -341,19 +170,6 @@ public:
    */
   virtual void reshape() = 0;
 
-  /**
-   * print some info like input or output size
-   */
-  virtual void printInfo() {
-    for (size_t i = 0; i < ih_.size(); ++i) {
-      VLOG(2)
-        << "ih: " << ih_[i] << ", iw: " << iw_[i]
-        << ", ic: " << ic_[i]
-        << ", oh: " << oh_[i] << ", ow: " << ow_[i]
-        << ", oc: " << oc_;
-    }
-  }
-
   /** 
    * each dnn layer should have function
    * to init or reset forward mkldnn
@@ -374,18 +190,6 @@ public:
   // TODO(TJ): maybe can remove it
   // when confirm whether need to clear topdiff and how multi inputs work
   virtual void clearDataDiff() = 0;
-
-  /** 
-   * each dnn layer should have function
-   * to clear all the MkldnnBuffer cvt flags
-   */
-  virtual void clearAllDnnCvtFlags() {
-    if (dataBot_) dataBot_->clearCvtFlag();
-    if (dataTop_) dataTop_->clearCvtFlag();
-    if (diffBot_) diffBot_->clearCvtFlag();
-    if (diffTop_) diffTop_->clearCvtFlag();
-    if (topDiffBwdWgt_) topDiffBwdWgt_->clearCvtFlag();
-  }
 
   virtual void submitDnnFwd(PassType passType) = 0;
   virtual void submitDnnBwd(const UpdateCallback& callback) = 0;

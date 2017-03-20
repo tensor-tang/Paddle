@@ -1,4 +1,4 @@
-/* Copyright (c) 2016 */
+/* Copyright (c) 2017 */
 
 #pragma once
 
@@ -21,10 +21,10 @@ public:
 
   // mkldnn
   std::shared_ptr<mkldnn::memory::desc> md_;
-  std::shared_ptr<mkldnn::memory> dataBot_;
-  std::shared_ptr<mkldnn::memory> dataTop_;
-  std::shared_ptr<mkldnn::memory> diffBot_;
-  std::shared_ptr<mkldnn::memory> diffTop_;
+  std::shared_ptr<mkldnn::memory> botData_;
+  std::shared_ptr<mkldnn::memory> botDiff_;
+  std::shared_ptr<mkldnn::memory> topData_;
+  std::shared_ptr<mkldnn::memory> topDiff_;
   bool needResetBwd_;
 
 public:
@@ -34,10 +34,10 @@ public:
       oh_(0),
       ow_(0),
       md_(nullptr),
-      dataBot_(nullptr),
-      dataTop_(nullptr),
-      diffBot_(nullptr),
-      diffTop_(nullptr),
+      botData_(nullptr),
+      botDiff_(nullptr),
+      topData_(nullptr),
+      topDiff_(nullptr),
       needResetBwd_(true)
     {}
 

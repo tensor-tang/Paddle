@@ -1,16 +1,4 @@
-/* Copyright (c) 2016 Baidu, Inc. All Rights Reserve.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License. */
+/* Copyright (c) 2017 */
 
 #include "paddle/utils/Logging.h"
 #include "paddle/utils/Stat.h"
@@ -37,19 +25,20 @@ bool MkldnnConcatLayer::initDnn(const LayerMap &layerMap,
 
   bs_ = 0;
   oc_ = 0;
+  int i = 0;
   for (auto &inputConfig : config_.inputs()) {
     if (inputConfig.has_image_conf()) {
       const ImageConfig &conf = inputConfig.image_conf();
-      iw_.push_back(conf.img_size());
-      ih_.push_back(conf.img_size());
+      iw_[i] = conf.img_size();
+      ih_[i] = conf.img_size();
     } else {
-      iw_.push_back(0);
-      ih_.push_back(0);
+      iw_[i] = 0;
+      ih_[i] = 0;
     }
-    ic_.push_back(0);
-    ow_.push_back(0);
-    oh_.push_back(0);
-    dataBottoms_.push_back(nullptr);
+    ic_[i] = 0;
+    ow_[i] = 0;
+    oh_[i] = 0;
+    i++;
   }
   return true;
 }
@@ -95,16 +84,17 @@ void MkldnnConcatLayer::resetDnnFwd(PassType passType) {
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
 
   // create top buffer and init user, only have one output
-  dataTop_.reset(new MkldnnBuffer());
-  real *topData = getOutputValue()->getData();
+  topData_.reset(new MkldnnBuffer());
+  real *topDataData = getOutputValue()->getData();
   topFmt_ = memory::format::nchw;
   topDims_ = {bs_, oc_, oh_[0], ow_[0]};
-  dataTop_->initUser(topData, topDims_, topFmt_, eg);
+  topData_->initUser(topDataData, topDims_, topFmt_, eg);
 
   // prepare bottoms
   std::vector<memory::primitive_desc> botPDs;
   std::vector<std::shared_ptr<memory::desc>> prvMDs;
   std::vector<primitive::at> botMems;
+  CHECK_EQ(botDatas_.size(), inputLayers_.size());
   for (size_t i = 0; i < inputLayers_.size(); ++i) {
     CHECK(bs_ == getInput(i).getBatchSize())
       << "Assert batchsize of input layers are equal";
@@ -112,31 +102,31 @@ void MkldnnConcatLayer::resetDnnFwd(PassType passType) {
     botDims_[i] = {bs_, ic_[i], ih_[i], iw_[i]};
     botFmt_[i] = memory::format::nchw;
     // 1. create bottom buffer and init user
-    dataBottoms_[i].reset(new MkldnnBuffer());
-    real *botData = getInputValue(i)->getData();
+    botDatas_[i].reset(new MkldnnBuffer());
+    real *botDataData = getInputValue(i)->getData();
     const std::shared_ptr<memory::desc>& prvMD = getPrev(i)->getTopDataMD();
     if (prvMD) {
-      dataBottoms_[i]->resetUser(botData, *prvMD, eg);
-      bool isNC = dataBottoms_[i]->getUserFmt() == memory::format::nc;
+      botDatas_[i]->resetUser(botDataData, *prvMD, eg);
+      bool isNC = botDatas_[i]->getUserFmt() == memory::format::nc;
       if (isNC) {
         CHECK(ih_[i] == iw_[i] && ih_[i] == 1)
           << "iw, ih must be 1 with nc input";
         // do not support nc input, so change to nchw
-        dataBottoms_[i]->resetUser(botData, botDims_[i], botFmt_[i], eg);
+        botDatas_[i]->resetUser(botDataData, botDims_[i], botFmt_[i], eg);
         VLOG(4) << "use nchw data fmt";
       } else {
         VLOG(4) << "use prev data fmt: "
-          << DNN_FMTS[dataBottoms_[i]->getUserFmt()];
+          << DNN_FMTS[botDatas_[i]->getUserFmt()];
       }
       prvMDs.push_back(prvMD);
     } else {
-      dataBottoms_[i]->initUser(botData, botDims_[i], botFmt_[i], eg);
+      botDatas_[i]->initUser(botDataData, botDims_[i], botFmt_[i], eg);
     }
-    botPDs.push_back(dataBottoms_[i]->getUserPD());
+    botPDs.push_back(botDatas_[i]->getUserPD());
 
     // 2. init bot internals
-    dataBottoms_[i]->initCvt(dataBottoms_[i]->getUserPD(), dnnCvtNoNeed);
-    botMems.push_back(*(dataBottoms_[i]->getIntlMem()));
+    botDatas_[i]->initCvt(botDatas_[i]->getUserPD(), dnnCvtNoNeed);
+    botMems.push_back(*(botDatas_[i]->getIntlMem()));
   }
   // inputs size should equal and all format should be the same
   CHECK(prvMDs.size() == 0 || prvMDs.size() == inputLayers_.size())
@@ -154,23 +144,16 @@ void MkldnnConcatLayer::resetDnnFwd(PassType passType) {
     MkldnnBuffer::getMD(topDims_), axis_, botPDs));
   // reset top user using best internal fmt if next is also dnn
   if (nextIsDnn_) {
-    dataTop_->resetUser(topData, fwdPD->dst_primitive_desc());
-    setTopDataMD(dataTop_->getUserMD());
-    VLOG(4) << "set next data fmt: " << DNN_FMTS[dataTop_->getUserFmt()];
+    topData_->resetUser(topDataData, fwdPD->dst_primitive_desc());
+    setTopDataMD(topData_->getUserMD());
+    VLOG(4) << "set next data fmt: " << DNN_FMTS[topData_->getUserFmt()];
   }
 
   // 4. init top cvt
-  dataTop_->initCvt(fwdPD->dst_primitive_desc(), dnnCvtIntl2User);
+  topData_->initCvt(fwdPD->dst_primitive_desc(), dnnCvtIntl2User);
 
   // 5. create fwd handle
-  fwd_.reset(new concat(*fwdPD, botMems, *(dataTop_->getIntlMem())));
-
-  // TODO(TJ): remove when dataBot vector done
-  VLOG(1) << "data format flow --- "
-    << DNN_FMTS[dataBottoms_[0]->getUserFmt()] << " >>> ("
-    << DNN_FMTS[dataBottoms_[0]->getIntlFmt()] << " >>> "
-    << DNN_FMTS[dataTop_->getIntlFmt()] << ") >>> "
-    << DNN_FMTS[dataTop_->getUserFmt()];
+  fwd_.reset(new concat(*fwdPD, botMems, *(topData_->getIntlMem())));
 }
 
 void MkldnnConcatLayer::resetDnnBwd() {
@@ -179,24 +162,24 @@ void MkldnnConcatLayer::resetDnnBwd() {
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     CHECK(bs_ == getInput(i).getBatchSize()) << "batchsize should equal";
     if (prevIsDnn_[i]) {
-      getPrev(i)->setTopDiffMD(this->getName(), dataBottoms_[i]->getUserMD());
+      getPrev(i)->setTopDiffMD(this->getName(), botDatas_[i]->getUserMD());
       VLOG(4) << "set bot diff fmt: "
-        << DNN_FMTS[dataBottoms_[i]->getUserFmt()];
+        << DNN_FMTS[botDatas_[i]->getUserFmt()];
     }
-    sz += dataBottoms_[i]->getUserSize();
+    sz += botDatas_[i]->getUserSize();
   }
   CHECK_EQ(sz, getDnnOutputGrad()->getElementCnt());
 }
 
 void MkldnnConcatLayer::submitDnnFwd(PassType passType) {
-  real *topData = getOutputValue()->getData();
+  real *topDataData = getOutputValue()->getData();
   std::vector<primitive> pipeline;
   for (size_t i = 0; i < inputLayers_.size(); ++i) {
-    real *botData = getPrev(i)->getOutputValue()->getData();
-    dataBottoms_[i]->submitCvt(pipeline, botData);
+    real *botDataData = getPrev(i)->getOutputValue()->getData();
+    botDatas_[i]->submitCvt(pipeline, botDataData);
   }
   pipeline.push_back(*fwd_);
-  dataTop_->submitCvt(pipeline, topData);
+  topData_->submitCvt(pipeline, topDataData);
 
   stream(stream::kind::eager).submit(pipeline).wait();
 
@@ -209,25 +192,25 @@ void MkldnnConcatLayer::submitDnnBwd(const UpdateCallback &callback) {
 
   // TODO(TJ): use mkldnn when ready
   const MatrixPtr& topGrad = getDnnOutputGrad();
-  real* topDiff = topGrad->getData();
+  real* topDiffData = topGrad->getData();
   std::vector<int> topOffsetStart;
   int topStride = topGrad->getElementCnt() / bs_;
   topOffsetStart.resize(inputLayers_.size(), 0);
   for (size_t i = 1; i < inputLayers_.size(); ++i) {
     topOffsetStart[i] = topOffsetStart[i - 1]
-      + dataBottoms_[i - 1]->getUserSize() / bs_;
+      + botDatas_[i - 1]->getUserSize() / bs_;
   }
   for (size_t i = 0; i < inputLayers_.size(); ++i) {
     if (nullptr == getDnnInputGrad(i))
       continue;
-    real* botDiff = getDnnInputGrad(i)->getData();
-    int botStride = dataBottoms_[i]->getUserSize() / bs_;
+    real* botDiffData = getDnnInputGrad(i)->getData();
+    int botStride = botDatas_[i]->getUserSize() / bs_;
     size_t oneBatchSize = botStride * sizeof(real);
 #   pragma omp parallel for collapse(1) schedule(static)
     for (int n = 0; n < bs_; ++n) {
       int botOffset = n * botStride;
       int topOffset = topOffsetStart[i] + n * topStride;
-      memcpy(botDiff + botOffset, topDiff + topOffset, oneBatchSize);
+      memcpy(botDiffData + botOffset, topDiffData + topOffset, oneBatchSize);
     }
   }
 }

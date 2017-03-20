@@ -1,4 +1,4 @@
-/* Copyright (c) 2016 */
+/* Copyright (c) 2017 */
 
 #include "MkldnnAddtoLayer.h"
 #include "paddle/utils/Logging.h"
@@ -19,12 +19,6 @@ bool MkldnnAddtoLayer::initDnn(const LayerMap& layerMap,
   oc_ = 0;
   layerSize_ = getSize();
   for (size_t i = 0; i < inputLayers_.size(); i++) {
-    ih_.push_back(0);
-    iw_.push_back(0);
-    oh_.push_back(0);
-    ow_.push_back(0);
-    ic_.push_back(0);
-    dataBottoms_.push_back(nullptr);
     CHECK(layerSize_ == inputLayers_[i]->getSize());
   }
   if (biasParameter_.get() != NULL) {
@@ -82,14 +76,15 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
     topFmt_ = memory::format::nchw;
   }
   // create top buffer and init user, only have one output
-  dataTop_.reset(new MkldnnBuffer());
-  real *topData = getOutputValue()->getData();
-  dataTop_->initUser(topData, topDims_, topFmt_, eg);
+  topData_.reset(new MkldnnBuffer());
+  real *topDataData = getOutputValue()->getData();
+  topData_->initUser(topDataData, topDims_, topFmt_, eg);
 
   // prepare bottoms
   std::vector<memory::primitive_desc> botPDs;
   std::vector<std::shared_ptr<memory::desc>> prvMDs;
   std::vector<primitive::at> botMems;
+  CHECK_EQ(botDatas_.size(), inputLayers_.size());
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     CHECK(bs_ == getInput(i).getBatchSize())
       << "Assert batchsize of input layers are equal";
@@ -103,23 +98,23 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
       botFmt_[i] = memory::format::nchw;
     }
     // 1. create bottom buffer and init user
-    dataBottoms_[i].reset(new MkldnnBuffer());
-    real *botData = getInputValue(i)->getData();
-    dataBottoms_[i]->initUser(botData, botDims_[i], botFmt_[i], eg);
+    botDatas_[i].reset(new MkldnnBuffer());
+    real *botDataData = getInputValue(i)->getData();
+    botDatas_[i]->initUser(botDataData, botDims_[i], botFmt_[i], eg);
     const std::shared_ptr<memory::desc>& prvMD = getPrev(i)->getTopDataMD();
     if (prvMD) {
       // this layer support both nc and internal format
-      dataBottoms_[i]->resetUser(botData, *prvMD, eg);
+      botDatas_[i]->resetUser(botDataData, *prvMD, eg);
       VLOG(4) << "use prev data fmt: "
-        << DNN_FMTS[dataBottoms_[i]->getUserFmt()];
+        << DNN_FMTS[botDatas_[i]->getUserFmt()];
       prvMDs.push_back(prvMD);
     }
-    botPDs.push_back(dataBottoms_[i]->getUserPD());
+    botPDs.push_back(botDatas_[i]->getUserPD());
     scales_.push_back(1.0);  // no scale here
 
     // 2. init bot internals
-    dataBottoms_[i]->initCvt(dataBottoms_[i]->getUserPD(), dnnCvtNoNeed);
-    botMems.push_back(*(dataBottoms_[i]->getIntlMem()));
+    botDatas_[i]->initCvt(botDatas_[i]->getUserPD(), dnnCvtNoNeed);
+    botMems.push_back(*(botDatas_[i]->getIntlMem()));
   }
   // check all inputs format should be the same
   CHECK(prvMDs.size() == 0 || prvMDs.size() == inputLayers_.size())
@@ -138,23 +133,16 @@ void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
   // reset top user using internal fmt if next is dnn
   if (nextIsDnn_) {
     // fwdPD should be init with any type before, if in here.
-    dataTop_->resetUser(topData, fwdPD->dst_primitive_desc());
-    setTopDataMD(dataTop_->getUserMD());
-    VLOG(4) << "set next data fmt: " << DNN_FMTS[dataTop_->getUserFmt()];
+    topData_->resetUser(topDataData, fwdPD->dst_primitive_desc());
+    setTopDataMD(topData_->getUserMD());
+    VLOG(4) << "set next data fmt: " << DNN_FMTS[topData_->getUserFmt()];
   }
 
   // 4. init top cvt
-  dataTop_->initCvt(fwdPD->dst_primitive_desc(), dnnCvtIntl2User);
+  topData_->initCvt(fwdPD->dst_primitive_desc(), dnnCvtIntl2User);
 
   // 5. create fwd handle
-  fwd_.reset(new sum(*fwdPD, botMems, *(dataTop_->getIntlMem())));
-
-  // TODO(TJ): remove when dataBot vector done
-  VLOG(1) << "data format flow --- "
-    << DNN_FMTS[dataBottoms_[0]->getUserFmt()] << " >>> ("
-    << DNN_FMTS[dataBottoms_[0]->getIntlFmt()] << " >>> "
-    << DNN_FMTS[dataTop_->getIntlFmt()] << ") >>> "
-    << DNN_FMTS[dataTop_->getUserFmt()];
+  fwd_.reset(new sum(*fwdPD, botMems, *(topData_->getIntlMem())));
 }
 
 void MkldnnAddtoLayer::resetDnnBwd() {
@@ -170,20 +158,20 @@ void MkldnnAddtoLayer::resetDnnBwd() {
 }
 
 void MkldnnAddtoLayer::submitDnnFwd(PassType passType) {
-  real *topData = getOutputValue()->getData();
+  real *topDataData = getOutputValue()->getData();
   std::vector<primitive> pipeline;
   for (size_t i = 0; i < inputLayers_.size(); i++) {
-    real *botData = getPrev(i)->getOutputValue()->getData();
-    dataBottoms_[i]->submitCvt(pipeline, botData);
+    real *botDataData = getPrev(i)->getOutputValue()->getData();
+    botDatas_[i]->submitCvt(pipeline, botDataData);
   }
   pipeline.push_back(*fwd_);
-  dataTop_->submitCvt(pipeline, topData);
+  topData_->submitCvt(pipeline, topDataData);
   stream(stream::kind::eager).submit(pipeline).wait();
 
   /* add the bias-vector */
   if (biases_.get() != NULL) {
     // TODO(TJ): try to use mkldnn
-    if (dataTop_->getIntlFmt() != topFmt_) {
+    if (topData_->getIntlFmt() != topFmt_) {
       // not nc or nchw
       LOG(FATAL) << "not implemented with internal format";
     }

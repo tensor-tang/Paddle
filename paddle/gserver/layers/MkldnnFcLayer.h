@@ -1,4 +1,4 @@
-/* Copyright (c) 2016 */
+/* Copyright (c) 2017 */
 
 #pragma once
 
@@ -23,12 +23,13 @@ protected:
 
   // if image width and height !=0
   bool hasSpatial_;
-  /// data buffers
-  MkldnnBufferPtr dataWgt_;
-  MkldnnBufferPtr dataBias_;
-  /// diff buffer
-  MkldnnBufferPtr diffWgt_;
-  MkldnnBufferPtr diffBias_;
+
+  /// weight data and diff buffers
+  MkldnnBufferPtr wgtData_;
+  MkldnnBufferPtr wgtDiff_;
+  /// weight data and diff buffers
+  MkldnnBufferPtr biasData_;
+  MkldnnBufferPtr biasDiff_;
 
   // fc
   WeightList weights_;
@@ -50,10 +51,10 @@ public:
     : MkldnnLayer(config),
       fwd_(nullptr),
       hasSpatial_(false),
-      dataWgt_(nullptr),
-      dataBias_(nullptr),
-      diffWgt_(nullptr),
-      diffBias_(nullptr),
+      wgtData_(nullptr),
+      wgtDiff_(nullptr),
+      biasData_(nullptr),
+      biasDiff_(nullptr),
       hasInited_(false)
     {}
 
@@ -63,10 +64,10 @@ public:
 
   virtual void clearAllDnnCvtFlags() {
     MkldnnLayer::clearAllDnnCvtFlags();
-    if (dataBias_) dataBias_->clearCvtFlag();
-    if (dataWgt_) dataWgt_->clearCvtFlag();
-    if (diffBias_) diffBias_->clearCvtFlag();
-    if (diffWgt_) diffWgt_->clearCvtFlag();
+    if (biasData_) biasData_->clearCvtFlag();
+    if (wgtData_) wgtData_->clearCvtFlag();
+    if (biasDiff_) biasDiff_->clearCvtFlag();
+    if (wgtDiff_) wgtDiff_->clearCvtFlag();
   }
 
   void reshape();

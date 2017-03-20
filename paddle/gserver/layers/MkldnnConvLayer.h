@@ -1,4 +1,4 @@
-/* Copyright (c) 2016 */
+/* Copyright (c) 2017 */
 
 #pragma once
 
@@ -21,13 +21,14 @@ protected:
   std::shared_ptr<mkldnn::convolution_backward_weights> bwdWgt_;
   std::shared_ptr<mkldnn::convolution_backward_data> bwdData_;
 
-  /// data buffers
-  MkldnnBufferPtr dataWgt_;
-  MkldnnBufferPtr dataWgtBwd_;
-  MkldnnBufferPtr dataBias_;
-  /// diff buffer
-  MkldnnBufferPtr diffWgt_;
-  MkldnnBufferPtr diffBias_;
+  /// weight data and diff buffers
+  MkldnnBufferPtr wgtData_;
+  MkldnnBufferPtr wgtDataBwd_;  // in backward the wgt data's format may differ
+  MkldnnBufferPtr wgtDiff_;
+  
+  /// bias data and diff buffers
+  MkldnnBufferPtr biasData_;
+  MkldnnBufferPtr biasDiff_;
 
   // padding, stride and filter size
   std::vector<int> ph_, pw_;
@@ -56,11 +57,11 @@ public:
       fwd_(nullptr),
       bwdWgt_(nullptr),
       bwdData_(nullptr),
-      dataWgt_(nullptr),
-      dataWgtBwd_(nullptr),
-      dataBias_(nullptr),
-      diffWgt_(nullptr),
-      diffBias_(nullptr),
+      wgtData_(nullptr),
+      wgtDataBwd_(nullptr),
+      wgtDiff_(nullptr),
+      biasData_(nullptr),
+      biasDiff_(nullptr),
       hasRelu_(false),
       useConvRelu_(false),
       hasInited_(false),
@@ -82,11 +83,11 @@ public:
 
   virtual void clearAllDnnCvtFlags() {
     MkldnnLayer::clearAllDnnCvtFlags();
-    if (dataBias_) dataBias_->clearCvtFlag();
-    if (dataWgt_) dataWgt_->clearCvtFlag();
-    if (dataWgtBwd_) dataWgtBwd_->clearCvtFlag();
-    if (diffBias_) diffBias_->clearCvtFlag();
-    if (diffWgt_) diffWgt_->clearCvtFlag();
+    if (biasData_) biasData_->clearCvtFlag();
+    if (wgtData_) wgtData_->clearCvtFlag();
+    if (wgtDataBwd_) wgtDataBwd_->clearCvtFlag();
+    if (biasDiff_) biasDiff_->clearCvtFlag();
+    if (wgtDiff_) wgtDiff_->clearCvtFlag();
   }
 
   void reshape();
@@ -109,7 +110,6 @@ public:
   void submitDnnBwd(const UpdateCallback& callback);
 
   void printInfo() {
-    VLOG(2) << "input layer size:" << inputLayers_.size();
     for (size_t i = 0; i < iw_.size(); ++i) {
       VLOG(2)
         << "gp: " << gp_[i]

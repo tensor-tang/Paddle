@@ -1,16 +1,4 @@
-/* Copyright (c) 2016 Baidu, Inc. All Rights Reserve.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License. */
+/* Copyright (c) 2017 */
 
 #include "paddle/utils/Logging.h"
 #include "paddle/utils/Stat.h"
@@ -46,11 +34,13 @@ bool MkldnnPoolLayer::initDnn(const LayerMap &layerMap,
     useMkldnnWgt_ = config_.use_mkldnn_wgt();
   }
 
-  ic_.push_back(conf.channels());
-  iw_.push_back(conf.img_size());
-  ow_.push_back(conf.output_x());
-  ih_.push_back(conf.has_img_size_y() ? conf.img_size_y() : conf.img_size());
-  oh_.push_back(conf.has_output_y() ? conf.output_y() : conf.output_x());
+  bs_ = 0;
+  ic_[0] = conf.channels();
+  oc_ = ic_[0];
+  iw_[0] = conf.img_size();
+  ow_[0] = conf.output_x();
+  ih_[0] = conf.has_img_size_y() ? conf.img_size_y() : conf.img_size();
+  oh_[0] = conf.has_output_y() ? conf.output_y() : conf.output_x();
 
   fw_ = conf.size_x();
   sw_ = conf.stride();
@@ -59,8 +49,7 @@ bool MkldnnPoolLayer::initDnn(const LayerMap &layerMap,
   fh_ = conf.has_size_y() ? conf.size_y() : conf.size_x();
   sh_ = conf.has_stride_y() ? conf.stride_y() : conf.stride();
   ph_ = conf.has_padding_y() ? conf.padding_y() : conf.padding();
-  bs_ = 0;
-  oc_ = ic_[0];
+
   return true;
 }
 
@@ -104,26 +93,26 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
     if ((iw_[0] + pw_ + padR[1] - fw_)/sw_ + 1 < ow_[0]) ++padR[1];
   }
   // 1. create buffer
-  dataBot_.reset(new MkldnnBuffer());
-  dataTop_.reset(new MkldnnBuffer());
+  botDatas_[0].reset(new MkldnnBuffer());
+  topData_.reset(new MkldnnBuffer());
   // 2. init user
-  real *botData = getPrev(0)->getOutputValue()->getData();
-  real *topData = getOutputValue()->getData();
-  dataBot_->initUser(botData, botDims_[0], botFmt_[0], eg);
-  dataTop_->initUser(topData, topDims_, topFmt_, eg);
+  real *botDataData = getPrev(0)->getOutputValue()->getData();
+  real *topDataData = getOutputValue()->getData();
+  botDatas_[0]->initUser(botDataData, botDims_[0], botFmt_[0], eg);
+  topData_->initUser(topDataData, topDims_, topFmt_, eg);
   const std::shared_ptr<memory::desc>& prvMD = getPrev(0)->getTopDataMD();
   if (prvMD) {
-    dataBot_->resetUser(botData, *prvMD, eg);
-    bool isNC = dataBot_->getUserFmt() == memory::format::nc;
+    botDatas_[0]->resetUser(botDataData, *prvMD, eg);
+    bool isNC = botDatas_[0]->getUserFmt() == memory::format::nc;
     if (isNC) {
       CHECK(ih_[0] == iw_[0] && ih_[0] == 1)
         << "iw, ih must be 1 with nc input";
       // do not support nc input, so change to nchw or nChw8c
       memory::format fmt = memory::format::nchw;
-      dataBot_->resetUser(botData, botDims_[0], fmt, eg);
+      botDatas_[0]->resetUser(botDataData, botDims_[0], fmt, eg);
       VLOG(4) << "use nchw data fmt";
     } else {
-      VLOG(4) << "use prev data fmt: " << DNN_FMTS[dataBot_->getUserFmt()];
+      VLOG(4) << "use prev data fmt: " << DNN_FMTS[botDatas_[0]->getUserFmt()];
     }
   }
   // 3. create forward PD
@@ -131,38 +120,38 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
   fwdDesc.reset(new pooling_forward::desc(pk, poolAlgo_,
   // TODO(TJ): use any if MKLDNN ready
     // the src format do not accept any format yet
-    prvMD ? dataBot_->getUserMD()
+    prvMD ? botDatas_[0]->getUserMD()
     : MkldnnBuffer::getMD(botDims_[0], botFmt_[0]),
     MkldnnBuffer::getMD(topDims_),
     strides, kernel, padding, padR, padKind));
   fwdPD_.reset(new pooling_forward::primitive_desc(*fwdDesc, eg));
   // 4. init cvt
-  dataBot_->initCvt();  // dnnCvtNoNeed
-  // set topdata dnn MemDesc if next is also mkldnn
+  botDatas_[0]->initCvt();  // dnnCvtNoNeed
+  // set topDataData dnn MemDesc if next is also mkldnn
   if (nextIsDnn_) {
-    dataTop_->resetUser(topData, fwdPD_->dst_primitive_desc());
-    setTopDataMD(dataTop_->getUserMD());
-    VLOG(4) << "set next data format: " << DNN_FMTS[dataTop_->getUserFmt()];
+    topData_->resetUser(topDataData, fwdPD_->dst_primitive_desc());
+    setTopDataMD(topData_->getUserMD());
+    VLOG(4) << "set next data format: " << DNN_FMTS[topData_->getUserFmt()];
   }
-  dataTop_->initCvt(fwdPD_->dst_primitive_desc(), dnnCvtIntl2User);
+  topData_->initCvt(fwdPD_->dst_primitive_desc(), dnnCvtIntl2User);
   withWorkspace_ = (passType != PASS_TEST
       && poolAlgo_ != algorithm::pooling_avg);
   if (withWorkspace_) {
     workspace_.reset(new memory(fwdPD_->workspace_primitive_desc()));
   } else {
     auto p_workspace_desc = memory::primitive_desc(
-      {{}, memory::data_type::f32, memory::format(dataTop_->getIntlFmt())},
+      {{}, memory::data_type::f32, memory::format(topData_->getIntlFmt())},
       eg);
     workspace_.reset(new memory(p_workspace_desc));
   }
   // 5. create handle
   if (withWorkspace_) {
     fwd_.reset(new pooling_forward(*fwdPD_,
-      *(dataBot_->getIntlMem()), *(dataTop_->getIntlMem()),
+      *(botDatas_[0]->getIntlMem()), *(topData_->getIntlMem()),
       *workspace_));
   } else {
     fwd_.reset(new pooling_forward(*fwdPD_,
-      *(dataBot_->getIntlMem()), *(dataTop_->getIntlMem())));
+      *(botDatas_[0]->getIntlMem()), *(topData_->getIntlMem())));
   }
 }
 
@@ -179,64 +168,64 @@ void MkldnnPoolLayer::resetDnnBwd() {
     if ((iw_[0] + pw_ + padR[1] - fw_)/sw_ + 1 < ow_[0]) ++padR[1];
   }
   // 1. create buffer
-  diffBot_.reset(new MkldnnBuffer());
-  diffTop_.reset(new MkldnnBuffer());
+  botDiffs_[0].reset(new MkldnnBuffer());
+  topDiff_.reset(new MkldnnBuffer());
   // 2. init user
-  real *topDiff = getDnnOutputGrad()->getData();
-  real* botDiff = getDnnInputGrad(0)->getData();
-  diffBot_->initUser(botDiff, dataBot_->getUserMD(), eg);
-  diffTop_->initUser(topDiff, dataTop_->getUserMD(), eg);
+  real *topDiffData = getDnnOutputGrad()->getData();
+  real* botDiffData = getDnnInputGrad(0)->getData();
+  botDiffs_[0]->initUser(botDiffData, botDatas_[0]->getUserMD(), eg);
+  topDiff_->initUser(topDiffData, topData_->getUserMD(), eg);
   const std::shared_ptr<mkldnn::memory::desc>& prvMD = getTopDiffMD();
   if (prvMD) {
-    diffTop_->resetUser(topDiff, *prvMD, eg);
-    bool isNC = diffTop_->getUserFmt() == memory::format::nc;
+    topDiff_->resetUser(topDiffData, *prvMD, eg);
+    bool isNC = topDiff_->getUserFmt() == memory::format::nc;
     if (isNC) {
       CHECK(oh_[0] == ow_[0] && oh_[0] == 1)
         << "ow, oh must be 1 with nc input";
       // do not support nc input, so change to nchw
       memory::format fmt = memory::format::nchw;
-      diffTop_->resetUser(topDiff, topDims_, fmt, eg);
+      topDiff_->resetUser(topDiffData, topDims_, fmt, eg);
       VLOG(4) << "use nchw diff fmt";
     } else {
-      VLOG(4) << "use prev diff fmt: " << DNN_FMTS[diffTop_->getUserFmt()];
+      VLOG(4) << "use prev diff fmt: " << DNN_FMTS[topDiff_->getUserFmt()];
     }
   }
   // 3. create bwd PD
   std::shared_ptr<pooling_backward::desc> bwdDesc;
   std::shared_ptr<pooling_backward::primitive_desc> bwdPD;
   bwdDesc.reset(new pooling_backward::desc(poolAlgo_,
-    MkldnnBuffer::getMD(botDims_[0]),  // diffBot_->getUserMD(),
+    MkldnnBuffer::getMD(botDims_[0]),  // botDiffs_[0]->getUserMD(),
     // TODO(TJ): use any if MKLDNN ready
-    diffTop_->getUserMD(),
+    topDiff_->getUserMD(),
     strides, kernel, padding, padR, padKind));
   bwdPD.reset(new pooling_backward::primitive_desc(
     *bwdDesc, eg, *fwdPD_));
   // 4. init cvt
   if (prevIsDnn_[0]) {
-    diffBot_->resetUser(botDiff, bwdPD->diff_src_primitive_desc());
-    getPrev(0)->setTopDiffMD(this->getName(), diffBot_->getUserMD());
-    VLOG(4) << "set next diff format: " << DNN_FMTS[diffBot_->getUserFmt()];
+    botDiffs_[0]->resetUser(botDiffData, bwdPD->diff_src_primitive_desc());
+    getPrev(0)->setTopDiffMD(this->getName(), botDiffs_[0]->getUserMD());
+    VLOG(4) << "set next diff format: " << DNN_FMTS[botDiffs_[0]->getUserFmt()];
   }
-  diffBot_->initCvt(bwdPD->diff_src_primitive_desc(), dnnCvtIntl2User);
-  diffTop_->initCvt();
+  botDiffs_[0]->initCvt(bwdPD->diff_src_primitive_desc(), dnnCvtIntl2User);
+  topDiff_->initCvt();
   // 5. create bwd handle
   if (withWorkspace_) {
     bwd_.reset(new pooling_backward(*bwdPD,
-      *(diffTop_->getIntlMem()), *workspace_, *(diffBot_->getIntlMem())));
+      *(topDiff_->getIntlMem()), *workspace_, *(botDiffs_[0]->getIntlMem())));
   } else {
     bwd_.reset(new pooling_backward(*bwdPD,
-      *(diffTop_->getIntlMem()), *(diffBot_->getIntlMem())));
+      *(topDiff_->getIntlMem()), *(botDiffs_[0]->getIntlMem())));
   }
 }
 
 void MkldnnPoolLayer::submitDnnFwd(PassType passType) {
-  real *botdata = getPrev(0)->getOutputValue()->getData();
-  real *topdata = getOutputValue()->getData();
+  real *botDataData = getPrev(0)->getOutputValue()->getData();
+  real *topDataData = getOutputValue()->getData();
 
   std::vector<primitive> pipeline;
-  dataBot_->submitCvt(pipeline, botdata);
+  botDatas_[0]->submitCvt(pipeline, botDataData);
   pipeline.push_back(*fwd_);
-  dataTop_->submitCvt(pipeline, topdata);
+  topData_->submitCvt(pipeline, topDataData);
   stream(stream::kind::eager).submit(pipeline).wait();
 
 //  kepp as paddle do not forward activation
@@ -249,12 +238,12 @@ void MkldnnPoolLayer::submitDnnBwd(const UpdateCallback &callback) {
     return;
   }
 
-  real* botDiff = getDnnInputGrad(0)->getData();
-  real* topDiff = getOutputGrad()->getData();
+  real* botDiffData = getDnnInputGrad(0)->getData();
+  real* topDiffData = getOutputGrad()->getData();
   std::vector<primitive> pipeline;
-  diffTop_->submitCvt(pipeline, topDiff);
+  topDiff_->submitCvt(pipeline, topDiffData);
   pipeline.push_back(*bwd_);
-  diffBot_->submitCvt(pipeline, botDiff);
+  botDiffs_[0]->submitCvt(pipeline, botDiffData);
   stream(stream::kind::eager).submit(pipeline).wait();
 }
 
