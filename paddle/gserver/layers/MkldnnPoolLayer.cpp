@@ -129,7 +129,8 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
   // 3. create forward PD
   std::shared_ptr<pooling_forward::desc> fwdDesc;
   fwdDesc.reset(new pooling_forward::desc(pk, poolAlgo_,
-    // since pool have poor policy to choose best format, so depends on prv
+  // TODO(TJ): use any if MKLDNN ready
+    // the src format do not accept any format yet
     prvMD ? dataBot_->getUserMD()
     : MkldnnBuffer::getMD(botDims_[0], botFmt_[0]),
     MkldnnBuffer::getMD(topDims_),
@@ -200,22 +201,24 @@ void MkldnnPoolLayer::resetDnnBwd() {
       VLOG(4) << "use prev diff fmt: " << DNN_FMTS[diffTop_->getUserFmt()];
     }
   }
-  if (prevIsDnn_[0]) {
-    diffBot_->resetUser(botDiff, dataBot_->getIntlPD());
-    getPrev(0)->setTopDiffMD(this->getName(), diffBot_->getUserMD());
-    VLOG(4) << "set next diff format: " << DNN_FMTS[diffBot_->getUserFmt()];
-  }
   // 3. create bwd PD
   std::shared_ptr<pooling_backward::desc> bwdDesc;
   std::shared_ptr<pooling_backward::primitive_desc> bwdPD;
-  bwdDesc.reset(new pooling_backward::desc(
-    poolAlgo_, diffBot_->getUserMD(), diffTop_->getUserMD(),
+  bwdDesc.reset(new pooling_backward::desc(poolAlgo_,
+    MkldnnBuffer::getMD(botDims_[0]),  // diffBot_->getUserMD(),
+    // TODO(TJ): use any if MKLDNN ready
+    diffTop_->getUserMD(),
     strides, kernel, padding, padR, padKind));
   bwdPD.reset(new pooling_backward::primitive_desc(
     *bwdDesc, eg, *fwdPD_));
   // 4. init cvt
+  if (prevIsDnn_[0]) {
+    diffBot_->resetUser(botDiff, bwdPD->diff_src_primitive_desc());
+    getPrev(0)->setTopDiffMD(this->getName(), diffBot_->getUserMD());
+    VLOG(4) << "set next diff format: " << DNN_FMTS[diffBot_->getUserFmt()];
+  }
+  diffBot_->initCvt(bwdPD->diff_src_primitive_desc(), dnnCvtIntl2User);
   diffTop_->initCvt();
-  diffBot_->initCvt();
   // 5. create bwd handle
   if (withWorkspace_) {
     bwd_.reset(new pooling_backward(*bwdPD,

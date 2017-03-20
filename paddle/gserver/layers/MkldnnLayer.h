@@ -242,6 +242,7 @@ public:
       topDiffBuffers_[i].reset(new MkldnnBuffer());
       topDiffBuffers_[i]->initUser(diff, topDims_, topFmt_, eg);
       // 2. use private MD when init user if has
+      // TODO(TJ): any improvment if prvs are different format
       const std::shared_ptr<mkldnn::memory::desc>& prvMD = getTopDiffMD(i);
       if (prvMD) {
         topDiffBuffers_[i]->resetUser(diff, *prvMD, eg);
