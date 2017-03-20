@@ -205,7 +205,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   // 3. create fwd desc
   std::shared_ptr<batch_normalization_forward::desc> fwdDesc;
   fwdDesc.reset(new batch_normalization_forward::desc(fwdpk,
-    // pool policy in MKLDNN for BN, any MD would not work yet
+    // TODO(TJ): use any if MKLDNN ready
     dataBot_->getUserMD(),  // MkldnnBuffer::getMD(botDims_[0]),
     EPS, flags_));
   fwdPD_.reset(new batch_normalization_forward::primitive_desc(*fwdDesc, eg));
@@ -311,6 +311,7 @@ void MkldnnBatchNormLayer::resetDnnBwd() {
   std::shared_ptr<batch_normalization_backward::desc> bwdDesc;
   std::shared_ptr<batch_normalization_backward::primitive_desc> bwdPD;
   bwdDesc.reset(new batch_normalization_backward::desc(prop_kind::backward,
+    // TODO(TJ): use any if MKLDNN ready
     dataBot_->getIntlMD(), dataBot_->getIntlMD(), EPS, flags_));
   bwdPD.reset(new batch_normalization_backward::primitive_desc(
     *bwdDesc, eg, *fwdPD_));
