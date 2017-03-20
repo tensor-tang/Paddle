@@ -47,7 +47,8 @@ protected:
   std::unique_ptr<Weight> biases_;
   bool hasRelu_;
   bool hasCvtTopData_;
-  bool hasCvtTopDiff_;
+  bool hasCvtTopDiffBwdData_;
+  bool hasCvtTopDiffBwdWgt_;
   bool hasCvtBiasData_;
   bool hasCvtBiasDiff_;
   bool useConvRelu_;
@@ -67,7 +68,8 @@ public:
       diffBias_(nullptr),
       hasRelu_(false),
       hasCvtTopData_(false),
-      hasCvtTopDiff_(false),
+      hasCvtTopDiffBwdData_(false),
+      hasCvtTopDiffBwdWgt_(false),
       hasCvtBiasData_(false),
       hasCvtBiasDiff_(false),
       useConvRelu_(false),

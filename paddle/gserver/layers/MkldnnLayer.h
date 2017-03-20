@@ -27,7 +27,11 @@ public:
   MkldnnBufferPtr dataTop_;
   /// diff buffer
   MkldnnBufferPtr diffBot_;
+  // top diff for backward data
   MkldnnBufferPtr diffTop_;
+  /// top diff for backward weight, if needed
+  /// in some conditions it may have different format with backward data
+  MkldnnBufferPtr topDiffBwdWgt_;
 
   // dims and format for user buffer
   std::vector<mkldnn::memory::dims> botDims_, wgtDims_, biasDims_;
@@ -79,6 +83,7 @@ public:
       dataTop_(nullptr),
       diffBot_(nullptr),
       diffTop_(nullptr),
+      topDiffBwdWgt_(nullptr),
       nextIsDnn_(false),
       addSize_(0),
       useMkldnnWgt_(true),
@@ -378,6 +383,7 @@ public:
     if (dataTop_) dataTop_->clearCvtFlag();
     if (diffBot_) diffBot_->clearCvtFlag();
     if (diffTop_) diffTop_->clearCvtFlag();
+    if (topDiffBwdWgt_) topDiffBwdWgt_->clearCvtFlag();
   }
 
   virtual void submitDnnFwd(PassType passType) = 0;
