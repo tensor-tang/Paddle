@@ -25,7 +25,7 @@ protected:
   MkldnnBufferPtr wgtData_;
   MkldnnBufferPtr wgtDataBwd_;  // in backward the wgt data's format may differ
   MkldnnBufferPtr wgtDiff_;
-  
+
   /// bias data and diff buffers
   MkldnnBufferPtr biasData_;
   MkldnnBufferPtr biasDiff_;

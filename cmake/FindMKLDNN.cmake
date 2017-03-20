@@ -16,7 +16,7 @@ if (MKLDNN_LIBRARY)
 endif ()
 
 ## Find MKLDNN
-set(MKLDNN_ROOT $ENV{MKLDNN_ROOT} CACHE PATH "Folder contains DNN.....................")
+set(MKLDNN_ROOT $ENV{MKLDNN_ROOT} CACHE PATH "Folder contains DNN.")
 
 find_path(MKLDNN_INCLUDE_DIR mkldnn.hpp PATHS ${MKLDNN_ROOT}/include 
     /usr/local/include)

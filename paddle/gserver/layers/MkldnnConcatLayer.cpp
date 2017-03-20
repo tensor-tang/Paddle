@@ -137,8 +137,8 @@ void MkldnnConcatLayer::resetDnnFwd(PassType passType) {
       MkldnnBuffer::getMDFmt(*prvMDs[i]))
       << "all input formats should be the same";
   }
-  
-  // 3. create fwd PD  
+
+  // 3. create fwd PD
   std::shared_ptr<concat::primitive_desc> fwdPD;
   fwdPD.reset(new concat::primitive_desc(
     MkldnnBuffer::getMD(topDims_), axis_, botPDs));

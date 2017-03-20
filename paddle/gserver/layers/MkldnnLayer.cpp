@@ -13,8 +13,8 @@ bool MkldnnLayer::init(
   /* Initialize the basic parent class */
   if (!Layer::init(layerMap, parameterMap)) return false;
 
-  size_t sz = inputLayers_.size();
   // buffers
+  size_t sz = inputLayers_.size();
   botDatas_.resize(sz, nullptr);
   botDiffs_.resize(sz, nullptr);
   botDims_.resize(sz, {0});
@@ -158,7 +158,7 @@ void MkldnnLayer::forward(PassType passType) {
           << DNN_FMTS[topData_->getIntlFmt()] << ") >>> "
           << DNN_FMTS[topData_->getUserFmt()];
     }
-    
+
     if (passType != PASS_TEST && nextLayers_.size() > 1) {  // Training
       sumTopDiffs_ = nullptr;
       for (size_t i = 0; i < nextLayers_.size(); ++i) {

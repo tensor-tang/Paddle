@@ -395,11 +395,13 @@ void MkldnnFcLayer::resetDnnBwd() {
 // CHECK(topDiffBwdWgt_->getIntlPD() == bwdDataPD->diff_dst_primitive_desc());
     // 3. init conversion
     if (prevIsDnn_[i]) {
-      botDiffs_[i]->resetUser(botDiffData, bwdDataPD->diff_src_primitive_desc());
+      botDiffs_[i]->resetUser(
+        botDiffData, bwdDataPD->diff_src_primitive_desc());
       prevLayer->setTopDiffMD(this->getName(), botDiffs_[i]->getUserMD());
       VLOG(4) << "set next diff fmt: " << DNN_FMTS[botDiffs_[i]->getUserFmt()];
     }
-    botDiffs_[i]->initCvt(bwdDataPD->diff_src_primitive_desc(), dnnCvtIntl2User);
+    botDiffs_[i]->initCvt(
+      bwdDataPD->diff_src_primitive_desc(), dnnCvtIntl2User);
     if (!hasCvtTopDiffBwdData) {
       hasCvtTopDiffBwdData = true;
       topDiff_->initCvt(bwdDataPD->diff_dst_primitive_desc(), dnnCvtUser2Intl);

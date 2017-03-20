@@ -184,7 +184,7 @@ void MkldnnConvLayer::resetDnnFwd(PassType passType) {
         botDatas_[i]->resetUser(botDataData, botDims_[i], fmt, eg);
         VLOG(4) << "use nchw data fmt";
       } else {
-        VLOG(4) << "use prev data fmt: " << DNN_FMTS[botDatas_[i]->getUserFmt()];
+        VLOG(4) << "use prev data fmt:" << DNN_FMTS[botDatas_[i]->getUserFmt()];
       }
     }
     /// 3. create mkldnn forward PD ********************************************
@@ -358,7 +358,7 @@ void MkldnnConvLayer::resetDnnBwd() {
       topDiff_->resetUser(topDiffData, topDims_, fmt, eg);
       VLOG(4) << "use nchw diff fmt";
     } else {
-      VLOG(4) << "use prev diff fmt: " << DNN_FMTS[topDiffBwdWgt_->getUserFmt()];
+      VLOG(4) << "use prev diff fmt:" << DNN_FMTS[topDiffBwdWgt_->getUserFmt()];
     }
   }
   // TODO(TJ): only care about i==0 yet, and never tested g!=1
@@ -491,7 +491,7 @@ void MkldnnConvLayer::resetDnnBwd() {
     std::shared_ptr<convolution_backward_data::primitive_desc> bwdDataPD;
     bwdDataFwdDesc.reset(new convolution_forward::desc(
       fwdpk, algo,
-      MkldnnBuffer::getMD(botDims_[i]),  // botDatas_[i]->getIntlMD(), 
+      MkldnnBuffer::getMD(botDims_[i]),  // botDatas_[i]->getIntlMD(),
       MkldnnBuffer::getMD(wgtDims_[i]),  //, bwdWgtFmt),
       MkldnnBuffer::getMD(topDims_),  // topDiffBwdWgt_->getIntlMD(),
       strides, padding, padR, padKind));
@@ -499,7 +499,7 @@ void MkldnnConvLayer::resetDnnBwd() {
       algo,
       MkldnnBuffer::getMD(botDims_[i]),  // botDatas_[i]->getIntlMD(),
       MkldnnBuffer::getMD(wgtDims_[i]),  //, bwdWgtFmt),
-      MkldnnBuffer::getMD(topDims_),  //topDiffBwdWgt_->getIntlMD(),
+      MkldnnBuffer::getMD(topDims_),  // topDiffBwdWgt_->getIntlMD(),
       strides, padding, padR, padKind));
     bwdDataFwdPD.reset(new convolution_forward::primitive_desc(
       *bwdDataFwdDesc, eg));
@@ -523,11 +523,13 @@ void MkldnnConvLayer::resetDnnBwd() {
           << DNN_FMTS[wgtDataBwd_->getIntlFmt()];
     }
     if (prevIsDnn_[i]) {
-      botDiffs_[i]->resetUser(botDiffData, bwdDataPD->diff_src_primitive_desc());
+      botDiffs_[i]->resetUser(botDiffData,
+        bwdDataPD->diff_src_primitive_desc());
       prevLayer->setTopDiffMD(this->getName(), botDiffs_[i]->getUserMD());
       VLOG(4) << "set next diff fmt: " << DNN_FMTS[botDiffs_[i]->getUserFmt()];
     }
-    botDiffs_[i]->initCvt(bwdDataPD->diff_src_primitive_desc(), dnnCvtIntl2User);
+    botDiffs_[i]->initCvt(
+      bwdDataPD->diff_src_primitive_desc(), dnnCvtIntl2User);
     // 4. create bwd data handle
     bwdData_.reset(new convolution_backward_data(
       *bwdDataPD, *(topDiff_->getIntlMem()),

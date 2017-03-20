@@ -122,7 +122,7 @@ protected:
   std::map<std::string, int> dnnOutIdxMap_;
 
   /// matrix of output grad for summing
-  /// only in use when have several next layers 
+  /// only in use when have several next layers
   /// always be filled by next layer
   /// used by this layer
   std::vector<MatrixPtr> dnnOutGrads_;
@@ -148,7 +148,7 @@ public:
    * set the topdiff as internal MKLDNN MemDesc
    * call by next layer
    */
-  void setTopDiffMD(const std::string& nextName, 
+  void setTopDiffMD(const std::string& nextName,
                             const mkldnn::memory::desc md) {
     int idx;
     CHECK(mapGet(nextName, dnnOutIdxMap_, &idx))
@@ -254,7 +254,7 @@ public:
    * Get the pointer of nextLayer[i].
    */
   const LayerPtr& getNextLayer(size_t i) { return nextLayers_[i]; }
-  
+
   /** 
    * Get the number of nextLayers.
    */
@@ -298,19 +298,19 @@ public:
     // if this layer has activation but it's not mkldnn type, return false
     if (hasAct && !hasMkldnnAct)
       return false;
-  
+
     // since activaion do not change format, so then depends on next layer
     bool res = nextLayers_.size() > 0;
     for (size_t i = 0; i < nextLayers_.size(); ++i) {
       bool yes = isDnnType(nextLayers_[i]->getType());
       CHECK(i == 0 || res == yes)
-        << "Do not support mixed layer type inside the branch, \
-since MKLDNN layers would over wirte diff when backward.";
+        << "Do not support mixed layer type inside the branch, "
+        << "since MKLDNN layers would over wirte diff in backward.";
       res = res && yes;
     }
     return res;
   }
-  
+
   /**
    * Is the prev layer MKLDNN type
    * If true
