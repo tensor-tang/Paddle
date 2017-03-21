@@ -70,7 +70,7 @@ if [ -f $log ]; then
     echo "remove old log $log"
     rm -f $log
 fi
-if [ $task == "train" ] || [ $task == "pretrain" ]; then
+if [ $task == "train" ] || [ $task == "pretrain" ] || [ $task == "time" ]; then
     if [ ! -f $train_list ]; then
         if [ $use_dummy -eq 1 ]; then
             echo " " > $train_list
