@@ -1,21 +1,45 @@
 #!/usr/bin/env python
 from paddle.trainer_config_helpers import *
 
-height = 224
-width = 224
-num_class = 1000
 batch_size = get_config_arg('batch_size', int, 128)
+is_predict = get_config_arg("is_predict", bool, False)
+is_test = get_config_arg("is_test", bool, False)
+use_dummy = get_config_arg("use_dummy", bool, False)
+data_provider = get_config_arg("data_provider", bool, True)
+####################Data Configuration ##################
+img_size = 256
+crop_size = 224
+data_size = 3 * crop_size * crop_size
+num_classes = 1000
+layer_size = 1
+if not is_predict and data_provider:
+    train_list = 'data/train.list' if not is_test else None
+    test_list = 'data/test.list'
+    args = {
+        # mean_path or mean_value only choose one
+        'mean_value': [103.939, 116.779, 123.68],
+        'img_size': img_size,
+        'crop_size': crop_size,
+        'num_classes': num_classes,
+        'use_jpeg': True,
+        'color': True
+    }
 
-args = {'height': height, 'width': width, 'color': True, 'num_class': num_class}
-define_py_data_sources2(
-    "train.list", None, module="provider", obj="process", args=args)
+    define_py_data_sources2(
+        train_list,
+        test_list,
+        module='dummy_provider' if use_dummy else 'image_provider',
+        obj='processData',
+        args=args)
 
+######################Algorithm Configuration #############
 settings(
     batch_size=batch_size,
-    learning_rate=0.01 / batch_size,
+    learning_rate=0.001 / batch_size,
     learning_method=MomentumOptimizer(0.9),
     regularization=L2Regularization(0.0005 * batch_size))
 
+#######################Network Configuration #############
 def inception2(name, input, channels, \
     filter1,
     filter3R, filter3,
@@ -95,7 +119,7 @@ def inception(name, input, channels, \
     filter5R, filter5,
     proj):
 
-    cov1 = img_conv_layer(#conv_projection(
+    cov1 = conv_projection(
         input=input,
         filter_size=1,
         num_channels=channels,
@@ -111,7 +135,7 @@ def inception(name, input, channels, \
         num_filters=filter3R,
         stride=1,
         padding=0)
-    cov3 = img_conv_layer(#conv_projection(
+    cov3 = conv_projection(
         input=cov3r, filter_size=3, num_filters=filter3, stride=1, padding=1)
 
     cov5r = img_conv_layer(
@@ -122,7 +146,7 @@ def inception(name, input, channels, \
         num_filters=filter5R,
         stride=1,
         padding=0)
-    cov5 = img_conv_layer(#conv_projection(
+    cov5 = conv_projection(
         input=cov5r, filter_size=5, num_filters=filter5, stride=1, padding=2)
 
     pool1 = img_pool_layer(
@@ -131,8 +155,9 @@ def inception(name, input, channels, \
         pool_size=3,
         num_channels=channels,
         stride=1,
-        padding=1)
-    covprj = img_conv_layer(#conv_projection(
+        padding=1,
+        pool_type=CudnnMaxPooling())
+    covprj = conv_projection(
         input=pool1, filter_size=1, num_filters=proj, stride=1, padding=0)
 
     cat = concat_layer(
@@ -143,20 +168,20 @@ def inception(name, input, channels, \
     return cat
 
 
-lab = data_layer(name="label", size=1000)
-data = data_layer(name="input", size=3 * height * width)
+lbl = data_layer(name="label", size=layer_size)
+img = data_layer(name="image", size=data_size)
 
 # stage 1
 conv1 = img_conv_layer(
     name="conv1",
-    input=data,
+    input=img,
     filter_size=7,
     num_channels=3,
     num_filters=64,
     stride=2,
     padding=3)
 pool1 = img_pool_layer(
-    name="pool1", input=conv1, pool_size=3, num_channels=64, stride=2)
+    name="pool1", input=conv1, pool_size=3, num_channels=64, stride=2, pool_type=CudnnMaxPooling())
 
 # stage 2
 conv2_1 = img_conv_layer(
@@ -174,13 +199,13 @@ conv2_2 = img_conv_layer(
     stride=1,
     padding=1)
 pool2 = img_pool_layer(
-    name="pool2", input=conv2_2, pool_size=3, num_channels=192, stride=2)
+    name="pool2", input=conv2_2, pool_size=3, num_channels=192, stride=2, pool_type=CudnnMaxPooling())
 
 # stage 3
 ince3a = inception("ince3a", pool2, 192, 64, 96, 128, 16, 32, 32)
 ince3b = inception("ince3b", ince3a, 256, 128, 128, 192, 32, 96, 64)
 pool3 = img_pool_layer(
-    name="pool3", input=ince3b, num_channels=480, pool_size=3, stride=2)
+    name="pool3", input=ince3b, num_channels=480, pool_size=3, stride=2, pool_type=CudnnMaxPooling())
 
 # stage 4
 ince4a = inception("ince4a", pool3, 480, 192, 96, 208, 16, 48, 64)
@@ -189,7 +214,7 @@ ince4c = inception("ince4c", ince4b, 512, 128, 128, 256, 24, 64, 64)
 ince4d = inception("ince4d", ince4c, 512, 112, 144, 288, 32, 64, 64)
 ince4e = inception("ince4e", ince4d, 528, 256, 160, 320, 32, 128, 128)
 pool4 = img_pool_layer(
-    name="pool4", input=ince4e, num_channels=832, pool_size=3, stride=2)
+    name="pool4", input=ince4e, num_channels=832, pool_size=3, stride=2, pool_type=CudnnMaxPooling())
 
 # stage 5
 ince5a = inception("ince5a", pool4, 832, 256, 160, 320, 32, 128, 128)
@@ -202,25 +227,25 @@ pool5 = img_pool_layer(
     stride=7,
     pool_type=AvgPooling())
 
-# We remove loss1 and loss2 for all system when testing benchmark
-# output 1
-# pool_o1 = img_pool_layer(name="pool_o1", input=ince4a, num_channels=512, pool_size=5, stride=3, pool_type=AvgPooling())
-# conv_o1 = img_conv_layer(name="conv_o1", input=pool_o1, filter_size=1, num_filters=128, stride=1, padding=0)
-# fc_o1 = fc_layer(name="fc_o1", input=conv_o1, size=1024, layer_attr=ExtraAttr(drop_rate=0.7), act=ReluActivation())
-# out1 = fc_layer(name="output1", input=fc_o1,  size=1000, act=SoftmaxActivation())
-# loss1 = cross_entropy(name='loss1', input=out1, label=lab, coeff=0.3) 
+
+#output 1
+pool_o1 = img_pool_layer(name="pool_o1", input=ince4a, num_channels=512, pool_size=5, stride=3, pool_type=CudnnAvgPooling())
+conv_o1 = img_conv_layer(name="conv_o1", input=pool_o1, filter_size=1, num_filters=128, stride=1, padding=0)
+fc_o1 = fc_layer(name="fc_o1", input=conv_o1, size=1024, layer_attr=ExtraAttr(drop_rate=0.7), act=ReluActivation())
+out1 = fc_layer(name="output1", input=fc_o1,  size=1000, act=SoftmaxActivation())
+loss1 = cross_entropy(name='loss1', input=out1, label=lbl, coeff=0.3) 
 
 # output 2
-#pool_o2 = img_pool_layer(name="pool_o2", input=ince4d, num_channels=528, pool_size=5, stride=3, pool_type=AvgPooling())
-#conv_o2 = img_conv_layer(name="conv_o2", input=pool_o2, filter_size=1, num_filters=128, stride=1, padding=0)
-#fc_o2 = fc_layer(name="fc_o2", input=conv_o2, size=1024, layer_attr=ExtraAttr(drop_rate=0.7), act=ReluActivation())
-#out2 = fc_layer(name="output2", input=fc_o2, size=1000, act=SoftmaxActivation())
-#loss2 = cross_entropy(name='loss2', input=out2, label=lab, coeff=0.3) 
+pool_o2 = img_pool_layer(name="pool_o2", input=ince4d, num_channels=528, pool_size=5, stride=3, pool_type=CudnnAvgPooling())
+conv_o2 = img_conv_layer(name="conv_o2", input=pool_o2, filter_size=1, num_filters=128, stride=1, padding=0)
+fc_o2 = fc_layer(name="fc_o2", input=conv_o2, size=1024, layer_attr=ExtraAttr(drop_rate=0.7), act=ReluActivation())
+out2 = fc_layer(name="output2", input=fc_o2, size=1000, act=SoftmaxActivation())
+loss2 = cross_entropy(name='loss2', input=out2, label=lbl, coeff=0.3) 
 
 # output 3
 dropout = dropout_layer(name="dropout", input=pool5, dropout_rate=0.4)
-out3 = fc_layer(
-    name="output3", input=dropout, size=1000, act=SoftmaxActivation())
-loss3 = cross_entropy(name='loss3', input=out3, label=lab)
+out3 = fc_layer(name="output3", input=dropout, size=1000, act=SoftmaxActivation())
+loss3 = cross_entropy(name='loss3', input=out3, label=lbl)
 
+inputs(img, lbl)
 outputs(loss3)
