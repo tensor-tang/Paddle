@@ -18,7 +18,7 @@ function run() {
     thread=1
     is_test=0
     use_mkldnn=1
-    use_mkldnn_wgt=0
+    use_mkldnn_wgt=1
     use_gpu=0
     if [ $5 ]; then
         thread=$5
@@ -53,6 +53,9 @@ function run() {
         use_mkldnn=0
     fi
     if [ $use_mkldnn -eq 1 ] && [ $task == "train" ]; then
+        use_mkldnn_wgt=1
+    fi
+    if [ $use_mkldnn -eq 1 ] && [ $task == "time" ]; then
         use_mkldnn_wgt=1
     fi
     args="layer_num=${layer_num},batch_size=${bs},use_dummy=1,\
