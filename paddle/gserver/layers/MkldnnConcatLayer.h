@@ -18,6 +18,7 @@ namespace paddle {
 class MkldnnConcatLayer : public MkldnnLayer {
 protected:
   std::shared_ptr<mkldnn::concat::primitive> fwd_;
+  std::vector<std::shared_ptr<mkldnn::reorder::primitive>> bwds_;
 
   /*** concat_dimension in MKLDNN
    * if axis_ == 0, concat batchsize

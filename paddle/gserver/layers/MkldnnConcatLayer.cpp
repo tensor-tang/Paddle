@@ -157,16 +157,57 @@ void MkldnnConcatLayer::resetDnnFwd(PassType passType) {
 }
 
 void MkldnnConcatLayer::resetDnnBwd() {
-//  const std::shared_ptr<mkldnn::memory::desc>& prvMD = getTopDiffMD();
+  mkldnn::engine eg = CpuEngine::Instance().getEngine();
+  // 1. create top buffer and init, only have one output buffer
+  topDiff_.reset(new MkldnnBuffer());
+  real *topDiffData = getDnnOutputGrad()->getData();
+  topDiff_->initUser(topDiffData, topDims_, topFmt_, eg);
+  // 2. use internal top diff if use dnn input
+  const std::shared_ptr<mkldnn::memory::desc>& prvMD = getTopDiffMD();
+  if (prvMD) {
+    topDiff_->resetUser(topDiffData, *prvMD, eg);
+    bool isNC = topDiff_->getUserFmt() == memory::format::nc;
+    if (isNC) {
+      CHECK(oh_[0] == ow_[0] && oh_[0] == 1)
+        << "ow, oh must be 1 with nc input";
+      // do not support nc as input, so change to nchw
+      memory::format fmt = memory::format::nchw;
+      topDiff_->resetUser(topDiffData, topDims_, fmt, eg);
+      VLOG(4) << "use nchw diff fmt";
+    } else {
+      VLOG(4) << "use prev diff fmt:" << DNN_FMTS[topDiff_->getUserFmt()];
+    }
+  }
+  topDiff_->initCvt(topDiff_->getUserPD(), dnnCvtNoNeed);
+  // 3. prepare bottom diffs
   size_t sz = 0;
+  memory::dims offsets = {0, 0, 0, 0};
+  bwds_.resize(inputLayers_.size(), nullptr);
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     CHECK(bs_ == getInput(i).getBatchSize()) << "batchsize should equal";
-    if (prevIsDnn_[i]) {
-      getPrev(i)->setTopDiffMD(this->getName(), botDatas_[i]->getUserMD());
-      VLOG(4) << "set bot diff fmt: "
-        << DNN_FMTS[botDatas_[i]->getUserFmt()];
+    if (nullptr == getPrev(i)->getOutputGrad()) {
+      continue;  // data layer has not diff
     }
-    sz += botDatas_[i]->getUserSize();
+    // 1. create bottom buffer and init
+    real* botDiffData = getDnnInputGrad(i)->getData();
+    botDiffs_[i].reset(new MkldnnBuffer());
+    // directly keep the format as botdata
+    botDiffs_[i]->initUser(botDiffData, botDatas_[i]->getUserPD());
+    botDiffs_[i]->initCvt(botDiffs_[i]->getUserPD(), dnnCvtNoNeed);
+    if (prevIsDnn_[i]) {
+      getPrev(i)->setTopDiffMD(this->getName(), botDiffs_[i]->getIntlMD());
+      VLOG(4) << "set bot diff fmt: "
+        << DNN_FMTS[botDiffs_[i]->getIntlFmt()];
+    }
+    // 2. create bwd handle, call reorder function to backward
+    auto topPD = view::primitive_desc(
+      topDiff_->getIntlPD(), botDims_[i], offsets);
+    auto bwdPD = reorder::primitive_desc(
+      topPD.dst_primitive_desc(), botDiffs_[i]->getIntlPD());
+    bwds_[i].reset(new reorder(
+      bwdPD, *(topDiff_->getIntlMem()), *(botDiffs_[i]->getIntlMem())));
+    offsets[axis_] += botDims_[i][axis_];
+    sz += botDiffs_[i]->getUserSize();
   }
   CHECK_EQ(sz, getDnnOutputGrad()->getElementCnt());
 }
@@ -190,29 +231,16 @@ void MkldnnConcatLayer::submitDnnBwd(const UpdateCallback &callback) {
   (void)callback;
   backwardActivation();
 
-  // TODO(TJ): use mkldnn when ready
-  const MatrixPtr& topGrad = getDnnOutputGrad();
-  real* topDiffData = topGrad->getData();
-  std::vector<int> topOffsetStart;
-  int topStride = topGrad->getElementCnt() / bs_;
-  topOffsetStart.resize(inputLayers_.size(), 0);
-  for (size_t i = 1; i < inputLayers_.size(); ++i) {
-    topOffsetStart[i] = topOffsetStart[i - 1]
-      + botDatas_[i - 1]->getUserSize() / bs_;
+  CHECK_EQ(getDnnOutputGrad()->getData(), topDiff_->getIntlData());
+
+  // actually topdiff and botdiffs no need submit cvt
+  // since the format are the same
+  // so only need do bwd
+  std::vector<primitive> pipeline;
+  for (size_t i = 0; i < bwds_.size(); ++i) {
+    pipeline.push_back(*bwds_[i]);
   }
-  for (size_t i = 0; i < inputLayers_.size(); ++i) {
-    if (nullptr == getDnnInputGrad(i))
-      continue;
-    real* botDiffData = getDnnInputGrad(i)->getData();
-    int botStride = botDatas_[i]->getUserSize() / bs_;
-    size_t oneBatchSize = botStride * sizeof(real);
-#   pragma omp parallel for collapse(1) schedule(static)
-    for (int n = 0; n < bs_; ++n) {
-      int botOffset = n * botStride;
-      int topOffset = topOffsetStart[i] + n * topStride;
-      memcpy(botDiffData + botOffset, topDiffData + topOffset, oneBatchSize);
-    }
-  }
+  stream(stream::kind::eager).submit(pipeline).wait();
 }
 
 }  // namespace paddle
