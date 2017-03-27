@@ -18,13 +18,13 @@ bool MkldnnLayer::init(
   botDatas_.resize(sz, nullptr);
   botDiffs_.resize(sz, nullptr);
   botDims_.resize(sz, {0});
-  botFmt_.resize(sz, mkldnn::memory::format::nchw);
+  botFmt_.resize(sz, memory::format::nchw);
   wgtDims_.resize(sz, {0});
-  wgtFmt_.resize(sz, mkldnn::memory::format::format_undef);
+  wgtFmt_.resize(sz, memory::format::format_undef);
   biasDims_.resize(sz, {0});
-  biasFmt_.resize(sz, mkldnn::memory::format::x);
+  biasFmt_.resize(sz, memory::format::x);
   topDims_ = {0};
-  topFmt_ = mkldnn::memory::format::nchw;
+  topFmt_ = memory::format::nchw;
 
   // image sizes
   bs_ = 0;
@@ -48,14 +48,14 @@ void MkldnnLayer::clearAllDnnCvtFlags() {
   if (topDiffBwdWgt_) topDiffBwdWgt_->clearCvtFlag();
 }
 
-void MkldnnLayer::prepareTopDiff() {
+void MkldnnLayer::gatherTopDiff() {
   sumTopDiffs_ = nullptr;
   if (nextLayers_.size() <= 1)
     return;
-  mkldnn::engine eg = CpuEngine::Instance().getEngine();
-  std::vector<mkldnn::memory::primitive_desc> srcPDs;
-  std::vector<std::shared_ptr<mkldnn::memory::desc>> prvMDs;
-  std::vector<mkldnn::primitive::at> srcMems;
+  engine eg = CpuEngine::Instance().getEngine();
+  std::vector<memory::primitive_desc> srcPDs;
+  std::vector<std::shared_ptr<memory::desc>> prvMDs;
+  std::vector<primitive::at> srcMems;
   std::vector<double> scales;
   CHECK_EQ(nextLayers_.size(), topDiffBuffers_.size());
   for (size_t i = 0; i < topDiffBuffers_.size(); ++i) {
@@ -65,7 +65,7 @@ void MkldnnLayer::prepareTopDiff() {
     topDiffBuffers_[i]->initUser(diff, topDims_, topFmt_, eg);
     // 2. use private MD when init user if has
     // TODO(TJ): any improvment if prvs are different format?
-    const std::shared_ptr<mkldnn::memory::desc>& prvMD = getTopDiffMD(i);
+    const std::shared_ptr<memory::desc>& prvMD = getTopDiffMD(i);
     if (prvMD) {
       topDiffBuffers_[i]->resetUser(diff, *prvMD, eg);
       prvMDs.push_back(prvMD);
@@ -74,6 +74,7 @@ void MkldnnLayer::prepareTopDiff() {
     topDiffBuffers_[i]->initCvt();
     CHECK(i == 0 || (topDiffBuffers_[i-1]->getIntlSize()
       == topDiffBuffers_[i]->getIntlSize())) << "All size should be equal";
+    VLOG(1) << "TopDiff format: " << DNN_FMTS[topDiffBuffers_[i]->getIntlFmt()];
     // 4. save buffers
     scales.push_back(1.0);  // no scale
     srcPDs.push_back(topDiffBuffers_[i]->getIntlPD());
@@ -90,8 +91,8 @@ void MkldnnLayer::prepareTopDiff() {
     LOG(FATAL)  << "Do not support mixed layer type inside branch";
   }
   // 5. create sum PD
-  std::shared_ptr<mkldnn::sum::primitive_desc> sumPD;
-  sumPD.reset(new mkldnn::sum::primitive_desc(
+  std::shared_ptr<sum::primitive_desc> sumPD;
+  sumPD.reset(new sum::primitive_desc(
     MkldnnBuffer::getMD(topDims_), scales, srcPDs));
   // 6. init the buffer of result
   tmpDiff_.reset(new MkldnnBuffer());
@@ -99,10 +100,9 @@ void MkldnnLayer::prepareTopDiff() {
   tmpDiff_->initUser(topDiffData, sumPD->dst_primitive_desc());
   tmpDiff_->initCvt();
   // change the first intl MD
-  topDiffMDs_[0].reset(new mkldnn::memory::desc(tmpDiff_->getIntlMD()));
+  topDiffMDs_[0].reset(new memory::desc(tmpDiff_->getIntlMD()));
   // 7. create sum handle
-  sumTopDiffs_.reset(
-    new mkldnn::sum(*sumPD, srcMems, *(tmpDiff_->getIntlMem())));
+  sumTopDiffs_.reset(new sum(*sumPD, srcMems, *(tmpDiff_->getIntlMem())));
 }
 
 void MkldnnLayer::forward(PassType passType) {
@@ -183,7 +183,7 @@ void MkldnnLayer::backward(const UpdateCallback& callback) {
     VLOG(1) << "reset backward batch size to " << bs_
       << " of mkldnn layer: " << getName();
 
-    prepareTopDiff();
+    gatherTopDiff();
     resetDnnBwd();
 
     // print the diff flow
@@ -201,7 +201,7 @@ void MkldnnLayer::backward(const UpdateCallback& callback) {
   // submit dnn backward
   REGISTER_TIMER_INFO("mkldnn_BwdTimer", getName().c_str());
   if (nullptr != sumTopDiffs_) {
-    std::vector<mkldnn::primitive> sum;
+    std::vector<primitive> sum;
     sum.push_back(*sumTopDiffs_);
     mkldnn::stream(mkldnn::stream::kind::eager).submit(sum).wait();
   }

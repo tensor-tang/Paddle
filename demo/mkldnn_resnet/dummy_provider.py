@@ -19,7 +19,7 @@ def initHook(settings, crop_size, num_classes, color, **kwargs):
 @provider(
     init_hook=initHook, min_pool_size=-1, cache=CacheType.CACHE_PASS_IN_MEM)
 def processData(settings, file_list):
-    for i in xrange(10000):
+    for i in xrange(2048):
         img = np.random.rand(1, settings.data_size).reshape(-1, 1).flatten()
         lab = random.randint(0, settings.num_classes-1)
         yield img.astype('float32'), int(lab)

@@ -116,7 +116,7 @@ public:
    * if have several input topdiffs
    * then create handle to sum them
    */
-  virtual void prepareTopDiff();
+  virtual void gatherTopDiff();
 
   void forward(PassType passType);
 
