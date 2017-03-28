@@ -30,9 +30,9 @@ PADDLE_NIC = "eno3"
 #pserver port
 PADDLE_PORT = 7164
 #pserver ports num
-PADDLE_PORTS_NUM = 1
+PADDLE_PORTS_NUM = 4
 #pserver sparse ports num
-PADDLE_PORTS_NUM_FOR_SPARSE = 0
+PADDLE_PORTS_NUM_FOR_SPARSE = 2
 
 #environments setting for all processes in cluster job
 LD_LIBRARY_PATH = "/usr/local/cuda/lib64:/usr/lib64:/usr/local/lib"
