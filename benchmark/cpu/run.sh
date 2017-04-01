@@ -34,6 +34,9 @@ function run() {
             exit 0
         fi
     fi
+    if [ $thread -gt $bs ]; then
+        thread=$bs
+    fi
     if [ $thread -gt 1 ]; then
         use_mkldnn=0
         unset OMP_NUM_THREADS MKL_NUM_THREADS
@@ -60,8 +63,8 @@ use_mkldnn=${use_mkldnn},use_mkldnn_wgt=${use_mkldnn_wgt},is_test=${is_test}"
             --config=$cfg \
             --use_gpu=$use_gpu \
             --trainer_count=$thread \
-            --log_period=10 \
-            --test_period=100 \
+            --log_period=5 \
+            --test_period=50 \
             --config_args=$args \
             2>&1 | tee -a $log 2>&1 
     elif [ $task == "test" ]; then # test
@@ -70,7 +73,7 @@ use_mkldnn=${use_mkldnn},use_mkldnn_wgt=${use_mkldnn_wgt},is_test=${is_test}"
             --use_gpu=$use_gpu \
             --trainer_count=$thread \
             --dot_period=1 \
-            --log_period=5 \
+            --log_period=1 \
             --init_model_path=$model \
             --config_args=$args \
             2>&1 | tee -a $log 2>&1 
@@ -105,7 +108,6 @@ if [ ! -d "logs" ]; then
   mkdir logs
 fi
 
-
 ### test
 # GoogleNet
 run test googlenet v1 2
@@ -113,6 +115,7 @@ run test googlenet v1 8
 run test googlenet v1 16
 run test googlenet v1 32
 run test googlenet v1 64
+sleep 10s
 
 # VGG
 run test vgg 19 2
@@ -120,6 +123,7 @@ run test vgg 19 8
 run test vgg 19 16
 run test vgg 19 32
 run test vgg 19 64
+sleep 10s
 
 # ResNet
 run test resnet 50 2
@@ -127,6 +131,7 @@ run test resnet 50 8
 run test resnet 50 16
 run test resnet 50 32
 run test resnet 50 64
+sleep 10s
 
 ### time
 # GoogleNet
@@ -134,12 +139,14 @@ run time googlenet v1 32
 run time googlenet v1 64
 run time googlenet v1 128
 run time googlenet v1 256
+sleep 10s
 
 # VGG
 run time vgg 19 32
 run time vgg 19 64
 run time vgg 19 128
 run time vgg 19 256
+sleep 10s
 
 # ResNet
 run time resnet 50 32

@@ -107,25 +107,28 @@ fi
 
 ### test
 # GoogleNet
-run test vgg 19 2
-run test vgg 19 8
-run test vgg 19 16
-run test vgg 19 32
-run test vgg 19 64
-
-# VGG
-run test resnet 50 2
-run test resnet 50 8
-run test resnet 50 16
-run test resnet 50 32
-run test resnet 50 64
-
-# ResNet
 run test googlenet v1 2
 run test googlenet v1 8
 run test googlenet v1 16
 run test googlenet v1 32
 run test googlenet v1 64
+sleep 10s
+
+# VGG
+run test vgg 19 2
+run test vgg 19 8
+run test vgg 19 16
+run test vgg 19 32
+run test vgg 19 64
+sleep 10s
+
+# ResNet
+run test resnet 50 2
+run test resnet 50 8
+run test resnet 50 16
+run test resnet 50 32
+run test resnet 50 64
+sleep 10s
 
 ### time
 # GoogleNet
@@ -133,12 +136,14 @@ run time googlenet v1 32
 run time googlenet v1 64
 run time googlenet v1 128
 run time googlenet v1 256
+sleep 10s
 
 # VGG
 run time vgg 19 32
 run time vgg 19 64
 run time vgg 19 128
 run time vgg 19 256
+sleep 10s
 
 # ResNet
 run time resnet 50 32
