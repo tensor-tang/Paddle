@@ -326,36 +326,14 @@ public:
   void resetDnnBwd(const Argument& arg, std::shared_ptr<void> topDiffFmt) {
     if (!needResetBwd_)
       return;
-
-    // not implement
-    // in forward src and dst memory can be the same,
-    // but in backward not sure it's OK if they are the same, need double check
-    // maybe need define a temporary mkldnn:memory to handle the dst
-    // and then copy it to the output
     needResetBwd_ = false;
   }
 
 // mkldnn format only support nchw
   void forward(Argument& act) {
-    // for comparing with defalut result
-    // MatrixPtr tmp = Matrix::create(act.value->getHeight(),
-    // act.value->getWidth(), false, false);
-    // MatrixPtr in = Matrix::create(act.value->getHeight(),
-    // act.value->getWidth(), false, false);
-    // in->copyFrom(*act.value);
-    // act.value->softmax(*tmp);
-// TODO(TJ): MKLDNN softmax could have pure zero output, which cause
-//  costLayer have "inf" in training phase, so do not use it yet!
-//  wait MKLDNN update, or add EPS later
     std::vector<mkldnn::primitive> pipeline;
     pipeline.push_back(*fwd_);
     mkldnn::stream(mkldnn::stream::kind::eager).submit(pipeline).wait();
-
-    // for comparing with defalut result
-    // for (size_t i = 0; i < std::max(act.value->getElementCnt()/10,
-    // (size_t)1); ++i)
-    //  LOG(INFO) << "----------src: " << in->getData()[i] << "; "
-    //    << tmp->getData()[i] << " --- " << act.value->getData()[i];
   }
 
   void backward(Argument& act) {

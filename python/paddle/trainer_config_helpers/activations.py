@@ -79,8 +79,8 @@ class SoftmaxActivation(BaseActivation):
     """
 
     def __init__(self):
-#        BaseActivation.__init__(self, 'mkldnn_softmax', False)
-        BaseActivation.__init__(self, 'softmax', False)
+        BaseActivation.__init__(self, 'mkldnn_softmax', False)
+#        BaseActivation.__init__(self, 'softmax', False)
 
 class SequenceSoftmaxActivation(BaseActivation):
     """
