@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from paddle.trainer.config_parser import g_command_config_args
+
 __all__ = [
     "TanhActivation", "SigmoidActivation", "SoftmaxActivation",
     "IdentityActivation", "LinearActivation", 'SequenceSoftmaxActivation',
@@ -79,8 +81,9 @@ class SoftmaxActivation(BaseActivation):
     """
 
     def __init__(self):
-        BaseActivation.__init__(self, 'mkldnn_softmax', False)
-#        BaseActivation.__init__(self, 'softmax', False)
+        use_mkldnn = bool(int(g_command_config_args.get("use_mkldnn", 0)))
+        name = 'softmax' if not use_mkldnn else 'mkldnn_softmax'
+        BaseActivation.__init__(self, name, False)
 
 class SequenceSoftmaxActivation(BaseActivation):
     """
@@ -127,8 +130,9 @@ class ReluActivation(BaseActivation):
     """
 
     def __init__(self):
-        BaseActivation.__init__(self, 'mkldnn_relu', True)
-#        BaseActivation.__init__(self, 'relu', True)
+        use_mkldnn = bool(int(g_command_config_args.get("use_mkldnn", 0)))
+        name = 'relu' if not use_mkldnn else 'mkldnn_relu'
+        BaseActivation.__init__(self, name, True)
 
 
 class BReluActivation(BaseActivation):
