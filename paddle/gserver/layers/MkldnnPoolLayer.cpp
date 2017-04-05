@@ -194,9 +194,11 @@ void MkldnnPoolLayer::resetDnnBwd() {
   std::shared_ptr<pooling_backward::desc> bwdDesc;
   std::shared_ptr<pooling_backward::primitive_desc> bwdPD;
   bwdDesc.reset(new pooling_backward::desc(poolAlgo_,
-    MkldnnBuffer::getMD(botDims_[0]),  // botDiffs_[0]->getUserMD(),
+    MkldnnBuffer::getMD(botDims_[0]),
     // TODO(TJ): use any if MKLDNN ready
-    topDiff_->getUserMD(),
+    // use intl topdata format, since bwd prev is from fc's output: always nchw
+    // which is not best format for pooling
+    MkldnnBuffer::getMD(topDims_, memory::format(topData_->getIntlFmt())),
     strides, kernel, padding, padR, padKind));
   bwdPD.reset(new pooling_backward::primitive_desc(
     *bwdDesc, eg, *fwdPD_));
@@ -207,7 +209,7 @@ void MkldnnPoolLayer::resetDnnBwd() {
     VLOG(4) << "set next diff format: " << DNN_FMTS[botDiffs_[0]->getUserFmt()];
   }
   botDiffs_[0]->initCvt(bwdPD->diff_src_primitive_desc(), dnnCvtIntl2User);
-  topDiff_->initCvt();
+  topDiff_->initCvt(topData_->getIntlPD(), dnnCvtUser2Intl);
   // 5. create bwd handle
   if (withWorkspace_) {
     bwd_.reset(new pooling_backward(*bwdPD,
