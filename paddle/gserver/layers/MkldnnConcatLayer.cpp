@@ -80,7 +80,7 @@ void MkldnnConcatLayer::reshape() {
   }
 }
 
-void MkldnnConcatLayer::resetDnnFwd(PassType passType) {
+void MkldnnConcatLayer::resetDnnFwd() {
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
 
   // create top buffer and init user, only have one output
@@ -212,7 +212,7 @@ void MkldnnConcatLayer::resetDnnBwd() {
   CHECK_EQ(sz, getDnnOutputGrad()->getElementCnt());
 }
 
-void MkldnnConcatLayer::submitDnnFwd(PassType passType) {
+void MkldnnConcatLayer::submitDnnFwd() {
   real *topDataData = getOutputValue()->getData();
   std::vector<primitive> pipeline;
   for (size_t i = 0; i < inputLayers_.size(); ++i) {

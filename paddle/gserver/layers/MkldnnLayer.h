@@ -174,7 +174,7 @@ public:
    * each dnn layer should have function
    * to init or reset forward mkldnn
    */
-  virtual void resetDnnFwd(PassType passType) = 0;
+  virtual void resetDnnFwd() = 0;
 
   /** 
    * each dnn layer should have function
@@ -191,7 +191,7 @@ public:
   // when confirm whether need to clear topdiff and how multi inputs work
   virtual void clearDataDiff() = 0;
 
-  virtual void submitDnnFwd(PassType passType) = 0;
+  virtual void submitDnnFwd() = 0;
   virtual void submitDnnBwd(const UpdateCallback& callback) = 0;
 };
 

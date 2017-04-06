@@ -66,7 +66,7 @@ void MkldnnAddtoLayer::reshape() {
   }
 }
 
-void MkldnnAddtoLayer::resetDnnFwd(PassType passType) {
+void MkldnnAddtoLayer::resetDnnFwd() {
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
   if (!has_spatial_) {
     topDims_ = {bs_, oc_};
@@ -157,7 +157,7 @@ void MkldnnAddtoLayer::resetDnnBwd() {
   }
 }
 
-void MkldnnAddtoLayer::submitDnnFwd(PassType passType) {
+void MkldnnAddtoLayer::submitDnnFwd() {
   real *topDataData = getOutputValue()->getData();
   std::vector<primitive> pipeline;
   for (size_t i = 0; i < inputLayers_.size(); i++) {

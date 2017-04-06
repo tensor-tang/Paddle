@@ -102,7 +102,7 @@ void MkldnnBatchNormLayer::reshape() {
   getOutput().setFrameWidth(ow_[0]);
 }
 
-void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
+void MkldnnBatchNormLayer::resetDnnFwd() {
   CHECK(bs_ == getInput(0).getBatchSize()) << "batchsize should equal";
   if (useMkldnnWgt_) {
     useScaleShift_ = weight_ && weight_->getW();
@@ -116,18 +116,18 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
 
   // in train always calculate mean and var, so GlobalStats must be false
   // in test depends on manual choice
-  useGlobalStats_ = (passType == PASS_TEST);
-  if (passType == PASS_TEST && config_.has_use_global_stats()) {
+  useGlobalStats_ = (passType_ == PASS_TEST);
+  if (passType_ == PASS_TEST && config_.has_use_global_stats()) {
     useGlobalStats_ = config_.use_global_stats();
   }
-  if (passType != PASS_TEST && useGlobalStats_ == true) {
+  if (passType_ != PASS_TEST && useGlobalStats_ == true) {
     LOG(WARNING) << "use_global_stats is invalid setting in training phase";
     useGlobalStats_ = false;
   }
 
   // start dnn
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
-  prop_kind fwdpk = (passType == PASS_TEST) ? prop_kind::forward_scoring
+  prop_kind fwdpk = (passType_ == PASS_TEST) ? prop_kind::forward_scoring
     : prop_kind::forward_training;
   flags_ = 0u;
   if (useGlobalStats_)
@@ -141,7 +141,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
       localMean_->copyFrom(*(movingMean_->getW()));
       localVar_->copyFrom(*(movingVar_->getW()));
     }
-    if (useScaleShift_ && useMkldnnWgt_ && passType != PASS_TEST) {
+    if (useScaleShift_ && useMkldnnWgt_ && passType_ != PASS_TEST) {
       // re-randomize scale and zero shift(bias in paddle) just as paddle did
       const ParameterConfig& wgtConfig = parameters_[0]->getConfig();
       VectorPtr wgt = parameters_[0]->getBuf(PARAMETER_VALUE);
@@ -158,7 +158,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
   if (useScaleShift_) {
     dataScaleShift_.reset(new MkldnnBuffer());
   }
-  if (useGlobalStats_ || passType != PASS_TEST) {
+  if (useGlobalStats_ || passType_ != PASS_TEST) {
     mean_.reset(new MkldnnBuffer());
     var_.reset(new MkldnnBuffer());
   }
@@ -219,7 +219,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
     LOG(WARNING) << "Are you sure do not need scale and shift???";
   }
   // mean and var
-  if (useGlobalStats_ || passType != PASS_TEST) {
+  if (useGlobalStats_ || passType_ != PASS_TEST) {
     MkldnnBufferPtr tmppd(new MkldnnBuffer());
     tmppd->initUser(localMean_->getData(), biasDims_[0], biasFmt_[0], eg);
     CHECK(tmppd->getUserPD() == fwdPD_->mean_primitive_desc()
@@ -232,7 +232,7 @@ void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
     var_->initCvt(fwdPD_->variance_primitive_desc(), dnnCvtNoNeed);
   }
   // 5. create fwd handle
-  if (passType == PASS_TEST) {
+  if (passType_ == PASS_TEST) {
     if (useGlobalStats_) {
       fwd_.reset(useScaleShift_
         ? new batch_normalization_forward(*fwdPD_, *botDatas_[0]->getIntlMem(),
@@ -356,7 +356,7 @@ void MkldnnBatchNormLayer::calMovingMeanAndVar() {
   }
 }
 
-void MkldnnBatchNormLayer::submitDnnFwd(PassType passType) {
+void MkldnnBatchNormLayer::submitDnnFwd() {
   real *botDataData = getPrev(0)->getOutputValue()->getData();
   real *topDataData = getOutputValue()->getData();
 
@@ -382,7 +382,7 @@ void MkldnnBatchNormLayer::submitDnnFwd(PassType passType) {
   stream(stream::kind::eager).submit(pipeline).wait();
 
   // calculating and saving moving mean and variance
-  if (passType != PASS_TEST) {
+  if (passType_ != PASS_TEST) {
     calMovingMeanAndVar();
   }
 

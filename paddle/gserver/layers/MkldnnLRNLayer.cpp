@@ -58,11 +58,11 @@ void MkldnnLRNLayer::reshape() {
   getOutput().setFrameWidth(ow_[0]);
 }
 
-void MkldnnLRNLayer::resetDnnFwd(PassType passType) {
+void MkldnnLRNLayer::resetDnnFwd() {
   CHECK(bs_ == getInput(0).getBatchSize())
     << "Assert batchsize of input layers are equal";
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
-  prop_kind pk = (passType == PASS_TEST) ? prop_kind::forward_scoring :
+  prop_kind pk = (passType_ == PASS_TEST) ? prop_kind::forward_scoring :
     prop_kind::forward_training;
   // create dim structure that describes user data.
   botDims_[0] = {bs_, ic_[0], ih_[0], iw_[0]};
@@ -112,7 +112,7 @@ void MkldnnLRNLayer::resetDnnFwd(PassType passType) {
   }
   topData_->initCvt(fwdPD_->dst_primitive_desc(), dnnCvtIntl2User);
   // 5. create handle
-  if (passType != PASS_TEST) {  // training and grad check
+  if (passType_ != PASS_TEST) {  // training and grad check
     workspace_.reset(new memory(fwdPD_->workspace_primitive_desc()));
     fwd_.reset(new lrn_forward(*fwdPD_, *(botDatas_[0]->getIntlMem()),
       *workspace_, *(topData_->getIntlMem())));
@@ -174,7 +174,7 @@ void MkldnnLRNLayer::resetDnnBwd() {
 
 }
 
-void MkldnnLRNLayer::submitDnnFwd(PassType passType) {
+void MkldnnLRNLayer::submitDnnFwd() {
   real *botDataData = getPrev(0)->getOutputValue()->getData();
   real *topDataData = getOutputValue()->getData();
 

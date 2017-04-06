@@ -91,11 +91,11 @@ public:
 
   void clearDataDiff();
 
-  void resetDnnFwd(PassType passType);
+  void resetDnnFwd();
 
   void resetDnnBwd();
 
-  void submitDnnFwd(PassType passType);
+  void submitDnnFwd();
   void submitDnnBwd(const UpdateCallback& callback);
 
   /**

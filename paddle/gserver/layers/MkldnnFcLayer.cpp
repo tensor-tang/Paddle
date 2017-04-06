@@ -101,7 +101,7 @@ void MkldnnFcLayer::reshape() {
   }
 }
 
-void MkldnnFcLayer::resetDnnFwd(PassType passType) {
+void MkldnnFcLayer::resetDnnFwd() {
   CHECK(bs_ == getInput(0).getBatchSize())
     << "Assert batchsize of input layers are equal";
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
@@ -190,7 +190,7 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
       if (useMkldnnWgt_) {
         // cvt the initial paddle wgt to mkldnn wgt only once when training
         // in testing phase do not need cvt
-        if (passType != PASS_TEST) {
+        if (passType_ != PASS_TEST) {
           // paddle wgt is transposed
           size_t height = weights_[i]->getW()->getWidth();
           size_t width = weights_[i]->getW()->getHeight();
@@ -209,7 +209,7 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
       } else {
         // load the initial paddle wgt and cvt only once when scoring
         // in training phase will cvt in every forward
-        if (passType == PASS_TEST) {
+        if (passType_ == PASS_TEST) {
           weights_[i]->getW()->transpose(selfWgtData_[i], false);
           std::vector<primitive> cvtWgt;
           wgtDataData = selfWgtData_[i]->getData();
@@ -416,14 +416,14 @@ void MkldnnFcLayer::resetDnnBwd() {
   }
 }
 
-void MkldnnFcLayer::submitDnnFwd(PassType passType) {
+void MkldnnFcLayer::submitDnnFwd() {
   real *topDataData = getOutputValue()->getData();
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     CHECK(getInput(i).value) << "The input of 'fc' layer must be matrix";
     real *botDataData = getPrev(0)->getOutputValue()->getData();
     std::vector<primitive> pipeline;
     botDatas_[i]->submitCvt(pipeline, botDataData);
-    if (!useMkldnnWgt_ && passType != PASS_TEST) {
+    if (!useMkldnnWgt_ && passType_ != PASS_TEST) {
       weights_[i]->getW()->transpose(selfWgtData_[i], false);
       real *wgtDataData = selfWgtData_[i]->getData();
       wgtData_->submitCvt(pipeline, wgtDataData);

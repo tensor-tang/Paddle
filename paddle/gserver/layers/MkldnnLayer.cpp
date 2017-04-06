@@ -146,7 +146,7 @@ void MkldnnLayer::forward(PassType passType) {
 
     // mkldnn init or reset forward
     resetOutput(bs_, getSize());
-    resetDnnFwd(passType);
+    resetDnnFwd();
 
     // print the data flow
     for (size_t i = 0; i != inputLayers_.size(); ++i) {
@@ -173,7 +173,7 @@ void MkldnnLayer::forward(PassType passType) {
   clearAllDnnCvtFlags();
   // then submit dnn forward
   REGISTER_TIMER_INFO("mkldnn_FwdTimer", getName().c_str());
-  submitDnnFwd(passType);
+  submitDnnFwd();
 }
 
 void MkldnnLayer::backward(const UpdateCallback& callback) {

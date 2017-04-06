@@ -19,10 +19,10 @@ bool MkldnnPoolLayer::initDnn(const LayerMap &layerMap,
 //  if (!conf.caffe_mode()) {
 //    LOG(FATAL) << "Only support caffe mode with MKL-DNN by now!";
 //  }
-  const std::string& poolType_ = conf.pool_type();
-  if (poolType_ == "max-projection") {
+  const std::string& poolType = conf.pool_type();
+  if (poolType == "max-projection") {
     poolAlgo_ = algorithm::pooling_max;
-  } else if (poolType_ == "avg-projection") {
+  } else if (poolType == "avg-projection") {
     poolAlgo_ = algorithm::pooling_avg;
   } else {
     LOG(FATAL) << "unknow pooling type!";
@@ -72,11 +72,11 @@ void MkldnnPoolLayer::reshape() {
   getOutput().setFrameWidth(ow_[0]);
 }
 
-void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
+void MkldnnPoolLayer::resetDnnFwd() {
   CHECK(bs_ == getInput(0).getBatchSize())
     << "Assert batchsize of input layers are equal";
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
-  prop_kind pk = (passType == PASS_TEST) ? prop_kind::forward_scoring :
+  prop_kind pk = (passType_ == PASS_TEST) ? prop_kind::forward_scoring :
     prop_kind::forward_training;
   // create dim structure that describes user data.
   botDims_[0] = {bs_, ic_[0], ih_[0], iw_[0]};
@@ -134,7 +134,7 @@ void MkldnnPoolLayer::resetDnnFwd(PassType passType) {
     VLOG(4) << "set next data format: " << DNN_FMTS[topData_->getUserFmt()];
   }
   topData_->initCvt(fwdPD_->dst_primitive_desc(), dnnCvtIntl2User);
-  withWorkspace_ = (passType != PASS_TEST
+  withWorkspace_ = (passType_ != PASS_TEST
       && poolAlgo_ != algorithm::pooling_avg);
   if (withWorkspace_) {
     workspace_.reset(new memory(fwdPD_->workspace_primitive_desc()));
@@ -220,7 +220,7 @@ void MkldnnPoolLayer::resetDnnBwd() {
   }
 }
 
-void MkldnnPoolLayer::submitDnnFwd(PassType passType) {
+void MkldnnPoolLayer::submitDnnFwd() {
   real *botDataData = getPrev(0)->getOutputValue()->getData();
   real *topDataData = getOutputValue()->getData();
 
