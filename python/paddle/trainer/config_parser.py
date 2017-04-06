@@ -1173,6 +1173,25 @@ def parse_norm(norm, input_layer_name, norm_conf):
         norm_conf.scale /= norm.size**2
 
 
+def parse_lrn(norm, input_layer_name, norm_conf):
+    norm_conf.norm_type = norm.norm_type
+    config_assert(norm.norm_type in ['across_channel', 'within_channel'],
+                  "norm-type %s is not in [across_channel, 'within_channel']" %
+                  norm.norm_type)
+    norm_conf.channels = norm.channels
+    norm_conf.size = norm.size
+    norm_conf.scale = norm.scale
+    norm_conf.pow = norm.pow
+    norm_conf.blocked = norm.blocked
+
+    img_pixels = g_layer_map[input_layer_name].size / norm.channels
+    norm_conf.img_size = int(img_pixels**0.5)
+    config_assert((norm_conf.img_size**2) == img_pixels,
+                  "Incorrect input image size %d for input image pixels %d" %
+                  (norm_conf.img_size, img_pixels))
+    norm_conf.output_x = norm_conf.img_size
+
+
 '''
 caffe_mode: compute the output size using floor instead of ceil,
             which is consistent of caffe and CuDNN's convention.
@@ -1804,6 +1823,22 @@ class NormLayer(LayerBase):
             input_layer = self.get_input_layer(input_index)
             parse_norm(self.inputs[input_index].norm, input_layer.name,
                        self.config.inputs[input_index].norm_conf)
+            norm_conf = self.config.inputs[input_index].norm_conf
+            self.set_layer_size((norm_conf.output_x**2) * norm_conf.channels)
+
+            
+@config_layer('lrn')
+class LRNLayer(LayerBase):
+    def __init__(self, name, inputs, device=None):
+        use_mkldnn = bool(int(g_command_config_args.get("use_mkldnn", 1)))
+        config_assert(use_mkldnn, "LRN only support use_mkldnn")
+        super(LRNLayer, self).__init__(
+            name, 'mkldnn_lrn', 0, inputs=inputs, device=device)
+
+        for input_index in xrange(len(self.inputs)):
+            input_layer = self.get_input_layer(input_index)
+            parse_lrn(self.inputs[input_index].norm, input_layer.name,
+                      self.config.inputs[input_index].norm_conf)
             norm_conf = self.config.inputs[input_index].norm_conf
             self.set_layer_size((norm_conf.output_x**2) * norm_conf.channels)
 

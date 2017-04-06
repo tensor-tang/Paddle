@@ -57,6 +57,7 @@ __all__ = [
     'img_pool_layer',
     'batch_norm_layer',
     'img_cmrnorm_layer',
+    'img_lrn_layer',
     'addto_layer',
     'concat_layer',
     'lstm_step_layer',
@@ -132,6 +133,7 @@ class LayerType(object):
     POOL_LAYER = "pool"
     BATCH_NORM_LAYER = 'batch_norm'
     NORM_LAYER = 'norm'
+    LRN_LAYER = 'lrn'
     SUM_TO_ONE_NORM_LAYER = 'sum_to_one_norm'
     ADDTO_LAYER = 'addto'
 
@@ -2116,6 +2118,42 @@ def img_cmrnorm_layer(input,
     """
     return __img_norm_layer__(name, input, size, "cmrnorm-projection", scale,
                               power, num_channels, 0, layer_attr)
+
+@wrap_name_default("lrn")
+@layer_support()
+def img_lrn_layer(input,
+                  local_size=5,
+                  scale=0.0001,
+                  power=0.75,
+                  norm_type="across_channel",  # "within_channel"
+                  blocked=0,
+                  name=None,
+                  num_channels=None,
+                  layer_attr=None):
+    if num_channels is None:
+        assert input.num_filters is not None
+        num_channels = input.num_filters
+
+    l = Layer(
+        name=name,
+        type=LayerType.LRN_LAYER,
+        inputs=Input(
+            input.name,
+            norm=Norm(
+                norm_type=norm_type,
+                channels=num_channels,
+                size=local_size,
+                scale=scale,
+                pow=power,
+                blocked=blocked)),
+        **ExtraLayerAttribute.to_kwargs(layer_attr))
+    return LayerOutput(
+        name,
+        layer_type=LayerType.LRN_LAYER,
+        parents=[input],
+        num_filters=num_channels,
+        img_norm_type=norm_type,
+        size=l.config.size)
 
 
 @wrap_bias_attr_default()

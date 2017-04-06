@@ -1,0 +1,7 @@
+data
+data/*
+model
+models/*
+plot.png
+*.log
+*.pyc
