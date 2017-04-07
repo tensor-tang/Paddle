@@ -249,7 +249,7 @@ void testBatchNormLayer(const testBNDesc& pm) {
   config.layerConfig.set_type("mkldnn_batch_norm");
   config.layerConfig.set_size(pm.ic * pm.ih * pm.iw);
   config.biasSize = pm.ic;
-  
+
   config.inputDefs.push_back({INPUT_DATA, "layer_0",
     /* size of input layer= */ size_t(pm.ic * pm.ih * pm.iw),
     /* size of weight= */ size_t(pm.ic)});
@@ -276,7 +276,7 @@ void testBatchNormLayer(const testBNDesc& pm) {
   TestConfig ref = config;
   ref.layerConfig.set_type("batch_norm");
   std::vector<TestConfig> cfg = {config, ref};
-  for (auto useGS: {false, true}) {
+  for (auto useGS : {false, true}) {
     cfg[0].layerConfig.set_use_global_stats(useGS);
     cfg[1].layerConfig.set_use_global_stats(useGS);
     // TODO(TJ): use {0, 1} if AddToMode ready
@@ -321,7 +321,7 @@ void testLRNLayer(const string& normType, const testLRNDesc& pm) {
   config.biasSize = 0;
   config.inputDefs.push_back({INPUT_DATA, "layer_0",
     /* size of input layer= */ size_t(pm.ic * pm.ih * pm.iw), 0});
- 
+
   LayerInputConfig* input = config.layerConfig.add_inputs();
   NormConfig* norm = input->mutable_norm_conf();
   norm->set_norm_type(normType);
@@ -401,7 +401,7 @@ struct testConcatDesc {
 };
 
 void testConcatLayer(const testConcatDesc& pm) {
-  const int N =0, C = 1, H = 2, W =3;
+  const int N = 0, C = 1, H = 2, W = 3;
   CHECK_GE(pm.inputs.size(), 2) << "at least two inputs";
   CHECK(pm.axis == 0 || pm.axis == 1);
   CHECK_EQ(pm.axis, 1) << "only support concat channel yet";

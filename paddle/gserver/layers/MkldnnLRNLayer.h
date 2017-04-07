@@ -24,8 +24,8 @@ protected:
 
   mkldnn::algorithm algo_;
   int localSize_;
-  double alpha_, beta_, k_;  // scale, pow, 
-  // TODO: what k meaning???? block??
+  double alpha_, beta_, k_;  // scale, pow
+  // TODO(TJ): what k meaning???? block??
 
 public:
   explicit MkldnnLRNLayer(const LayerConfig& config)
@@ -42,7 +42,7 @@ public:
 
   void reshape();
 
-  void clearDataDiff() {};
+  void clearDataDiff() {}
 
   void resetDnnFwd();
 

@@ -15,7 +15,7 @@ bool MkldnnLRNLayer::initDnn(const LayerMap &layerMap,
   /* the size of inputs for norm-layer is 1 */
   CHECK_EQ(config_.inputs_size(), 1);
 
-  k_ = 1.0;  // TODO: what meaning?
+  k_ = 1.0;  // TODO(TJ): what meaning?
 
   const NormConfig& conf = config_.inputs(0).norm_conf();
   const std::string& normType = conf.norm_type();
@@ -26,20 +26,19 @@ bool MkldnnLRNLayer::initDnn(const LayerMap &layerMap,
   } else {
     LOG(FATAL) << "unknow LRN type!";
   }
-  localSize_= conf.size();
+  localSize_ = conf.size();
   alpha_ = conf.scale();
   beta_ = conf.pow();
-  
   ic_[0] = conf.channels();
   iw_[0] = conf.img_size();
   ow_[0] = conf.output_x();
   CHECK_EQ(iw_[0], ow_[0]);
-  ih_[0] = iw_[0];
-  ih_[0] = oh_[0];
 
   bs_ = 0;
   oc_ = ic_[0];
- 
+  ih_[0] = iw_[0];
+  oh_[0] = ow_[0];
+
   return true;
 }
 
@@ -155,7 +154,7 @@ void MkldnnLRNLayer::resetDnnBwd() {
   std::shared_ptr<lrn_backward::primitive_desc> bwdPD;
   bwdDesc.reset(new lrn_backward::desc(algo_,
     botDatas_[0]->getIntlMD(),
-    topDiff_->getUserMD(), // TODO(TJ): use any MD if MKLDNN ready
+    topDiff_->getUserMD(),  // TODO(TJ): use any MD if MKLDNN ready
     localSize_, alpha_, beta_, k_));
   bwdPD.reset(new lrn_backward::primitive_desc(
     *bwdDesc, eg, *fwdPD_));
@@ -171,7 +170,6 @@ void MkldnnLRNLayer::resetDnnBwd() {
   CHECK(workspace_);
   bwd_.reset(new lrn_backward(*bwdPD, *(botDatas_[0]->getIntlMem()),
     *(topDiff_->getIntlMem()), *workspace_, *(botDiffs_[0]->getIntlMem())));
-
 }
 
 void MkldnnLRNLayer::submitDnnFwd() {
