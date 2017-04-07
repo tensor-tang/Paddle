@@ -3,13 +3,13 @@ import sys,os
 import numpy as np
 from PIL import Image
 
-my_dir = '/home/tangjian/imagedata_val/'
-file_list = 'data/val.txt'
-train_list = 'data/train.list'
-train_list_actual = 'data/train.list.txt'
+my_dir = 'data/train/'  # 'data/test/'
+input_list = 'data/train/train.txt'  # 'data/test/val.txt'
+intermediate_list = 'data/train.list.txt'  # 'data/test.list.txt'
+output_list = 'data/train.list'  # 'data/test.list'
 total_imgs = 0
-with open(train_list_actual, 'w') as ftrain:
-    with open(file_list, 'r') as fdata:
+with open(intermediate_list, 'w') as ftrain:
+    with open(input_list, 'r') as fdata:
         lines = [line.strip() for line in fdata]
         for file_name in lines:
             abs_line = my_dir + file_name
@@ -25,8 +25,8 @@ with open(train_list_actual, 'w') as ftrain:
 
 print(total_imgs)
 
-with open(train_list, 'w') as ftrain:
-    ftrain.write(train_list_actual + '\n')
+with open(output_list, 'w') as ftrain:
+    ftrain.write(intermediate_list + '\n')
 
             
             
