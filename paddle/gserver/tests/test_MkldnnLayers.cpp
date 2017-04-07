@@ -304,6 +304,44 @@ TEST(MkldnnLayer, BatchNormLayer) {
   testBatchNormLayer({64, 10, 16, 16});
 }
 
+struct testLRNDesc {
+  int bs;
+  int ic;
+  int ih, iw;
+  double alpha, beta, k;
+  int localSize;
+};
+
+void testLRNLayer(const string& normType, const testLRNDesc& pm) {
+  CHECK(normType == "across_channel" || normType == "within_channel");
+  TestConfig config;
+  config.layerConfig.set_type("mkldnn_lrn");
+//  config.layerConfig.set_active_type("relu");
+  config.layerConfig.set_size(pm.ic * pm.ih * pm.iw);
+  config.biasSize = 0;
+  config.inputDefs.push_back({INPUT_DATA, "layer_0",
+    /* size of input layer= */ size_t(pm.ic * pm.ih * pm.iw), 0});
+ 
+  LayerInputConfig* input = config.layerConfig.add_inputs();
+  NormConfig* norm = input->mutable_norm_conf();
+  norm->set_norm_type(normType);
+  norm->set_channels(pm.ic);
+  norm->set_size(pm.localSize);
+  norm->set_scale(pm.alpha);
+  norm->set_pow(pm.beta);
+  norm->set_blocked(0);
+  norm->set_img_size(pm.iw);
+  norm->set_output_x(norm->img_size());
+
+  testLayerGrad(config, "mkldnn_lrn", pm.bs, false, false);
+}
+
+TEST(MkldnnLayer, LRNLayer) {
+  testLRNLayer("across_channel", {100, 16, 4, 4, 1.0e-4, 0.75, 1.0, 5});
+// Backward does not support within_channel yet.
+//  testLRNLayer("within_channel", {20, 256, 27, 27, 1.0e-4, 0.75, 1.0, 5});
+}
+
 struct testAddtoDesc {
   int nInputs;
   int bs;
