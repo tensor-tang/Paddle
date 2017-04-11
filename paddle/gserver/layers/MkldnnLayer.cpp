@@ -140,7 +140,6 @@ void MkldnnLayer::forward(PassType passType) {
       << " of mkldnn layer: " << getName();
 
     // reshape the input and output size
-    REGISTER_TIMER_INFO("mkldnn_ResetDnnTimer", getName().c_str());
     reshape();
     printInfo();
 
@@ -150,7 +149,6 @@ void MkldnnLayer::forward(PassType passType) {
 
     // print the data flow
     for (size_t i = 0; i != inputLayers_.size(); ++i) {
-      // TODO(TJ): consider multi input
       if (botDatas_[i] && topData_)
         VLOG(1) << "data format flow --- "
           << DNN_FMTS[botDatas_[i]->getUserFmt()] << " >>> ("
@@ -169,11 +167,14 @@ void MkldnnLayer::forward(PassType passType) {
     needResetBwd_ = true;
   }
 
-  // all sumbit cvt should be clear
-  clearAllDnnCvtFlags();
-  // then submit dnn forward
-  REGISTER_TIMER_INFO("mkldnn_FwdTimer", getName().c_str());
-  submitDnnFwd();
+  {
+    //REGISTER_TIMER_DYNAMIC("Fwd_" + getName());
+    REGISTER_TIMER_INFO("mkldnn_FwdTimer", getName().c_str());
+    // all sumbit cvt should be clear
+    clearAllDnnCvtFlags();
+    // then submit dnn forward
+    submitDnnFwd();
+  }
 }
 
 void MkldnnLayer::backward(const UpdateCallback& callback) {
@@ -188,7 +189,6 @@ void MkldnnLayer::backward(const UpdateCallback& callback) {
 
     // print the diff flow
     for (size_t i = 0; i != inputLayers_.size(); ++i) {
-      // TODO(TJ): consider multi input
       if (botDiffs_[i] && topDiff_)
         VLOG(1) << "diff format flow --- "
           << DNN_FMTS[botDiffs_[i]->getUserFmt()] << " <<< ("
@@ -198,14 +198,17 @@ void MkldnnLayer::backward(const UpdateCallback& callback) {
     }
   }
 
-  // submit dnn backward
-  REGISTER_TIMER_INFO("mkldnn_BwdTimer", getName().c_str());
-  if (nullptr != sumTopDiffs_) {
-    std::vector<primitive> sum;
-    sum.push_back(*sumTopDiffs_);
-    mkldnn::stream(mkldnn::stream::kind::eager).submit(sum).wait();
+  {
+    //REGISTER_TIMER_DYNAMIC("Bwd_" + getName());
+    REGISTER_TIMER_INFO("mkldnn_BwdTimer", getName().c_str());
+    if (nullptr != sumTopDiffs_) {
+      std::vector<primitive> sum;
+      sum.push_back(*sumTopDiffs_);
+      mkldnn::stream(mkldnn::stream::kind::eager).submit(sum).wait();
+    }
+    // submit dnn backward
+    submitDnnBwd(callback);
   }
-  submitDnnBwd(callback);
 }
 
 void MkldnnLayer::printInfo() {
