@@ -1,31 +1,33 @@
 #!/bin/sh
 
-#python paddle.py \
-#  --job_workspace="${PATH_TO_REMOTE_EXISTED_WORKSPACE}" \
-#  --dot_period=10 \
-#  --ports_num_for_sparse=2 \
-#  --log_period=50 \
-#  --num_passes=10 \
-#  --trainer_count=4 \
-#  --saving_period=1 \
-#  --local=0 \
-#  --config=./trainer_config.py \
-#  --save_dir=./output \
-#  --use_gpu=0
+function usage() {
+    echo "run.sh topology(googlenet/alexnet/vgg/resnet) topology_version"
+    echo "The topology_version is version in GoogleNet(only support v1 yet),\
+ layer_num in VGG(16 or 19) and ResNet(50, 101 or 152)."
+}
 
-PATH_TO_LOCAL_WORKSPACE=/home/tangjian/test_cluster
-cfg=googlenet.py
+if [ $# -lt 1 ]; then
+    echo "At least one input!"
+    usage
+    exit 0
+fi
 
+if [ $1 ]; then
+    topology=$1
+fi
+
+if [ $2 ]; then
+    topology_version=$2
+fi
 
 python paddle.py \
-  --job_dispatch_package="${PATH_TO_LOCAL_WORKSPACE}" \
+  --topology=$topology \
+  --topology_version=$topology_version \
   --dot_period=1 \
-  --ports_num_for_sparse=2 \
   --log_period=1 \
   --num_passes=1 \
   --trainer_count=1 \
   --saving_period=1 \
   --local=0 \
-  --config=${cfg} \
-  --save_dir=./output \
   --use_gpu=0
+

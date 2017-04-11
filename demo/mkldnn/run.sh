@@ -121,6 +121,7 @@ if [ $task == "train" ] || [ $task == "pretrain" ] || [ $task == "time" ]; then
     if [ ! -f $train_list ]; then
         if [ $use_dummy -eq 1 ]; then
             echo " " > $train_list
+            made_train_list=1
         else
             echo "$train_list does not exist! task: $task"
             exit 0
@@ -130,6 +131,7 @@ fi
 if [ ! -f $test_list ]; then
     if [ $use_dummy -eq 1 ]; then
         echo " " > $test_list
+        made_test_list=1
     else
         echo "$test_list does not exist!  task: $task"
         exit 0
@@ -181,5 +183,13 @@ else  # pretrain or test
     --init_model_path=$models_in \
     --config_args=$args \
     2>&1 | tee -a $log 2>&1 
+fi
+
+# clean lists
+if [ $made_train_list ] && [ -f $train_list ]; then
+    rm -f $train_list
+fi
+if [ $made_test_list ] && [ -f $test_list ]; then
+    rm -f $test_list
 fi
 

@@ -60,37 +60,25 @@ def kill_process():
          | xargs kill > /dev/null 2>&1")
 
 
-def job_prepare(jobdir, data=None):
+def job_prepare(topology, jobdir, logdir, modeldir):
     '''
-    prepare job related workspace data
+    prepare job related workspace
 
     Assuming you already installed PaddlePaddle in all nodes which means
     PaddlePaddle related bins and dependencies libraries.
     Assuming the train/test data have already been installed.
-    This function just prepare all related model and other resources
-    needed at runtime.
+    This function just prepare logdir and copy config file.
     '''
 
-    def job_create_workspace(jobdir, data=None):
-        '''
-        prepare job workspace, common file, etc.
-        '''
-        log = os.path.join(jobdir, "log")
-        if data is not None:
-            #create job dir
-            run('rm ' + jobdir + ' -fr && ' + 'mkdir -p ' + jobdir)
-            #push data and paddle bin
-            put(data + "/*", jobdir)
-            run("mkdir -p " + log)
-        run('rm -fr ' + log + "/*")
-
+    def job_create_workspace():
+        run('rm ' + logdir + ' -fr && ' + 'mkdir -p ' + logdir + ' ' + modeldir)
+        put(config_file, modeldir) # save the topology
     def set_nodefile(nodeid):
-        '''
-        create nodefile for later usage
-        '''
-        run('echo ' + str(nodeid) + ' > ' + jobdir + '/nodefile')
+        run('echo ' + str(nodeid) + ' > ' + logdir + '/nodefile')
 
-    execute(job_create_workspace, jobdir, data, hosts=conf.HOSTS)
+    config_file = jobdir + "/" + topology + ".py"
+    assert os.path.isfile(config_file)
+    execute(job_create_workspace, hosts=conf.HOSTS)
     for i in xrange(len(conf.HOSTS)):
         execute(set_nodefile, i, hosts=conf.HOSTS[i])
     #clean rubbish caused by exception 
@@ -98,7 +86,7 @@ def job_prepare(jobdir, data=None):
         execute(kill_process, hosts=conf.HOSTS)
 
 
-def job_pserver(jobdir, pids=None):
+def job_pserver(jobdir, logdir, pids=None):
     '''
     start all pservers
     '''
@@ -119,15 +107,16 @@ def job_pserver(jobdir, pids=None):
                 ':$LD_LIBRARY_PATH'):
             program = 'paddle pserver'
             run('cd ' + jobdir + '; '  + \
-                'GLOG_logtostderr=0 GLOG_log_dir="./log" ' + \
-                'nohup ' + \
-                program + " " + pargs + ' > ./log/server.log 2>&1 < /dev/null & ',
+                'GLOG_logtostderr=0 ' + \
+                'GLOG_log_dir=' + logdir + \
+                ' nohup ' + program + " " + pargs + \
+                ' > ' + logdir + '/server.log 2>&1 < /dev/null & ',
                 pty=False)
 
     execute(start_pserver, jobdir, pargs, hosts=conf.HOSTS)
 
 
-def job_trainer(jobdir, train_args_dict, pids=None):
+def job_trainer(topology, jobdir, logdir, topo_ver, train_args_dict, modeldir=None, pids=None):
     '''
     start paddle trainer
     '''
@@ -150,9 +139,21 @@ def job_trainer(jobdir, train_args_dict, pids=None):
     args_ext = ""
     for key, value in train_args_dict.items():
         args_ext += (' --' + key + '=' + value)
-    args += " " + args_ext
 
-    def start_trainer(jobdir, args):
+    args += " " + args_ext
+    args += " --save_dir=" + modeldir
+    args += " --config=" + str(topology) + ".py"
+    args += " --config_args=batch_size=" + str(conf.BATCH_SIZE) + \
+            ",use_mkldnn=" + str(conf.PADDLE_USE_MKLDNN) + \
+            ",use_mkldnn_wgt=" + str(conf.PADDLE_USE_MKLDNN_WGT) + \
+            ",use_dummy=" + str(conf.PADDLE_USE_DUMMY)
+    if topology != "alexnet" and topo_ver is not None:
+        if topology == "googlenet":
+            args += ",version=" + str(topo_ver)
+        else:
+            args += ",layer_num=" + str(topo_ver)
+
+    def start_trainer(args):
         '''
         start trainer process with fabric executor
         '''
@@ -162,31 +163,14 @@ def job_trainer(jobdir, train_args_dict, pids=None):
             program = 'paddle train'
             run('cd ' + jobdir + '; '  + \
                 'GLOG_logtostderr=0 '
-                'GLOG_log_dir="./log" '
-                'nohup ' + \
-                program + " " + args + " > ./log/train.log 2>&1 < /dev/null & ",
+                'GLOG_log_dir=' + logdir + \
+                ' nohup ' + program + " " + args + \
+                ' > ' + logdir + '/train.log 2>&1 < /dev/null & ',
                 pty=False)
-
     for i in xrange(len(conf.HOSTS)):
         train_args = copy.deepcopy(args)
         train_args += " --trainer_id=" + str(i)
-        execute(start_trainer, jobdir, train_args, hosts=conf.HOSTS[i])
-
-
-def job_all(job_package, jobdir=None, train_args_dict=None):
-    '''
-    param job_package
-    param train_args_dict
-    '''
-    if jobdir is None:
-        timestamp = time.strftime("%Y%m%d%H%M%S", time.localtime())
-        jobdir = conf.ROOT_DIR + "/JOB" + timestamp
-    job_prepare(jobdir, job_package)
-    job_pserver(jobdir)
-    time.sleep(5)  #wait until pservers completely start
-    job_trainer(jobdir, train_args_dict)
-    job_clean()
-
+        execute(start_trainer, train_args, hosts=conf.HOSTS[i])
 
 def job_clean():
     '''
@@ -214,34 +198,63 @@ def job_clean():
     signal.pause()
 
 
+def job_all(topology, jobdir, logdir, train_args_dict=None, topo_ver=None):
+    modeldir = logdir + "/models"
+    job_prepare(topology, jobdir, logdir, modeldir)
+    job_pserver(jobdir, logdir)
+    time.sleep(10)  #wait until pservers completely start
+    job_trainer(topology, jobdir, logdir, topo_ver, train_args_dict, modeldir)
+    job_clean()
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         prog="paddle.py", description='simple tool for cluster training')
     parser.add_argument(
-        '-j',
-        '--job_workspace',
-        required=False,
+        '-t',
+        '--topology',
+        required=True,
         default=None,
-        help='job workspace')
+        help='topology name')
     parser.add_argument(
-        '-p',
-        '--job_dispatch_package',
+        '-l',
+        '--topology_version',
         required=False,
         default=None,
-        help='job package for dispatching to all other nodes')
+        help='version or layer num for topology, none for alexnet')
 
     args, train_args_list = parser.parse_known_args()
     train_args = refine_unknown_args(train_args_list)
     train_args_dict = dict(zip(train_args[:-1:2], train_args[1::2]))
-
-    if args.job_workspace is not None:
-        #if assigned workspace, do not need to dispatch data,
-        #so job_local_package should be None
-        assert args.job_dispatch_package is None
-        job_all(None, args.job_workspace, train_args_dict)
-    elif args.job_dispatch_package is not None:
-        assert args.job_workspace is None
-        assert os.path.isdir(args.job_dispatch_package)
-        job_all(args.job_dispatch_package, None, train_args_dict)
+    assert args.topology in ['alexnet', 'googlenet', 'vgg', 'resnet']
+    
+    jobdir = os.path.abspath(conf.JOB_DIR)
+    logdir = os.path.abspath(conf.LOG_DIR)
+    assert os.path.isdir(jobdir)
+    assert os.path.isdir(logdir)
+    logdir += "/LOG_" + args.topology
+    timestamp = time.strftime("%Y%m%d%H%M%S", time.localtime())
+    if args.topology == "alexnet":
+        logdir += "_" + timestamp
+        job_all(args.topology, jobdir, logdir, train_args_dict)
     else:
-        print "--job_workspace or --job_dispatch_package should be set"
+        version = args.topology_version
+        if version == '' or version is None:
+            if args.topology == "googlenet":
+                version = "v1"
+            elif args.topology == "vgg":
+                version = 19
+            elif args.topology == "resnet":
+                version = 50
+        else:
+            if args.topology == "googlenet":
+                assert version in ['v1'] #, 'v2'] only support v1 yet
+            elif args.topology == "vgg":
+                assert version in ['16', '19']
+            elif args.topology == "resnet":
+                assert version in ['50', '101', '152']
+        logdir += "_" + str(version)
+        logdir += "_" + timestamp    
+        job_all(args.topology, jobdir, logdir, train_args_dict, version)
+    
+        

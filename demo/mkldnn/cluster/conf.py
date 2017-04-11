@@ -16,11 +16,15 @@ HOSTS = [
     "root@slavem",
     "root@slave13",
 ]
+
 '''
 workspace configuration
 '''
-#root dir for workspace, can be set as any director with real user account
-ROOT_DIR = "/home/tangjian/Paddle-Baidu/paddle/scripts/cluster_train"
+# job dir for cluster
+JOB_DIR = ".."
+# logs dir for logs and models
+LOG_DIR = "."
+
 '''
 network configuration
 '''
@@ -33,5 +37,15 @@ PADDLE_PORTS_NUM = 1
 #pserver sparse ports num
 PADDLE_PORTS_NUM_FOR_SPARSE = 0
 
+#trainer config 
+BATCH_SIZE = 64
+# use MKLDNN layers
+PADDLE_USE_MKLDNN = 1
+# if do not use mkldnn_weight, will use the same weight as CPU layers
+PADDLE_USE_MKLDNN_WGT = 1
+# if do not have training data, can use dummy data to test benchmark
+PADDLE_USE_DUMMY = 0
+
+
 #environments setting for all processes in cluster job
-LD_LIBRARY_PATH = "/usr/local/cuda/lib64:/usr/lib64:/usr/local/lib"
+LD_LIBRARY_PATH = "/usr/lib64:/usr/local/lib:/usr/local/cuda/lib64"
