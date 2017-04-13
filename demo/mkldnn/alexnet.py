@@ -44,27 +44,26 @@ net = img_conv_layer(
     filter_size=11,
     num_channels=3,
     num_filters=96,
-    stride=4,
-    padding=1)
+    stride=4)
 net = img_lrn_layer(input=net, local_size=5, scale=0.0001, power=0.75)
 net = img_pool_layer(input=net, pool_size=3, stride=2)
 
 # conv2
 net = img_conv_layer(
-    input=net, filter_size=5, num_filters=256, stride=1, padding=2, groups=1)
+    input=net, filter_size=5, num_filters=256, stride=1, padding=2, groups=2)
 net = img_lrn_layer(input=net, local_size=5, scale=0.0001, power=0.75)
 net = img_pool_layer(input=net, pool_size=3, stride=2)
 
 # conv3
 net = img_conv_layer(
-    input=net, filter_size=3, num_filters=384, stride=1, padding=1)
+    input=net, filter_size=3, num_filters=384, stride=1, padding=1, groups=1)
 # conv4
 net = img_conv_layer(
-    input=net, filter_size=3, num_filters=384, stride=1, padding=1, groups=1)
+    input=net, filter_size=3, num_filters=384, stride=1, padding=1, groups=2)
 
 # conv5
 net = img_conv_layer(
-    input=net, filter_size=3, num_filters=256, stride=1, padding=1, groups=1)
+    input=net, filter_size=3, num_filters=256, stride=1, padding=1, groups=2)
 net = img_pool_layer(input=net, pool_size=3, stride=2)
 
 net = fc_layer(
