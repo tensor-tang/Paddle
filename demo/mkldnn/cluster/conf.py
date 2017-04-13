@@ -38,7 +38,7 @@ PADDLE_PORTS_NUM = 1
 PADDLE_PORTS_NUM_FOR_SPARSE = 0
 
 #trainer config 
-BATCH_SIZE = 64
+BATCH_SIZE_PER_NODE = 64
 # use MKLDNN layers
 PADDLE_USE_MKLDNN = 1
 # if do not use mkldnn_weight, will use the same weight as CPU layers

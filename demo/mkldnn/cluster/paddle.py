@@ -143,7 +143,7 @@ def job_trainer(topology, jobdir, logdir, topo_ver, train_args_dict, modeldir=No
     args += " " + args_ext
     args += " --save_dir=" + modeldir
     args += " --config=" + str(topology) + ".py"
-    args += " --config_args=batch_size=" + str(conf.BATCH_SIZE) + \
+    args += " --config_args=batch_size=" + str(conf.BATCH_SIZE_PER_NODE) + \
             ",use_mkldnn=" + str(conf.PADDLE_USE_MKLDNN) + \
             ",use_mkldnn_wgt=" + str(conf.PADDLE_USE_MKLDNN_WGT) + \
             ",use_dummy=" + str(conf.PADDLE_USE_DUMMY)
