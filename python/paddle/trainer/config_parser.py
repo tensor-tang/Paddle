@@ -2052,6 +2052,47 @@ class ResizeLayer(LayerBase):
             'ResizeLayer must have one and only one input')
 
 
+@config_layer('trans_image')
+class TransImageLayer(LayerBase):
+    def __init__(self, name, inputs, height, width, **xargs):
+        super(TransImageLayer, self).__init__(
+            name, 'trans_image', 0, inputs=inputs, **xargs)
+        config_assert(
+            len(self.inputs) == 1,
+            'TransImageLayer must have one and only one input')
+        size = self.get_input_layer(0).size
+        self.set_layer_size(size)
+        if not (height == 0 and width == 0):
+            assert size > 0
+            if height != 0:
+                width = size / height
+            if width != 0:
+                height = size / width
+        self.set_layer_height_width(height, width)
+
+
+@config_layer('view')
+class ViewLayer(LayerBase):
+    def __init__(self, name, size, inputs,
+        seq_len, channel, view_type, height, width, **xargs):
+        super(ViewLayer, self).__init__(
+            name, 'view', size, inputs=inputs, **xargs)
+        config_assert(
+            len(self.inputs) == 1,
+            'ViewLayer must have one and only one input')
+        self.set_layer_size(size)
+        if height > 0 and width > 0:
+            self.set_layer_height_width(height, width)
+        conf = self.config.inputs[0].view_conf
+        conf.view_type = view_type
+        conf.height = height
+        conf.width = width
+        if seq_len is not None:
+            conf.seq_len = seq_len
+        if channel is not None:
+            conf.channel = channel
+
+
 @config_layer('rotate')
 class RotateLayer(LayerBase):
     def __init__(self, name, inputs, height, width, device=None):

@@ -34,6 +34,7 @@ __all__ = [
     "full_matrix_projection",
     "AggregateLevel",
     "ExpandLevel",
+    "ViewType",
     "identity_projection",
     "dotmul_projection",
     "dotmul_operator",
@@ -58,6 +59,7 @@ __all__ = [
     "LayerOutput",
     'img_conv_layer',
     'img_pool_layer',
+    'img_trans_layer',
     'batch_norm_layer',
     'img_cmrnorm_layer',
     'addto_layer',
@@ -68,6 +70,7 @@ __all__ = [
     'memory',
     'StaticInput',
     'expand_layer',
+    'view_layer',
     'scaling_layer',
     'scaling_projection',
     'power_layer',
@@ -132,6 +135,7 @@ class LayerType(object):
     SEQUENCE_LAST_INSTANCE = "seqlastins"
     SEQUENCE_FIRST_INSTANCE = "seqfirstins"
     SEQUENCE_RESHAPE = "seqreshape"
+    VIEW = "view"
     POOLING_MAX = "max"
     POOLING_AVG = 'average'
     FC_LAYER = "fc"
@@ -164,6 +168,7 @@ class LayerType(object):
     POWER_LAYER = 'power'
     SCALING_LAYER = 'scaling'
     TRANS_LAYER = 'trans'
+    TRANS_IMAGE_LAYER = 'trans_image'
     ROTATE_LAYER = 'rotate'
     OUT_PROD_LAYER = 'out_prod'
     FEATURE_MAP_EXPAND_LAYER = 'featmap_expand'
@@ -1506,6 +1511,78 @@ def expand_layer(input,
         parents=[input, expand_as])
 
 
+class ViewType(object):
+    NO_CHANGE = 'NoChange'
+    SEQUENCE_TO_NONE = 'SeqToNone'
+    NONE_TO_SEQUENCE = 'NoneToSeq'
+
+
+@wrap_name_default("view")
+@wrap_bias_attr_default(has_bias=False)
+@layer_support()
+def view_layer(input,
+                     height=1,
+                     width=1,
+                     view_type=ViewType.NO_CHANGE,
+                     channel=None,
+                     seq_len=None,
+                     name=None,
+                     layer_attr=None):
+    """
+    A layer for reshaping. In paddle data flow can be seen as 5 demension:
+    view as (batchsize, seq_len, channel, height, width).
+    The params are all configured for output data
+
+    The example usage is:
+
+    .. code-block:: python
+
+       view = view_layer(input=layer)
+
+    :param input: Input layer.
+    :type input: LayerOutput
+    :param : todo(tj)
+    :type reshape_size: int
+    :param name: Layer name.
+    :type name: basestring
+    :param act: Activation type.
+    :type act: BaseActivation
+    :param layer_attr: extra layer attributes.
+    :type layer_attr: ExtraLayerAttribute.
+    :param bias_attr: The Bias Attribute. If no bias, then pass False or
+                      something not type of ParameterAttribute. None will get a
+                      default Bias.
+    :type bias_attr: ParameterAttribute or None or bool
+    :return: LayerOutput object.
+    :rtype: LayerOutput
+    """
+    if channel is not None:
+        view_size = height * width * channel
+    else:
+        view_size = height * width
+    #if seq_len is not None:
+    #    view_size = view_size * seq_len
+    if height == -1 or width == -1 or channel == -1 or seq_len == -1:
+        view_size = abs(view_size)
+    assert view_size != 0
+    Layer(
+        inputs=[input.name],
+        type=LayerType.VIEW,
+        name=name,
+        size=view_size,
+        view_type=view_type,
+        seq_len=seq_len,
+        channel=channel,
+        height=height,
+        width=width,        
+        **ExtraAttr.to_kwargs(layer_attr))
+    return LayerOutput(
+        name=name,
+        size=view_size,
+        layer_type=LayerType.VIEW,
+        parents=[input])
+
+
 @wrap_name_default()
 @layer_support()
 def repeat_layer(input, num_repeats, name=None, layer_attr=None):
@@ -1827,6 +1904,44 @@ def trans_layer(input, name=None, layer_attr=None):
         **ExtraAttr.to_kwargs(layer_attr))
     return LayerOutput(
         name, LayerType.TRANS_LAYER, parents=[input], size=input.size)
+
+
+@wrap_name_default()
+@layer_support()
+def img_trans_layer(input,
+                            height=0,
+                            width=0,
+                            name=None,
+                            layer_attr=None):
+    """
+    A layer for transposing image matrix.
+    assert channel is 1
+
+    The example usage is:
+
+    .. code-block:: python
+
+       trans = trans_layer(input=layer)
+    height and width is the size after transpose
+
+    :param input: Input layer.
+    :type input: LayerOutput
+    :param name: Layer name.
+    :type name: basestring
+    :param layer_attr: extra layer attributes.
+    :type layer_attr: ExtraLayerAttribute.
+    :return: LayerOutput object.
+    :rtype: LayerOutput
+    """
+    Layer(
+        name=name,
+        type=LayerType.TRANS_IMAGE_LAYER,
+        inputs=[input.name],
+        height=height,
+        width=width,
+        **ExtraAttr.to_kwargs(layer_attr))
+    return LayerOutput(
+        name, LayerType.TRANS_IMAGE_LAYER, parents=[input], size=input.size)
 
 
 @wrap_name_default()

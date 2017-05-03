@@ -262,6 +262,20 @@ message PadConfig {
   repeated uint32 pad_w = 4;
 }
 
+message ViewConfig {
+  // The data dimensionality.
+  // Overall it can be viewed as 5 demension:
+  // (batchsize, seq_len, channels, height, width)
+  required int32 height = 1;
+  required int32 width = 2;
+  optional int32 channel = 3;
+  optional int32 seq_len = 4;
+
+  // view type has 3 choices:
+  // change sequence to no sequence, or otherwise, or no change
+  required string view_type = 5;
+}
+
 message LayerInputConfig {
   required string input_layer_name = 1;
   optional string input_parameter_name = 2;
@@ -279,6 +293,7 @@ message LayerInputConfig {
   optional SppConfig spp_conf = 12;
   optional PriorBoxConfig priorbox_conf = 13;
   optional PadConfig pad_conf = 14;
+  optional ViewConfig view_conf = 15;
 }
 
 message LayerConfig {
