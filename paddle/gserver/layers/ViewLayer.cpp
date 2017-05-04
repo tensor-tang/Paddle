@@ -207,6 +207,7 @@ void ViewLayer::forward(PassType passType) {
     // if input cnt (input batchsize * layer_size) change, reset configure
     reloadConfig();
     elementCnt_ = getInputValue(0)->getElementCnt();
+//    LOG(INFO) << "change input cnt: " << elementCnt_ << ", view type: " << viewType_;
     bsIn_ = input.getBatchSize();
     CHECK_EQ(bsIn_, input.value->getHeight());
     layerSizeIn_ = input.value->getWidth();
@@ -226,8 +227,8 @@ void ViewLayer::forward(PassType passType) {
     config_.set_size(layerSizeOut_);
     getOutput().setFrameHeight(oh_);
     getOutput().setFrameWidth(ow_);
-    LOG(INFO) << "outsize:"<<getSize();
-    LOG(INFO) << "oh:"<<oh_<<",ow:"<<ow_;
+//    LOG(INFO) << "outsize:"<<getSize();
+//    LOG(INFO) << "oh:"<<oh_<<",ow:"<<ow_;
   }
   Layer::forward(passType);
   if (viewType_ == "NoneToSeq") {

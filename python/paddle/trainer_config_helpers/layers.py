@@ -1533,6 +1533,8 @@ def view_layer(input,
     view as (batchsize, seq_len, channel, height, width).
     The params are all configured for output data
 
+    set -1 when need auto set it runtime, but blocked by paddle itself design
+
     The example usage is:
 
     .. code-block:: python
@@ -1556,15 +1558,15 @@ def view_layer(input,
     :return: LayerOutput object.
     :rtype: LayerOutput
     """
+
+    assert height is not None and width is not None
     if channel is not None:
         view_size = height * width * channel
     else:
         view_size = height * width
-    #if seq_len is not None:
-    #    view_size = view_size * seq_len
-    if height == -1 or width == -1 or channel == -1 or seq_len == -1:
-        view_size = abs(view_size)
-    assert view_size != 0
+    if view_size == 0:
+        logger.fatal("height or width can not be 0, set -1 if not sure")
+    view_size = abs(view_size)
     Layer(
         inputs=[input.name],
         type=LayerType.VIEW,

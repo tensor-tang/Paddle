@@ -601,7 +601,7 @@ DEFINE_MATRIX_BINARY_PARAMETER_OP(Brelu, TWO_PARAMETER, b = a > p1 ? a : p1;
                                   b = b < p2 ? b : p2);
 template<class T>
 void BaseMatrixT<T>::brelu(BaseMatrixT& b) {
-  int p1 = 0, p2 = 24;    //! TODO(yuyang18): Make p1,p2 configuable.
+  int p1 = 0, p2 = 20;    //! TODO(yuyang18): Make p1,p2 configuable.
   applyBinary(binary::Brelu<T>(p1, p2), b);
 }
 
@@ -609,7 +609,7 @@ DEFINE_MATRIX_BINARY_PARAMETER_OP(BreluDerivative, TWO_PARAMETER,
                                   a *= (b > p1 && b < p2) ? 1.0 : 0.0);
 template<class T>
 void BaseMatrixT<T>::breluDerivative(BaseMatrixT& b) {
-  int p1 = 0, p2 = 24;
+  int p1 = 0, p2 = 20;
   applyBinary(binary::BreluDerivative<T>(p1, p2), b);
 }
 
