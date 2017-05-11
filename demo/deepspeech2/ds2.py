@@ -46,11 +46,10 @@ settings(
 )
 
 ####################### Deep Speech 2 Configuration #############
-def mkldnn_CBR(input, kh, kw, sh, sw, ic, oc, ih, clipped = 20):
+def mkldnn_CBR(input, kh, kw, sh, sw, ic, oc, clipped = 20):
     tmp = mkldnn_conv(
         input = input,
         num_channels = ic,
-        img_height = ih,  # input image height
         num_filters = oc,
         filter_size_y = kh,
         filter_size = kw,
@@ -66,7 +65,7 @@ def mkldnn_CBR(input, kh, kw, sh, sw, ic, oc, ih, clipped = 20):
 def BiDRNN(input, dim_out, dim_in=None):
     tmp = mkldnn_fc(input=input, size=dim_out, bias_attr=False, act=LinearActivation()) #act=None
     tmp = mkldnn_bn(input = tmp, isSeq=True, num_channels = dim_out, act = None)
-    return = mkldnn_rnn(
+    return mkldnn_rnn(
             input=tmp,
             input_mode="skip_input",
             bi_direction = True,

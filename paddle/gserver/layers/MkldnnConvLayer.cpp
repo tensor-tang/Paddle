@@ -49,7 +49,7 @@ bool MkldnnConvLayer::initDnn(const LayerMap &layerMap,
   }
   hasRelu_ = hasMkldnnRelu();
   if (hasRelu_) {
-    // TODO(TJ): get from proto setting
+    // maybe need get from proto setting
     negativeSlope_ = -0.0;
   }
   return true;
@@ -121,7 +121,6 @@ void MkldnnConvLayer::resetDnnFwd() {
   padding_kind padKind = padding_kind::zero;
   topDims_ = {bs_, oc_, oh_, ow_};
   biasDims_ = {oc_};
-
   bool hasBias = (biases_ && biases_->getW());
 
   // conv_relu only support scoring yet
@@ -142,7 +141,6 @@ void MkldnnConvLayer::resetDnnFwd() {
     real *biasDataData = biases_->getW()->getData();
     biasData_->initUser(biasDataData, biasDims_, biasFmt_, eg);
   }
-  // TODO(TJ): only care about i==0 yet, and never tested g!=1
   CHECK_EQ(inputLayers_.size(), 1);
   //CHECK_EQ(botDatas_.size(), inputLayers_.size());
   for (size_t i = 0; i != inputLayers_.size(); ++i) {

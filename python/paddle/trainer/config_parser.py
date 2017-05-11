@@ -2110,10 +2110,7 @@ class MkldnnReorderLayer(LayerBase):
         conf.format_from = format_from
         conf.format_to = format_to
         conf.bs_index = bs_index
-        conf.dims_from.extend(dims_from[0])
-        conf.dims_from.extend(dims_from[1])
-        conf.dims_from.extend(dims_from[2])
-        conf.dims_from.extend(dims_from[3])
+        conf.dims_from.extend(dims_from)
 
 
 @config_layer('mkldnn_reshape')
@@ -2132,9 +2129,79 @@ class MkldnnReshapeLayer(LayerBase):
         conf = self.config.inputs[0].reshape_conf
         conf.reshape_type = reshape_type
         conf.seq_len = seq_len
-        conf.img_dims.extend(img_dims[0])
-        conf.img_dims.extend(img_dims[1])
-        conf.img_dims.extend(img_dims[2])
+        conf.img_dims.extend(img_dims)
+
+
+@config_layer('mkldnn_conv')
+class MkldnnConvLayer(LayerBase):
+    layer_type = 'mkldnn_conv'
+    def __init__(self,
+                 name,
+                 inputs=[],
+                 bias=True,
+                 num_filters=None,
+                 shared_biases=True,
+                 **xargs):
+        super(ConvLayerBase, self).__init__(
+            name, self.layer_type, 0, inputs=inputs, **xargs)
+
+        if num_filters is not None:
+            self.config.num_filters = num_filters
+
+        use_gpu = int(g_command_config_args.get("use_gpu", 0))
+        parallel_nn = int(g_command_config_args.get("parallel_nn", 0))
+
+        # Automatically select cudnn_type for GPU and exconv for CPU
+        # if set type=conv, but still reserve the way user specify
+        # exconv or cudnn_conv manually.
+        if self.layer_type == "cudnn_conv":
+            config_assert(use_gpu, "cudnn_conv only support GPU")
+
+        if (use_gpu == 1 and self.layer_type != "exconv" and
+            (parallel_nn == 0 or self.config.device > -1)):
+            self.layer_type = "cudnn_conv"
+        else:
+            self.layer_type = "exconv"
+        # need to specify layer in config
+        self.config.type = self.layer_type
+
+        if shared_biases is not None:
+            self.config.shared_biases = shared_biases
+
+        for input_index in xrange(len(self.inputs)):
+            input_layer = self.get_input_layer(input_index)
+            conv_conf = self.config.inputs[input_index].conv_conf
+            parse_conv(self.inputs[input_index].conv, input_layer.name,
+                       conv_conf, num_filters)
+            psize = self.calc_parameter_size(conv_conf)
+            self.create_input_parameter(input_index, psize)
+            self.set_cnn_layer(name, conv_conf.output_y, conv_conf.output_x,
+                               self.config.num_filters)
+
+        psize = self.config.size
+        if shared_biases:
+            psize = self.config.num_filters
+        self.create_bias_parameter(bias, psize, [psize, 1])
+
+    def calc_parameter_size(self, conv_conf):
+        return self.config.num_filters * conv_conf.filter_channels \
+                    * (conv_conf.filter_size * conv_conf.filter_size_y)
+
+
+@config_layer('mkldnn_rnn')
+class MkldnnRnnLayer(LayerBase):
+    def __init__(self, name, inputs,
+        input_mode, bi_direction, activation, output_mode, layer_num, **xargs):
+        super(MkldnnRnnLayer, self).__init__(
+            name, 'mkldnn_rnn', 0, inputs=inputs, **xargs)
+        config_assert(len(self.inputs) == 1,
+            'MkldnnRnnLayer must have one and only one input')
+        config_assert(len(img_dims) == 3, 'from dim len should be 3')
+        # keep size
+        size = self.get_input_layer(0).size
+        if output_mode == 'concat':
+            size = size * 2
+        self.set_layer_size(size)
 
 
 @config_layer('rotate')

@@ -18,7 +18,8 @@ import inspect
 
 from paddle.trainer.config_parser import *
 from .activations import LinearActivation, SigmoidActivation, TanhActivation, \
-    ReluActivation, IdentityActivation, SoftmaxActivation, BaseActivation
+    ReluActivation, IdentityActivation, SoftmaxActivation, BaseActivation, \
+    MkldnnReluActivation
 from .evaluators import *
 from .poolings import MaxPooling, AvgPooling, BasePoolingType
 from .attrs import *
@@ -42,7 +43,7 @@ __all__ = [
     "mkldnn_conv",
     "mkldnn_bn",
     "mkldnn_fc",
-    "mkldnn_rnn"
+    "mkldnn_rnn",
     "identity_projection",
     "dotmul_projection",
     "dotmul_operator",
@@ -1625,10 +1626,8 @@ def mkldnn_reorder(input,
     assert isinstance(dims_from, list)
     assert len(dims_from) == 4
     assert bs_index < 4
-    assert format_from is in [ReorderType.NCHW,
-        ReorderType.NHWC, ReorderType.CHWN]
-    assert format_to is in [ReorderType.NCHW,
-        ReorderType.NHWC, ReorderType.CHWN]
+    assert format_from in [ReorderType.NCHW, ReorderType.NHWC, ReorderType.CHWN]
+    assert format_to in [ReorderType.NCHW, ReorderType.NHWC, ReorderType.CHWN]
     Layer(
         inputs=[input.name],
         type=LayerType.MKLDNN_REORDER,
@@ -1641,7 +1640,7 @@ def mkldnn_reorder(input,
     return LayerOutput(
         name=name,
         size=input.size,
-        layer_type=LayerType.VIEW,
+        layer_type=LayerType.MKLDNN_REORDER,
         parents=[input])
 
 
@@ -1675,7 +1674,7 @@ def mkldnn_reshape(input,
         logger.fatal("reshape image as 3 dimesion:\
         (channel, height, width), set -1 if not sure")
 
-    assert reshape_type is in [
+    assert reshape_type in [
         ReshapeType.TO_NON_SEQUENCE,
         ReshapeType.TO_MKL_SEQUENCE,
         ReshapeType.TO_PADDLE_SEQUENCE]
@@ -1694,32 +1693,28 @@ def mkldnn_reshape(input,
         parents=[input])
 
 
-
-
 @wrap_name_default("mkldnn_conv")
 @wrap_param_attr_default()
 @wrap_bias_attr_default()
 @wrap_act_default(act=MkldnnReluActivation())
 @layer_support(DROPOUT)
 def mkldnn_conv(input,
-                   filter_size,
-                   num_filters,
-                   name=None,
-                   num_channels=None,
-                   act=None,
-                   groups=1,
-                   stride=1,
-                   padding=0,
-                   aligned_seqLen=None,
-                   bias_attr=None,
-                   param_attr=None,
-                   shared_biases=True,
-                   layer_attr=None,
-                   filter_size_y=None,
-                   stride_y=None,
-                   padding_y=None,
-                   trans=False,
-                   layer_type=None):
+                    input_channels,
+                    num_kernels,
+                    kernel_width,
+                    stride_width=1,
+                    padding_width=0,
+                    groups=1,
+                    kernel_height=None,
+                    stride_height=None,
+                    padding_height=None,
+                    name=None,
+                    act=None,
+                    bias_attr=None,
+                    param_attr=None,
+                    shared_biases=True,
+                    layer_attr=None,
+                    trans=False):
     """
 
     """
@@ -1851,6 +1846,9 @@ def mkldnn_bn(input,
         num_filters=num_channels,
         size=l.config.size)
 
+class RnnInfo(object):
+    RELU = 'rnn_relu'
+    TANH = 'rnn_tanh'
 
 @wrap_name_default("mkldnn_rnn")
 @wrap_bias_attr_default()
@@ -1881,7 +1879,7 @@ only can support internal relu without clipped
         name=name,
         layer_type=LayerType.MKLDNN_RNN,
         parents=[input],
-        size=input.size)
+        size=input.size if output_mode == 'sum' else input.size*2)
 
 @wrap_name_default("mkldnn_fc")
 @wrap_param_attr_default()
