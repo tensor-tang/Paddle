@@ -26,7 +26,7 @@ namespace paddle {
  */
 class MkldnnReshapeLayer : public MkldnnLayer {
 protected:
-  std::string viewType_;
+  std::string reshapeType_;
 
 
   // sequence length for input and output, set 1 if do not have seq
@@ -86,14 +86,12 @@ protected:
   // prepare output matrix height, width, and seqlen
   void prepareSeqInfo();
   
-
+  // configure
   void configToNonSeq();
   
   void configToMklSeq();
 
-  void configToSeq();
-
-
+  void configToPaddleSeq();
 };
 
 
@@ -107,16 +105,17 @@ bool MkldnnReshapeLayer::initDnn(const LayerMap& layerMap,
 }
 
 void MkldnnReshapeLayer::loadConfig() {
-  const ViewConfig& conf = config_.inputs(0).view_conf();
-  viewType_ = conf.view_type();
-  if (!(viewType_ == "ToNonSeq"
-    || viewType_ == "ToMklSeq"
-    || viewType_ == "ToSeq")) {
-    LOG(FATAL) << "Unknown view type: " << viewType_;
+  const ReshapeConfig& conf = config_.inputs(0).reshape_conf();
+  reshapeType_ = conf.reshape_type();
+  if (!(reshapeType_ == "ToNonSeq"
+    || reshapeType_ == "ToMklSeq"
+    || reshapeType_ == "ToPaddleSeq")) {
+    LOG(FATAL) << "Unknown view type: " << reshapeType_;
   }
-  oh_ = conf.height();
-  ow_ = conf.width();
-  oc_ = conf.has_channel() ? conf.channel() : -1;
+  CHECK_EQ(conf.img_dims_size(), 3);
+  oc_ = conf.img_dims(0);
+  oh_ = conf.img_dims(1);
+  ow_ = conf.img_dims(2);  
   seqLen_ = conf.has_seq_len() ? conf.seq_len() : -1;
 }
 
@@ -165,7 +164,7 @@ void MkldnnReshapeLayer::generatePaddleSeqInfo() {
   seqDims_ = nullptr;  // not figure out usage yet
 }
 
-void MkldnnReshapeLayer::configToSeq() {
+void MkldnnReshapeLayer::configToPaddleSeq() {
   CHECK_EQ(seqLenIn_, 1) << "only support reshape from nonseq yet";
   prepareSeqInfo();
   setNeedSequenceInfo(true);
@@ -206,14 +205,14 @@ void MkldnnReshapeLayer::reshapeOutput() {
   }
  
   // set output matrix height and width
-  if (viewType_ == "ToNonSeq") {
+  if (reshapeType_ == "ToNonSeq") {
     configToNonSeq();
-  } else if (viewType_ == "ToMklSeq") {
+  } else if (reshapeType_ == "ToMklSeq") {
     configToMklSeq();
-  } else if (viewType_ == "ToSeq") {
-    configToSeq();
+  } else if (reshapeType_ == "ToPaddleSeq") {
+    configToPaddleSeq();
   } else {
-    LOG(FATAL) << "Unknown view type: " << viewType_;
+    LOG(FATAL) << "Unknown view type: " << reshapeType_;
     return;
   }
 
@@ -234,10 +233,10 @@ void MkldnnReshapeLayer::setPaddleSeqInfo(Argument& arg) {
 
 void MkldnnReshapeLayer::submitDnnFwd() {
   const Argument& input = getInput(0);
-  if (viewType_ == "ToSeq") {
+  if (reshapeType_ == "ToPaddleSeq") {
     setPaddleSeqInfo(getOutput());
   }
-  if (viewType_ == "ToMklSeq") {
+  if (reshapeType_ == "ToMklSeq") {
     getOutput().setMklSeqLen(seqLen_);
   }
   output_.value = Matrix::create(input.value->getData(),

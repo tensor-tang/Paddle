@@ -285,19 +285,16 @@ message ReorderConfig {
 }
 
 message ReshapeConfig {
-  // The data dimensionality.
-  // Overall it can be viewed as 5 demension:
-  // (batchsize, seq_len, channels, height, width) in Paddle foramt
-  // (seq_len, batchsize, channels, height, width) in MKL foramt
-  required int32 height = 1;
-  required int32 width = 2;
-  optional int32 channel = 3;
-  optional int32 seq_len = 4;
-  optional int32 batchsize = 5;
-
   // reshape type has 3 choices:
-  // change to non-sequence, or otherwise, or mkl-sequence
-  required string reshape_type = 6;
+  // change to non-sequence, or paddle-sequence, or mkl-sequence
+  required string reshape_type = 1;
+
+  // The data dimensionality.
+  // Overall it can be viewed as 5 demension in MKL foramt:
+  // (seq_len, batchsize, channels, height, width)
+  // image is the last three
+  repeated int32 img_dims = 2;
+  optional int32 seq_len = 3;
 }
 
 message LayerInputConfig {

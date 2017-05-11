@@ -2100,7 +2100,7 @@ class MkldnnReorderLayer(LayerBase):
         super(MkldnnReorderLayer, self).__init__(
             name, 'mkldnn_reorder', 0, inputs=inputs, **xargs)
         config_assert(len(self.inputs) == 1,
-            'TransImageLayer must have one and only one input')
+            'MkldnnReorderLayer must have one and only one input')
         config_assert(len(dims_from) == 4, 'from dim len should be 4')
         # keep size
         size = self.get_input_layer(0).size
@@ -2118,19 +2118,23 @@ class MkldnnReorderLayer(LayerBase):
 
 @config_layer('mkldnn_reshape')
 class MkldnnReshapeLayer(LayerBase):
-    def __init__(self, name, size, inputs,
-        view_type, view_to, **xargs):
+    def __init__(self, name, inputs,
+        reshape_type, img_dims, seq_len, **xargs):
         super(MkldnnReshapeLayer, self).__init__(
             name, 'mkldnn_reshape', 0, inputs=inputs, **xargs)
         config_assert(len(self.inputs) == 1,
             'MkldnnReshapeLayer must have one and only one input')
-        conf = self.config.inputs[0].view_conf
-        conf.view_type = view_type
-        conf.seq_len = view_to[0]
-        conf.batchsize = view_to[1]
-        conf.channel = view_to[2]
-        conf.height = view_to[3]
-        conf.width = view_to[4]
+        config_assert(len(img_dims) == 3, 'from dim len should be 3')
+        # keep size
+        size = self.get_input_layer(0).size
+        self.set_layer_size(size)
+        # reshape config
+        conf = self.config.inputs[0].reshape_conf
+        conf.reshape_type = reshape_type
+        conf.seq_len = seq_len
+        conf.img_dims.extend(img_dims[0])
+        conf.img_dims.extend(img_dims[1])
+        conf.img_dims.extend(img_dims[2])
 
 
 @config_layer('rotate')

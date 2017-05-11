@@ -1644,46 +1644,53 @@ def mkldnn_reorder(input,
         layer_type=LayerType.VIEW,
         parents=[input])
 
+
 class ReshapeType(object):
     TO_NON_SEQUENCE = 'ToNonSeq'
     TO_MKL_SEQUENCE = 'ToMklSeq'
-    TO_SEQUENCE = 'ToSeq'
+    TO_PADDLE_SEQUENCE = 'ToPaddleSeq'
 
 @wrap_name_default("mkldnn_reshape")
 @wrap_bias_attr_default(has_bias=False)
 @layer_support()
 def mkldnn_reshape(input,
-                     view_type=ViewType.TO_NON_SEQUENCE,
-                     view_to=None,
-                     name=None,
-                     layer_attr=None):
+                img_dims,
+                seq_len=-1,
+                reshape_type=ReshapeType.TO_NON_SEQUENCE,
+                name=None,
+                layer_attr=None):
     """
-    view to 5 dims: (seq_len, batchsize, channel, height, width)
+    reshape to 5 dims:
+    (seq_len, batchsize, channel, height, width), this is data format in MKLDNN
+    which is different in Paddle: (batchsize, seq_len, channels, height, width)
+
+    img_dims is the last three
+
+    set seq_len if want to change it
+
     set -1 when not sure, will auto set it runtime
     """
-    assert isinstance(view_to, list)
-    if len(list) != 5:
-        logger.fatal("view as 5 dimesion: (seq_len, batchsize, channel, height, width),\
-        set -1 if not sure")
+    assert isinstance(img_dims, list)
+    if len(img_dims) != 3:
+        logger.fatal("reshape image as 3 dimesion:\
+        (channel, height, width), set -1 if not sure")
 
-    if view_type == ViewType.TO_NON_SEQUENCE:
-        assert view_to[0] == 1
-
-    if view_to[1] != -1:
-        logger.fatal("batchsize should only be set as -1 yet")
-
+    assert reshape_type is in [
+        ReshapeType.TO_NON_SEQUENCE,
+        ReshapeType.TO_MKL_SEQUENCE,
+        ReshapeType.TO_PADDLE_SEQUENCE]
     Layer(
         inputs=[input.name],
         type=LayerType.MKLDNN_RESHAPE,
         name=name,
-        size=0,
-        view_type=view_type,
-        view_to=view_to,  
+        reshape_type=reshape_type,
+        img_dims=img_dims,
+        seq_len=seq_len,
         **ExtraAttr.to_kwargs(layer_attr))
     return LayerOutput(
         name=name,
-        size=0,
-        layer_type=LayerType.MKLDNN_VIEW,
+        size=input.size,
+        layer_type=LayerType.MKLDNN_RESHAPE,
         parents=[input])
 
 

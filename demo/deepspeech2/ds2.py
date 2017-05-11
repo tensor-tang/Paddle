@@ -85,8 +85,8 @@ tmp = mkldnn_reorder(input = tmp,
 
 tmp = mkldnn_reshape(input=tmp,
                 name="view_to_noseq",
-                view_type=ViewType.TO_NON_SEQUENCE,
-                view_to=[1, -1, 1, dataSpec['freqBins'], -1])
+                reshape_type=ReshapeType.TO_NON_SEQUENCE,
+                img_dims=[1, dataSpec['freqBins'], -1])
 
 
 # conv, bn, relu
@@ -103,8 +103,9 @@ tmp = mkldnn_reorder(
 
 tmp = mkldnn_reshape(input=tmp,
                 name="view_to_mklseq",
-                view_type=ViewType.TO_MKLDNN_SEQ,
-                view_to=[-1, -1, 2400, 1, 1])
+                reshape_type=ReshapeType.TO_MKLDNN_SEQ,
+                img_dims=[2400, 1, 1],
+                seq_len=-1)
                 
 for i in xrange(layer_num):
     tmp = BiDRNN(tmp, 1760)
@@ -129,8 +130,9 @@ tmp = mkldnn_reorder(
 
 output = mkldnn_reshape(input=tmp,
                 name="view_to_paddle_seq",
-                view_type=ViewType.TO_SEQUENCE,
-                view_to=[-1, -1, -1, 1, 1])
+                reshape_type=ReshapeType.TO_PADDLE_SEQUENCE,
+                img_dims=[-1, 1, 1],
+                seq_len=-1)
 
 if not is_predict:
     lbl = data_layer(name='label', size=num_classes)
