@@ -276,6 +276,14 @@ message ViewConfig {
   required string view_type = 5;
 }
 
+message ReorderConfig {
+  // format only support: nchw, nhwc, chwn
+  required string format_from = 1;
+  required string format_to = 2;
+  required int32 bs_index = 3;
+  repeated int32 dims_from = 4;
+}
+
 message ReshapeConfig {
   // The data dimensionality.
   // Overall it can be viewed as 5 demension:
@@ -310,6 +318,8 @@ message LayerInputConfig {
   optional PriorBoxConfig priorbox_conf = 13;
   optional PadConfig pad_conf = 14;
   optional ViewConfig view_conf = 15;
+  optional ReorderConfig reorder_conf = 16;
+  optional ReshapeConfig reshape_conf = 17;
 }
 
 message LayerConfig {

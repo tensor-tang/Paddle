@@ -70,9 +70,6 @@ public:
 
 protected:
 
-  // get the sequence length from paddle seq info
-  // and the length among batchsize should be the same
-  int getAlignedSeqLength(const Argument& arg);
 
   // check size of channel, height and width
   // should have only one uncertain size at most.
@@ -121,22 +118,6 @@ void MkldnnReshapeLayer::loadConfig() {
   ow_ = conf.width();
   oc_ = conf.has_channel() ? conf.channel() : -1;
   seqLen_ = conf.has_seq_len() ? conf.seq_len() : -1;
-}
-
-int MkldnnReshapeLayer::getAlignedSeqLength(const Argument& arg) {
-  CHECK(arg.sequenceStartPositions);
-  int sampleSize = arg.getBatchSize();  // bs*seqlen
-  size_t numSequences = arg.getNumSequences();
-  const int* starts = arg.sequenceStartPositions->getData(false);
-  CHECK_EQ(starts[numSequences], sampleSize);
-  int len = 0;
-  for (size_t i = 0; i < numSequences; ++i) {
-    int tmp = starts[i + 1] - starts[i];
-    CHECK(len == 0 || len == tmp)
-      << "all seq length should be equal," << len << " vs " << tmp;
-    len = tmp;
-  }
-  return len;
 }
 
 void MkldnnReshapeLayer::configToNonSeq() {
@@ -219,7 +200,7 @@ void MkldnnReshapeLayer::reshapeOutput() {
   } else if (input.sequenceStartPositions) {
     // if has seq, get aligned seq length
     CHECK(!input.hasSubseq()) << "Do not support sub seqence yet";
-    seqLenIn_ = getAlignedSeqLength(input);
+    seqLenIn_ = getPaddleAlignedSeqLen(input);
   } else {
     seqLenIn_ = 1;
   }

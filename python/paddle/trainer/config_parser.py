@@ -2093,6 +2093,46 @@ class ViewLayer(LayerBase):
             conf.channel = channel
 
 
+@config_layer('mkldnn_reorder')
+class MkldnnReorderLayer(LayerBase):
+    def __init__(self, name, inputs,
+        format_from, format_to, dims_from, bs_index, **xargs):
+        super(MkldnnReorderLayer, self).__init__(
+            name, 'mkldnn_reorder', 0, inputs=inputs, **xargs)
+        config_assert(len(self.inputs) == 1,
+            'TransImageLayer must have one and only one input')
+        config_assert(len(dims_from) == 4, 'from dim len should be 4')
+        # keep size
+        size = self.get_input_layer(0).size
+        self.set_layer_size(size)
+        # reorder config
+        conf = self.config.inputs[0].reorder_conf
+        conf.format_from = format_from
+        conf.format_to = format_to
+        conf.bs_index = bs_index
+        conf.dims_from.extend(dims_from[0])
+        conf.dims_from.extend(dims_from[1])
+        conf.dims_from.extend(dims_from[2])
+        conf.dims_from.extend(dims_from[3])
+
+
+@config_layer('mkldnn_reshape')
+class MkldnnReshapeLayer(LayerBase):
+    def __init__(self, name, size, inputs,
+        view_type, view_to, **xargs):
+        super(MkldnnReshapeLayer, self).__init__(
+            name, 'mkldnn_reshape', 0, inputs=inputs, **xargs)
+        config_assert(len(self.inputs) == 1,
+            'MkldnnReshapeLayer must have one and only one input')
+        conf = self.config.inputs[0].view_conf
+        conf.view_type = view_type
+        conf.seq_len = view_to[0]
+        conf.batchsize = view_to[1]
+        conf.channel = view_to[2]
+        conf.height = view_to[3]
+        conf.width = view_to[4]
+
+
 @config_layer('rotate')
 class RotateLayer(LayerBase):
     def __init__(self, name, inputs, height, width, device=None):

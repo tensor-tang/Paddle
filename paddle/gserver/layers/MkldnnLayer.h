@@ -263,6 +263,24 @@ public:
       << ", oc: " << oc_ << ", oh: " << oh_ << ", ow: " << ow_;
   }
 
+  // get the aligned seq length from paddle sequence info
+  // and the length among batchsize should be the same
+  int getPaddleAlignedSeqLen(const Argument& arg) {
+    CHECK(arg.sequenceStartPositions);
+    int sampleSize = arg.getBatchSize();  // bs*seqlen
+    size_t numSequences = arg.getNumSequences();
+    const int* starts = arg.sequenceStartPositions->getData(false);
+    CHECK_EQ(starts[numSequences], sampleSize);
+    int len = 0;
+    for (size_t i = 0; i < numSequences; ++i) {
+      int tmp = starts[i + 1] - starts[i];
+      CHECK(len == 0 || len == tmp)
+        << "all seq length should be equal," << len << " vs " << tmp;
+      len = tmp;
+    }
+    return len;
+  }
+
   /**
    * Calculate output size based on caffeMode_.
    * - input(+padding): 0123456789

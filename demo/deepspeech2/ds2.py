@@ -66,18 +66,22 @@ def mkldnn_CBR(input, kh, kw, sh, sw, ic, oc, ih, clipped = 20):
 def BiDRNN(input, dim_out, dim_in=None):
     tmp = mkldnn_fc(input=input, size=dim_out, bias_attr=False, act=LinearActivation()) #act=None
     tmp = mkldnn_bn(input = tmp, isSeq=True, num_channels = dim_out, act = None)
-    rnn = mkldnn_recurrent(input=tmp, act=BReluActivation()) # TODO: change clipped 24 -> 20
-    rnn_inv = mkldnn_recurrent(input=tmp, act=BReluActivation(), reverse=True)
-    return mkldnn_sum(input = [rnn, rnn_inv])
+    return = mkldnn_rnn(
+            input=tmp,
+            input_mode="skip_input",
+            bi_direction = True,
+            activation = "rnn_relu",
+            output_mode = "sum",
+            layer_num=1)
 
-######## DS2
+######## DS2 model ########
 tmp = data_layer(name = 'data', size = dataSpec['freqBins'])
 
 tmp = mkldnn_reorder(input = tmp,
-                from_fmt='nchw',
-                from_dim=[-1, -1, 1, dataSpec['freqBins']],
-                bsIdx=0,
-                to_fmt='nhwc')
+                format_from='nchw',
+                format_to='nhwc',
+                dims_from=[-1, -1, 1, dataSpec['freqBins']],
+                bs_index=0)
 
 tmp = mkldnn_reshape(input=tmp,
                 name="view_to_noseq",
@@ -92,10 +96,10 @@ tmp = mkldnn_CBR(tmp, 5, 10, 1, 2, 32, 32)
 # (bs, 32, 75, seq) to (seq,bs,2400)
 tmp = mkldnn_reorder(
                 input = tmp,
-                from_fmt='nhwc',
-                from_dim=[1, -1, 2400, -1],
-                bsIdx=1,
-                to_fmt='chwn')
+                format_from='nhwc',
+                format_to='chwn',
+                dims_from=[1, -1, 2400, -1],
+                bs_index=1)
 
 tmp = mkldnn_reshape(input=tmp,
                 name="view_to_mklseq",
@@ -110,18 +114,18 @@ tmp = mkldnn_fc(input=tmp, size=num_classes + 1, act=LinearActivation()) #act=No
 # (seq, bs, dim) to (bs, dim, seq)
 tmp = mkldnn_reorder(
                 input = tmp,
-                from_fmt='chwn',
-                from_dim=[-1, -1, num_classes + 1, 1],
-                bsIdx=1,
-                to_fmt='nhwc')
+                format_from='chwn',
+                format_to='nhwc',
+                dims_from=[-1, -1, num_classes + 1, 1],
+                bs_index=1)
 
 # (bs, dim, seq) to (bs, seq, dim)
 tmp = mkldnn_reorder(
                 input = tmp,
-                from_fmt='nchw',
-                from_dim=[-1, num_classes + 1, -1, 1],
-                bsIdx=0,
-                to_fmt='nhwc')
+                format_from='nchw',
+                format_to='nhwc',
+                dims_from=[-1, num_classes + 1, -1, 1],
+                bs_index=0)
 
 output = mkldnn_reshape(input=tmp,
                 name="view_to_paddle_seq",

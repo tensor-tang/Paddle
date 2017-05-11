@@ -35,6 +35,14 @@ __all__ = [
     "AggregateLevel",
     "ExpandLevel",
     "ViewType",
+    "ReshapeType",
+    "ReorderType",
+    "mkldnn_reorder",
+    "mkldnn_reshape",
+    "mkldnn_conv",
+    "mkldnn_bn",
+    "mkldnn_fc",
+    "mkldnn_rnn"
     "identity_projection",
     "dotmul_projection",
     "dotmul_operator",
@@ -136,6 +144,14 @@ class LayerType(object):
     SEQUENCE_FIRST_INSTANCE = "seqfirstins"
     SEQUENCE_RESHAPE = "seqreshape"
     VIEW = "view"
+
+    MKLDNN_RESHAPE = 'mkldnn_reshape'
+    MKLDNN_REORDER = 'mkldnn_reorder'
+    MKLDNN_CONV = 'mkldnn_conv'
+    MKLDNN_BN = 'mkldnn_bn'
+    MKLDNN_FC = 'mkldnn_fc'
+    MKLDNN_RNN = 'mkldnn_rnn'
+
     POOLING_MAX = "max"
     POOLING_AVG = 'average'
     FC_LAYER = "fc"
@@ -1584,6 +1600,356 @@ def view_layer(input,
         layer_type=LayerType.VIEW,
         parents=[input])
 
+class ReorderType(object):
+    NCHW = 'nchw'
+    NHWC = 'nhwc'
+    CHWN = 'chwn'
+
+@wrap_name_default("mkldnn_reorder")
+@wrap_bias_attr_default(has_bias=False)
+@layer_support()
+def mkldnn_reorder(input,
+                     format_from,
+                     format_to,
+                     dims_from,
+                     bs_index,
+                     name=None,
+                     layer_attr=None):
+    """
+    nchw: 0, 1, 2, 3, only four dimesion
+    when reorder, only change the data buffer's arrangement,
+    do not care about sequence info or change the size settings
+    (like image height, width, and seqlen .etc.)
+    """
+
+    assert isinstance(dims_from, list)
+    assert len(dims_from) == 4
+    assert bs_index < 4
+    assert format_from is in [ReorderType.NCHW,
+        ReorderType.NHWC, ReorderType.CHWN]
+    assert format_to is in [ReorderType.NCHW,
+        ReorderType.NHWC, ReorderType.CHWN]
+    Layer(
+        inputs=[input.name],
+        type=LayerType.MKLDNN_REORDER,
+        name=name,
+        format_from=format_from,
+        dims_from=dims_from,
+        format_to=format_to,
+        bs_index=bs_index,       
+        **ExtraAttr.to_kwargs(layer_attr))
+    return LayerOutput(
+        name=name,
+        size=input.size,
+        layer_type=LayerType.VIEW,
+        parents=[input])
+
+class ReshapeType(object):
+    TO_NON_SEQUENCE = 'ToNonSeq'
+    TO_MKL_SEQUENCE = 'ToMklSeq'
+    TO_SEQUENCE = 'ToSeq'
+
+@wrap_name_default("mkldnn_reshape")
+@wrap_bias_attr_default(has_bias=False)
+@layer_support()
+def mkldnn_reshape(input,
+                     view_type=ViewType.TO_NON_SEQUENCE,
+                     view_to=None,
+                     name=None,
+                     layer_attr=None):
+    """
+    view to 5 dims: (seq_len, batchsize, channel, height, width)
+    set -1 when not sure, will auto set it runtime
+    """
+    assert isinstance(view_to, list)
+    if len(list) != 5:
+        logger.fatal("view as 5 dimesion: (seq_len, batchsize, channel, height, width),\
+        set -1 if not sure")
+
+    if view_type == ViewType.TO_NON_SEQUENCE:
+        assert view_to[0] == 1
+
+    if view_to[1] != -1:
+        logger.fatal("batchsize should only be set as -1 yet")
+
+    Layer(
+        inputs=[input.name],
+        type=LayerType.MKLDNN_RESHAPE,
+        name=name,
+        size=0,
+        view_type=view_type,
+        view_to=view_to,  
+        **ExtraAttr.to_kwargs(layer_attr))
+    return LayerOutput(
+        name=name,
+        size=0,
+        layer_type=LayerType.MKLDNN_VIEW,
+        parents=[input])
+
+
+
+
+@wrap_name_default("mkldnn_conv")
+@wrap_param_attr_default()
+@wrap_bias_attr_default()
+@wrap_act_default(act=MkldnnReluActivation())
+@layer_support(DROPOUT)
+def mkldnn_conv(input,
+                   filter_size,
+                   num_filters,
+                   name=None,
+                   num_channels=None,
+                   act=None,
+                   groups=1,
+                   stride=1,
+                   padding=0,
+                   aligned_seqLen=None,
+                   bias_attr=None,
+                   param_attr=None,
+                   shared_biases=True,
+                   layer_attr=None,
+                   filter_size_y=None,
+                   stride_y=None,
+                   padding_y=None,
+                   trans=False,
+                   layer_type=None):
+    """
+
+    """
+    
+    if num_channels is None:
+        if isSeq:
+            assert input.num_filters is not None
+            num_channels = input.num_filters
+
+    if filter_size_y is None:
+        if isinstance(filter_size, collections.Sequence):
+            assert len(filter_size) == 2
+            filter_size, filter_size_y = filter_size
+        else:
+            filter_size_y = filter_size
+
+    if stride_y is None:
+        if isinstance(stride, collections.Sequence):
+            assert len(stride) == 2
+            stride, stride_y = stride
+        else:
+            stride_y = stride
+
+    if padding_y is None:
+        if isinstance(padding, collections.Sequence):
+            assert len(padding) == 2
+            padding, padding_y = padding
+        else:
+            padding_y = padding
+
+    if param_attr.attr.get('initial_smart'):
+        # special initial for conv layers.
+        init_w = (2.0 / (filter_size**2 * num_channels))**0.5
+        param_attr.attr["initial_mean"] = 0.0
+        param_attr.attr["initial_std"] = init_w
+        param_attr.attr["initial_strategy"] = 0
+        param_attr.attr["initial_smart"] = False
+
+    if layer_type:
+        if trans:
+            assert layer_type in ["exconvt", "cudnn_convt"]
+        else:
+            assert layer_type in ["exconv", "cudnn_conv"]
+        lt = layer_type
+    else:
+        lt = LayerType.CONVTRANS_LAYER if trans else LayerType.CONV_LAYER
+
+    l = Layer(
+        name=name,
+        inputs=Input(
+            input.name,
+            conv=Conv(
+                filter_size=filter_size,
+                padding=padding,
+                stride=stride,
+                channels=num_channels,
+                groups=groups,
+                filter_size_y=filter_size_y,
+                padding_y=padding_y,
+                stride_y=stride_y),
+            **param_attr.attr),
+        active_type=act.name,
+        num_filters=num_filters,
+        bias=ParamAttr.to_bias(bias_attr),
+        shared_biases=shared_biases,
+        type=lt,
+        **ExtraLayerAttribute.to_kwargs(layer_attr))
+    return LayerOutput(
+        name,
+        lt,
+        parents=[input],
+        activation=act,
+        num_filters=num_filters,
+        size=l.config.size)
+
+@wrap_bias_attr_default()
+@wrap_param_attr_default(default_factory=lambda _: ParamAttr(initial_mean=1.0,
+                                                             initial_std=0.))
+@wrap_act_default(act=ReluActivation())
+@wrap_name_default("mkldnn_bn")
+@layer_support(DROPOUT)
+def mkldnn_bn(input,
+                     act=None,
+                     name=None,
+                     num_channels=None,
+                     bias_attr=None,
+                     param_attr=None,
+                     layer_attr=None,
+                     batch_norm_type=None,
+                     moving_average_fraction=0.9,
+                     use_global_stats=None):
+    """
+
+    """
+    if not isinstance(act, ReluActivation):
+        logger.log(logging.WARN,
+                   "%s is not recommend for batch normalization's activation, "
+                   "maybe the relu is better" % act.name)
+
+    if not isinstance(input.activation, LinearActivation):
+        logger.log(logging.WARN,
+                   "The activation should be inside batch normalization, the "
+                   "previous layer's activation may be Linear")
+
+    if num_channels is None:
+        if input.num_filters is not None:
+            num_channels = input.num_filters
+        else:
+            num_channels = input.size
+    assert (batch_norm_type is None) or (batch_norm_type == "batch_norm") or \
+           (batch_norm_type == "cudnn_batch_norm")
+    l = Layer(
+        name=name,
+        inputs=Input(
+            input.name, image=Image(channels=num_channels), **param_attr.attr),
+        active_type=act.name,
+        type=LayerType.BATCH_NORM_LAYER,
+        batch_norm_type=batch_norm_type,
+        bias=ParamAttr.to_bias(bias_attr),
+        moving_average_fraction=moving_average_fraction,
+        use_global_stats=use_global_stats,
+        **ExtraLayerAttribute.to_kwargs(layer_attr))
+
+    return LayerOutput(
+        name=name,
+        layer_type=LayerType.BATCH_NORM_LAYER,
+        parents=[input],
+        activation=act,
+        num_filters=num_channels,
+        size=l.config.size)
+
+
+@wrap_name_default("mkldnn_rnn")
+@wrap_bias_attr_default()
+@wrap_param_attr_default()
+@layer_support()
+def mkldnn_rnn(input,
+                    input_mode,
+                    bi_direction = False,
+                    activation = "rnn_relu",
+                    output_mode = "concat",
+                    layer_num=1,
+                    bias_attr=None,
+                    param_attr=None,
+                    name=None,
+                    layer_attr=None):
+    """
+
+only can support internal relu without clipped
+
+    """
+    Layer(
+        name=name,
+        type=LayerType.MKLDNN_RNN,
+        inputs=Input(input.name, **param_attr.attr),
+        bias=ParamAttr.to_bias(bias_attr),
+        **ExtraAttr.to_kwargs(layer_attr))
+    return LayerOutput(
+        name=name,
+        layer_type=LayerType.MKLDNN_RNN,
+        parents=[input],
+        size=input.size)
+
+@wrap_name_default("mkldnn_fc")
+@wrap_param_attr_default()
+@wrap_bias_attr_default()
+@wrap_act_default()
+@layer_support(ERROR_CLIPPING, DROPOUT)
+def mkldnn_fc(input,
+             size,
+             act=None,
+             name=None,
+             param_attr=None,
+             bias_attr=None,
+             layer_attr=None):
+    """
+    Helper for declare fully connected layer.
+
+    The example usage is:
+
+    .. code-block:: python
+
+       fc = fc_layer(input=layer,
+                     size=1024,
+                     act=LinearActivation(),
+                     bias_attr=False)
+
+    which is equal to:
+
+    .. code-block:: python
+
+       with mixed_layer(size=1024) as fc:
+           fc += full_matrix_projection(input=layer)
+
+    :param name: The Layer Name.
+    :type name: basestring
+    :param input: The input layer. Could be a list/tuple of input layer.
+    :type input: LayerOutput|list|tuple
+    :param size: The layer dimension.
+    :type size: int
+    :param act: Activation Type. Default is tanh.
+    :type act: BaseActivation
+    :param param_attr: The Parameter Attribute|list.
+    :type param_attr: ParameterAttribute
+    :param bias_attr: The Bias Attribute. If no bias, then pass False or
+                      something not type of ParameterAttribute. None will get a
+                      default Bias.
+    :type bias_attr: ParameterAttribute|None|Any
+    :param layer_attr: Extra Layer config.
+    :type layer_attr: ExtraLayerAttribute|None
+    :return: LayerOutput object.
+    :rtype: LayerOutput
+    """
+    if isinstance(input, LayerOutput):
+        input = [input]
+        assert not isinstance(param_attr, collections.Sequence)
+        param_attr = [param_attr]
+    else:
+        if isinstance(param_attr, collections.Sequence):
+            assert len(input) == len(param_attr)
+        else:
+            param_attr = [copy.deepcopy(param_attr) for _ in range(len(input))]
+
+    assert isinstance(input, collections.Sequence)
+
+    Layer(
+        inputs=[
+            Input(ipt.name, **attr.attr) for ipt, attr in zip(input, param_attr)
+        ],
+        name=name,
+        type=LayerType.FC_LAYER,
+        size=size,
+        bias=ParamAttr.to_bias(bias_attr),
+        active_type=act.name,
+        **ExtraLayerAttribute.to_kwargs(layer_attr))
+    return LayerOutput(
+        name, LayerType.FC_LAYER, input, activation=act, size=size)
 
 @wrap_name_default()
 @layer_support()

@@ -130,6 +130,14 @@ class ReluActivation(BaseActivation):
     def __init__(self):
         BaseActivation.__init__(self, 'relu', True)
 
+class MkldnnReluActivation(BaseActivation):
+    """
+    MkldnnRelu activation.
+    forward. :math:`y = max(0, z)`
+    TODO(TJ): try to enable clipped relu
+    """
+    def __init__(self):
+        BaseActivation.__init__(self, 'mkldnn_relu', True)
 
 class BReluActivation(BaseActivation):
     """
