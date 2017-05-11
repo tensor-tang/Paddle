@@ -25,6 +25,11 @@ limitations under the License. */
 
 #include "paddle/utils/Logging.h"
 
+#ifdef PADDLE_USE_MKLDNN
+#include "MkldnnActivation.h"
+#endif
+
+
 namespace paddle {
 
 static ClassRegistrar<ActivationFunction> gActivationRegistrar;
@@ -260,6 +265,181 @@ Error __must_check backward(Argument& act) {
   return Error();
 }
 END_DEFINE_ACTIVATION(brelu)
+  
+#ifdef PADDLE_USE_MKLDNN
+
+/**
+ * @brief MKLDNN Relu Activation.
+ * forward  
+ *  f(x) = negative_slope * x  (x <  0)
+ *  f(x) = x                   (x >= 0) 
+ */
+class ACTIVATION_CLASS_NAME(mkldnn_relu)
+                        : public ActivationFunction, public MkldnnActivation {
+private:
+  static const std::string name;
+  std::shared_ptr<mkldnn::relu_forward> fwd_;
+  std::shared_ptr<mkldnn::relu_forward::primitive_desc> fwdPD_;
+  std::shared_ptr<mkldnn::relu_backward> bwd_;
+
+public:
+  const std::string& getName() const { return name; }
+
+  float negative_slope;
+
+  void resetDnnFwd(const Argument& arg, std::shared_ptr<void> topDataMD) {
+    if (bs_ == arg.getBatchSize()) {
+      return;
+    }
+    MkldnnActivation::reshapeDnnFwd(arg, topDataMD);
+    VLOG(2) << this->getName() << " reshape batchsize: "
+          << bs_ << ", " << oc_ << ", " << oh_ << ", " << ow_;
+
+    mkldnn::engine eg = CpuEngine::Instance().getEngine();
+
+    real* pdata = arg.value->getData();
+    botData_.reset(new mkldnn::memory({*md_, eg}, pdata));
+    topData_.reset(new mkldnn::memory({*md_, eg}, pdata));
+
+    // careful: should be -0, not 0
+    negative_slope = -0.f;
+
+    auto fwdMD = mkldnn::relu_forward::desc(
+      mkldnn::prop_kind::forward_training, *md_, negative_slope);
+    fwdPD_.reset(new mkldnn::relu_forward::primitive_desc(fwdMD, eg));
+    fwd_.reset(new mkldnn::relu_forward(*fwdPD_, *botData_, *topData_));
+
+    needResetBwd_ = true;
+  }
+
+  void resetDnnBwd(const Argument& arg, std::shared_ptr<void> topDiffMD) {
+    if (!needResetBwd_)
+      return;
+
+    mkldnn::engine eg = CpuEngine::Instance().getEngine();
+    real* pdiff = arg.grad->getData();
+    botDiff_.reset(new mkldnn::memory({*md_, eg}, pdiff));
+    topDiff_.reset(new mkldnn::memory({*md_, eg}, pdiff));
+
+    auto bwdMD = mkldnn::relu_backward::desc(*md_, *md_, negative_slope);
+    auto bwdPD = mkldnn::relu_backward::primitive_desc(bwdMD, eg, *fwdPD_);
+    bwd_.reset(new mkldnn::relu_backward(
+      bwdPD, *botData_, *topDiff_, *botDiff_));
+    needResetBwd_ = false;
+  }
+
+  Error __must_check forward(Argument& act) {
+    std::vector<mkldnn::primitive> pipeline;
+    pipeline.push_back(*fwd_);
+    mkldnn::stream(mkldnn::stream::kind::eager).submit(pipeline).wait();
+    return Error();
+  }
+  Error __must_check backward(Argument& act) {
+    std::vector<mkldnn::primitive> pipeline;
+    pipeline.push_back(*bwd_);
+    mkldnn::stream(mkldnn::stream::kind::eager).submit(pipeline).wait();
+    return Error();
+  }
+END_DEFINE_ACTIVATION(mkldnn_relu)
+
+/**
+ * @brief MKLDNN softmax Activation.
+ * \f[
+ * P(y=j|x) = \frac{e^{x^Tw_j}}{\sum^K_{k=1}e^{x^Tw_k}}
+ * \f]
+ */
+class ACTIVATION_CLASS_NAME(mkldnn_softmax)
+                        : public ActivationFunction, public MkldnnActivation {
+private:
+  static const std::string name;
+  std::shared_ptr<mkldnn::softmax_forward> fwd_;
+  int axis;  // 1 means bs*nc, 0 means nc*bs
+
+  // backward
+  MatrixPtr sftMaxSum_;
+  MatrixPtr sftMaxDot_;
+  MatrixPtr one_;
+
+public:
+  const std::string& getName() const { return name; }
+
+  void resetDnnFwd(const Argument& arg, std::shared_ptr<void> topDataMD) {
+    if (bs_ == arg.getBatchSize()) {
+      return;
+    }
+
+    MkldnnActivation::reshapeDnnFwd(arg, topDataMD);
+    VLOG(2) << this->getName() << " reshape batchsize: "
+          << bs_ << ", " << oc_ << ", " << oh_ << ", " << ow_;
+    mkldnn::engine eg = CpuEngine::Instance().getEngine();
+
+    real* pdata = arg.value->getData();
+    botData_.reset(new mkldnn::memory({*md_, eg}, pdata));
+    topData_.reset(new mkldnn::memory({*md_, eg}, pdata));
+    // TODO(TJ): check if OK use same pdata?
+    // in forward src and dst memory can be the same,
+    // but in backward not sure it's OK if they are the same, need double check
+    // maybe need define a temporary mkldnn:memory to handle the dst
+    // and then copy it to the output
+
+    axis = 1;  // 1 means bs*nc, 0 means nc*bs
+    // only support forward_scoring by now
+    auto fwdMD = mkldnn::softmax_forward::desc(
+      mkldnn::prop_kind::forward_scoring, *md_, axis);
+    auto fwdPD = mkldnn::softmax_forward::primitive_desc(
+      fwdMD, eg);
+    fwd_.reset(new mkldnn::softmax_forward(fwdPD, *botData_, *topData_));
+
+    needResetBwd_ = true;
+  }
+
+  /** 
+   * each dnn layer should have function
+   * to init or reset dnn backward
+   */
+  void resetDnnBwd(const Argument& arg, std::shared_ptr<void> topDiffFmt) {
+    if (!needResetBwd_)
+      return;
+    needResetBwd_ = false;
+  }
+
+// mkldnn format only support nchw
+  Error __must_check forward(Argument& act) {
+    std::vector<mkldnn::primitive> pipeline;
+    pipeline.push_back(*fwd_);
+    mkldnn::stream(mkldnn::stream::kind::eager).submit(pipeline).wait();
+    return Error();
+  }
+
+  Error __must_check backward(Argument& act) {
+    MatrixPtr outputV = act.value;
+    MatrixPtr outputG = act.grad;
+
+    if (outputG->useGpu()) {
+      outputG->softmaxBackward(*outputV);
+    } else {
+      SetDevice device(act.deviceId);
+      Matrix::resizeOrCreate(sftMaxDot_, outputG->getHeight(),
+                             outputG->getWidth(),
+                             /* trans */ false, useGpu(act.deviceId));
+      Matrix::resizeOrCreate(sftMaxSum_, outputG->getHeight(), 1,
+                             /* trans */ false, useGpu(act.deviceId));
+      if (!one_ || one_->getWidth() != outputG->getWidth()) {
+        Matrix::resizeOrCreate(one_, 1, outputG->getWidth(),
+                               /* trans */ false, useGpu(act.deviceId));
+        one_->one();
+      }
+
+      sftMaxDot_->dotMul(*outputG, *outputV);
+      sftMaxSum_->colMerge(*sftMaxDot_);
+
+      act.grad->softmaxDerivative(*act.value, *sftMaxSum_);
+    }
+    return Error();
+  }
+END_DEFINE_ACTIVATION(mkldnn_softmax)
+  
+#endif
 
 /**
  * @brief Tanh Activation.

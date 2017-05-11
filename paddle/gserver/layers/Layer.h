@@ -28,6 +28,10 @@ limitations under the License. */
 #include <paddle/parameter/Weight.h>
 #include "paddle/gserver/activations/ActivationFunction.h"
 
+#ifdef PADDLE_USE_MKLDNN
+#include "mkldnn.hpp"
+#endif
+
 /// Macro for registering a layer type.
 /// Example: REGISTER_LAYER(crf_error, CRFDecodingErrorLayer);
 #define REGISTER_LAYER(__type_name, __class_name) \
@@ -105,6 +109,252 @@ protected:
   std::vector<std::shared_ptr<FunctionBase>> forward_;
   /// Layer backward function
   std::vector<std::shared_ptr<FunctionBase>> backward_;
+  
+#ifdef PADDLE_USE_MKLDNN
+  /// MKLDNN memory desc
+  /// if donot have MD, then their format are default nchw
+  /// topDataMD_ : it should be set by this layer, used by next layer
+  /// topDiffMDs_: it should be set by next layer, used by this layer
+  ///             may have several topdiff MD
+  std::shared_ptr<mkldnn::memory::desc> topDataMD_;
+  std::vector<std::shared_ptr<mkldnn::memory::desc>> topDiffMDs_;
+
+  /// Whether the layer need pass mkl seq info
+  bool needMklSeqInfo_;
+  
+
+  /// Next layers pointer
+  /// to build the whole Bidirectional Topology
+  /// for compatibility with mixed un-MKLDNN type layers
+  /// and for the addSize of AddToMode within MKLDNN layers
+  std::vector<LayerPtr> nextLayers_;
+  std::map<std::string, int> dnnOutIdxMap_;
+
+  /// matrix of output grad for summing
+  /// only in use when have several next layers
+  /// always be filled by next layer
+  /// used by this layer
+  std::vector<MatrixPtr> dnnOutGrads_;
+
+public:
+  /**
+   * Set the flag whether layer need to re-compute sequence information,
+   * which includes sequenceStartPositions or subSequenceStartPositions.
+   */
+  void setNeedMklSeqInfo(bool need) { needMklSeqInfo_ = need; }
+
+  /**
+   * set the topdata as internal MKLDNN MemDesc
+   * call by this layer
+   */
+  void setTopDataMD(const mkldnn::memory::desc md) {
+    topDataMD_.reset(new mkldnn::memory::desc(md));
+  }
+
+  /**
+   * get the internal MKLDNN MemDesc of topdata
+   * call by next layer
+   */
+  const std::shared_ptr<mkldnn::memory::desc>& getTopDataMD() {
+    return topDataMD_;
+  }
+
+  /**
+   * set the topdiff as internal MKLDNN MemDesc
+   * call by next layer
+   */
+  void setTopDiffMD(const std::string& nextName,
+                            const mkldnn::memory::desc md) {
+    int idx;
+    CHECK(mapGet(nextName, dnnOutIdxMap_, &idx))
+      << "Cannot find next layer " << nextName << " for layer "
+      << this->getName();
+    topDiffMDs_[idx].reset(new mkldnn::memory::desc(md));
+  }
+
+  /**
+   * get the internal MKLDNN MemDesc of topdiffs with next layer name 
+   * call by this layer
+   */
+/*  const std::shared_ptr<mkldnn::memory::desc>& getTopDiffMD(
+    const std::string& nextName) {
+    int idx;
+    CHECK(mapGet(nextName, dnnOutIdxMap_, &idx))
+      << "Cannot find next layer " << nextName << " for layer "
+      << this->getName();
+    CHECK_LT(size_t(idx), topDiffMDs_.size());
+    return topDiffMDs_[idx];
+  } */
+
+  /**
+   * get the internal MKLDNN MemDesc of topdiffs with index 
+   * call by this layer
+   */
+  const std::shared_ptr<mkldnn::memory::desc>& getTopDiffMD(
+    const size_t idx = 0) {
+    CHECK_LT(idx, topDiffMDs_.size());
+    return topDiffMDs_[idx];
+  }
+
+  /**
+   * MKLDNN layers use this function to get BotDiff
+   */
+  const MatrixPtr& getDnnInputGrad(int inputIndex) {
+    return inputLayers_[inputIndex]->getDnnOutputGrad(this->getName());
+  }
+
+  /**
+   * This function only be called from prev layer
+   * for getting correct BotDiff for MKLDNN
+   */
+  const MatrixPtr& getDnnOutputGrad(const std::string& nextName) {
+    if (nextLayers_.size() <= 1) {
+      return getOutputGrad();
+    } else {
+      int idx;
+      CHECK(mapGet(nextName, dnnOutIdxMap_, &idx))
+        << "Cannot find next layer " << nextName << " for layer "
+        << this->getName();
+      return dnnOutGrads_[idx];
+    }
+  }
+
+  /**
+   * MKLDNN layers use this function to get TopDiff
+   */
+  const MatrixPtr& getDnnOutputGrad() {
+    return getOutputGrad();
+  }
+
+  /**
+   * MKLDNN layers use this function to get mutable BotDiff
+   */
+  MatrixPtr& getDnnInputGrad_mutable(int inputIndex) {
+    return inputLayers_[inputIndex]->getDnnOutputGrad_mutable(this->getName());
+  }
+
+  /**
+   * MKLDNN layers use this function to get mutable TopDiff
+   */
+  MatrixPtr& getDnnOutputGrad_mutable(
+    const std::string& nextName) {
+    if (nextLayers_.size() <= 1) {
+      return getOutput().grad;
+    } else {
+      int idx;
+      CHECK(mapGet(nextName, dnnOutIdxMap_, &idx))
+        << "Cannot find next layer " << nextName << " for layer "
+        << this->getName();
+      return dnnOutGrads_[idx];
+    }
+  }
+
+  /** 
+   * Add the next layer pointer.
+   */
+  void addNextLayer(LayerPtr l) { nextLayers_.push_back(l); }
+
+  /**
+   * if has next layer of layer l
+   */
+  bool hasNextLayer(const LayerPtr& l) {
+    if (std::find(nextLayers_.begin(), nextLayers_.end(), l)
+      == nextLayers_.end())
+      return false;
+    else
+      return true;
+  }
+
+  /** 
+   * Get the pointer of nextLayer[i].
+   */
+  const LayerPtr& getNextLayer(size_t i) { return nextLayers_[i]; }
+
+  /** 
+   * Get the number of nextLayers.
+   */
+  size_t getNextSize() { return nextLayers_.size(); }
+
+  /**
+   * is the type start with "mkldnn_"
+   */
+  bool isDnnType(const std::string& type) {
+    const std::string dnn("mkldnn_");
+    return type.compare(0, dnn.length(), dnn) == 0;
+  }
+
+  /**
+   * If this layer has an activation
+   */
+  bool hasActivation() {
+    if (activation_ && !(activation_->getName().empty())) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  /**
+   * If this layer has activation with MKLDNN type
+   */
+  bool hasMkldnnAct() {
+    if (!hasActivation()) {
+      return false;
+    }
+    return isDnnType(config_.active_type());
+  }
+
+  /**
+   * Are next layers all MKLDNN types
+   */
+  bool areNextAllDnn() {
+    bool hasAct = this->hasActivation();
+    bool hasMkldnnAct = this->hasMkldnnAct();
+    // if this layer has activation but it's not mkldnn type, return false
+    if (hasAct && !hasMkldnnAct)
+      return false;
+
+    // since activaion do not change format, so then depends on next layer
+    bool res = nextLayers_.size() > 0;
+    for (size_t i = 0; i < nextLayers_.size(); ++i) {
+      bool yes = isDnnType(nextLayers_[i]->getType());
+      CHECK(i == 0 || res == yes)
+        << "Do not support mixed layer type inside the branch, "
+        << "since MKLDNN layers would over wirte diff in backward.";
+      res = res && yes;
+    }
+    return res;
+  }
+
+  /**
+   * Is the prev layer MKLDNN type
+   * If true
+   * then if the prev layer has several output layers
+   * all of them should also be MKLDNN type, otherwise return false 
+   */
+  bool isPrevDnn(size_t idx) {
+    const LayerPtr& prev = getPrev(idx);
+    if (nullptr == prev || prev->getType().empty())
+      return false;
+    if (passType_ != PASS_TEST) {
+      // in training pass, the branch point should be MKLDNN type
+      CHECK_EQ(prev->areNextAllDnn(), true)
+        << "Since this layer " << getName() << " is with " << getType()
+        << "type , so all the outputs of inputlayer should also be MKLDNN type."
+        << "Prevlayer is " << prev->getName() << ", outsize of prevlayer: "
+        << prev->getNextSize();
+    }
+    // if prev layer has activation but it's not mkldnn type, return false
+    bool hasAct = prev->hasActivation();
+    bool hasMkldnnAct = prev->hasMkldnnAct();
+    if (hasAct && !hasMkldnnAct)
+      return false;
+
+    // since activaion do not change format, so then depends on next layer
+    return isDnnType(prev->getType());
+  }
+  
+#endif
 
 public:
   /**
@@ -415,6 +665,11 @@ public:
       output_.subSequenceStartPositions = input.subSequenceStartPositions;
       output_.cpuSequenceDims = input.cpuSequenceDims;
     }
+#ifdef PADDLE_USE_MKLDNN
+    if (!inputLayers_.empty() && needMklSeqInfo_) {
+      output_.mklAlignedSeqLen = getInput(0).mklAlignedSeqLen;
+    }
+#endif
   }
 
   /**

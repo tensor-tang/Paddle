@@ -53,6 +53,12 @@ bool Layer::init(const LayerMap& layerMap, const ParameterMap& parameterMap) {
     }
   }
 
+
+#ifdef PADDLE_USE_MKLDNN
+  topDataMD_ = nullptr;
+  topDiffMDs_.push_back(nullptr);
+#endif
+
   output_.deviceId = deviceId_;
 
   for (auto& inputConfig : config_.inputs()) {
@@ -64,6 +70,14 @@ bool Layer::init(const LayerMap& layerMap, const ParameterMap& parameterMap) {
     this->addPrev(inputLayer);
 
     inputLayer->addOutputArgument(deviceId_);
+
+#ifdef PADDLE_USE_MKLDNN
+    LayerPtr thisLayer;
+    CHECK(mapGet(getName(), layerMap, &thisLayer))
+      << "Cannot find this layer " << getName();
+    if (!inputLayer->hasNextLayer(thisLayer))
+      inputLayer->addNextLayer(thisLayer);
+#endif
 
     if (inputConfig.has_input_parameter_name()) {
       ParameterPtr parameter;
@@ -97,6 +111,14 @@ bool Layer::init(const LayerMap& layerMap, const ParameterMap& parameterMap) {
   std::string action_type = config_.active_type();
   activation_.reset(ActivationFunction::create(action_type));
   CHECK(activation_);
+#ifdef PADDLE_USE_MKLDNN
+  if (hasActivation()) {
+    VLOG(1) << getName() << ", type: " << getType()
+      << ", act: " << activation_->getName();
+  } else {
+    VLOG(1) << getName() << ", type: " << getType();
+  }
+#endif
 
   initNeedFlags();
   markInBackward_.assign(inputLayers_.size(), false);

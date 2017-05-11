@@ -31,12 +31,16 @@ if(NOT CMAKE_CROSSCOMPILING)
 endif(NOT CMAKE_CROSSCOMPILING)
 find_package(Git REQUIRED)
 find_package(Threads REQUIRED)
+find_package(MKLDNN)
+find_package(OpenMP)
 
 include(simd)
 
 ################################ Configurations #######################################
 option(WITH_GPU         "Compile PaddlePaddle with NVIDIA GPU"          ${CUDA_FOUND})
 option(WITH_AVX         "Compile PaddlePaddle with AVX intrinsics"      ${AVX_FOUND})
+option(WITH_MKLDNN      "Compile PaddlePaddle with MKLDNN support."     ${MKLDNN_FOUND})
+option(WITH_OPENMP      "Compile PaddlePaddle with OpenMP."             ${OPENMP_FOUND})
 option(WITH_DSO         "Compile PaddlePaddle with dynamic linked CUDA" ON)
 option(WITH_TESTING     "Compile PaddlePaddle with unit testing"        ON)
 option(WITH_SWIG_PY     "Compile PaddlePaddle with inference api"       ON)
@@ -57,6 +61,18 @@ if(NOT CMAKE_BUILD_TYPE)
       "Choose the type of build, options are: Debug Release RelWithDebInfo MinSizeRel"
       FORCE)
 endif()
+
+
+#if(WITH_OPENMP)
+#    if(OPENMP_FOUND)
+#        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+#        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+#    else()
+#        set(WITH_OPENMP "OFF")
+#        message(WARNING "Can not find OpenMP, change to WITH_OMP=OFF")
+#    endif()
+#endif()
+
 
 if(ANDROID)
     if(${CMAKE_SYSTEM_VERSION} VERSION_LESS "21")
@@ -118,6 +134,12 @@ if(WITH_GPU)
         list(APPEND EXTERNAL_LIB ${CUDNN_LIBRARY} ${CUDA_CUBLAS_LIBRARIES} ${CUDA_curand_LIBRARY})
     endif(NOT WITH_DSO)
 endif(WITH_GPU)
+
+if(WITH_MKLDNN)
+    add_definitions(-DPADDLE_USE_MKLDNN)
+    include_directories("${MKLDNN_INCLUDE_DIR}")
+    list(APPEND EXTERNAL_LIBS ${MKLDNN_LIBRARY})
+endif()
 
 add_subdirectory(proto)
 add_subdirectory(paddle)

@@ -48,7 +48,11 @@ public:
    */
   virtual void* alloc(size_t size) {
     void* ptr;
+#ifdef PADDLE_USE_MKLDNN
+    CHECK_EQ(posix_memalign(&ptr, 64ul, size), 0);
+#else
     CHECK_EQ(posix_memalign(&ptr, 32ul, size), 0);
+#endif
     CHECK(ptr) << "Fail to allocate CPU memory: size=" << size;
     return ptr;
   }

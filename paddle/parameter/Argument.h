@@ -77,6 +77,13 @@ struct Argument {
   size_t frameHeight;
   size_t frameWidth;
 
+#ifdef PADDLE_USE_MKLDNN
+  int mklAlignedSeqLen;
+  bool hasMklSeq() const {return mklAlignedSeqLen > 0 ? true : false;}
+  int getMklSeqLen() const {return mklAlignedSeqLen;}
+  void setMklSeqLen(int len) {mklAlignedSeqLen = len;}
+#endif
+
   // If NULL, each position is treated independently.
   // Otherwise, its size should be #NumberOfSequences + 1.
   // The first position is always 0 and

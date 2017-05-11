@@ -17,7 +17,8 @@ set(CBLAS_FOUND OFF)
 
 ## Find MKL First.
 set(INTEL_ROOT "/opt/intel" CACHE PATH "Folder contains intel libs")
-set(MKL_ROOT ${INTEL_ROOT}/mkl CACHE PATH "Folder contains MKL")
+#set(MKL_ROOT ${INTEL_ROOT}/mkl CACHE PATH "Folder contains MKL")
+set(MKL_ROOT $ENV{MKL_ROOT} CACHE PATH "Folder contains MKL")
 
 find_path(MKL_INC_DIR mkl.h PATHS
   ${MKL_ROOT}/include)

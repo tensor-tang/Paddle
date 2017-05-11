@@ -265,7 +265,7 @@ message PadConfig {
 message ViewConfig {
   // The data dimensionality.
   // Overall it can be viewed as 5 demension:
-  // (batchsize, seq_len, channels, height, width)
+  // (batchsize, seq_len, channels, height, width) in Paddle foramt
   required int32 height = 1;
   required int32 width = 2;
   optional int32 channel = 3;
@@ -274,6 +274,22 @@ message ViewConfig {
   // view type has 3 choices:
   // change sequence to no sequence, or otherwise, or no change
   required string view_type = 5;
+}
+
+message ReshapeConfig {
+  // The data dimensionality.
+  // Overall it can be viewed as 5 demension:
+  // (batchsize, seq_len, channels, height, width) in Paddle foramt
+  // (seq_len, batchsize, channels, height, width) in MKL foramt
+  required int32 height = 1;
+  required int32 width = 2;
+  optional int32 channel = 3;
+  optional int32 seq_len = 4;
+  optional int32 batchsize = 5;
+
+  // reshape type has 3 choices:
+  // change to non-sequence, or otherwise, or mkl-sequence
+  required string reshape_type = 6;
 }
 
 message LayerInputConfig {
@@ -461,6 +477,11 @@ message LayerConfig {
   // controls the scope of pooling operation. can be set > 0.
   // leave empty or set to -1 to disable this stride pooling.
   optional int32 seq_pool_stride = 53 [default = -1];
+
+  // MKLDNN weight can supports paddle's CPU format for seepdup scoring
+  // use MKLDNN format will get better performance, but the weight will not
+  // be compatible with none-MKLDNN CPU layers
+  optional bool use_mkldnn_wgt = 54 [default = true];
 }
 
 message EvaluatorConfig {

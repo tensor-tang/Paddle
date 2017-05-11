@@ -3282,7 +3282,13 @@ void CpuMatrix::oneHotCrossEntropy(Matrix& output, IVector& label) {
   for (size_t i = 0; i < numSamples; ++i, out += dim) {
     CHECK_GE(lbl[i], 0);
     CHECK_LT((size_t)lbl[i], dim);
+#ifdef PADDLE_USE_MKLDNN
+    // since MKLDNN may have pure zero, so add climp
+    cost[i] = -std::log(std::max(out[lbl[i]], real(FLT_MIN)));
+#else
     cost[i] = -std::log(out[lbl[i]]);
+#endif
+
   }
 }
 
@@ -3297,7 +3303,12 @@ void CpuMatrix::oneHotCrossEntropyBp(Matrix& output, IVector& label) {
   real* grad = getData();
   int* lbl = label.getData();
   for (size_t i = 0; i < numSamples; ++i, out += dim, grad += dim) {
+#ifdef PADDLE_USE_MKLDNN
+    // since MKLDNN may have pure zero, so add climp
+    grad[lbl[i]] -= 1 / std::max(out[lbl[i]], real(FLT_MIN));
+#else
     grad[lbl[i]] -= 1 / out[lbl[i]];
+#endif
   }
 }
 
