@@ -41,8 +41,8 @@ bool MkldnnBatchNormLayer::initDnn(const LayerMap &layerMap,
 }
 
 void MkldnnBatchNormLayer::loadConfig() {
-  // first is Input in configure
-  // other two are created in config_parser.py saving moving mean and var
+  // first is Input
+  // other two are created in config_parser.py for saving moving mean and var
   CHECK_EQ(inputLayers_.size(), 3U);
   CHECK_EQ(parameters_.size(), 3U);
   //const ImageConfig& conf = config_.inputs(0).image_conf();

@@ -1744,7 +1744,7 @@ def mkldnn_conv(input,
 
     if param_attr.attr.get('initial_smart'):
         # special initial for conv layers.
-        init_w = (2.0 / (filter_size**2 * num_channels))**0.5
+        init_w = (2.0 / (filter_size * filter_size_y * num_channels))**0.5
         param_attr.attr["initial_mean"] = 0.0
         param_attr.attr["initial_std"] = init_w
         param_attr.attr["initial_strategy"] = 0
@@ -1789,14 +1789,14 @@ def mkldnn_conv(input,
 def mkldnn_bn(input,
                     num_channels=None,
                     isSeq=False,
+                    moving_average_fraction=0.9,
+                    use_mkldnn_wgt=None,
+                    use_global_stats=None,
                     act=None,
                     name=None,
                     bias_attr=None,
                     param_attr=None,
-                    layer_attr=None,
-                    moving_average_fraction=0.9,
-                    use_mkldnn_wgt=None,
-                    use_global_stats=None):
+                    layer_attr=None):
     """
 
     """
@@ -1812,16 +1812,14 @@ def mkldnn_bn(input,
 
     if num_channels is None:
         if input.num_filters is None:
-            logger.fatal("the input have no filter number,\
+            logger.fatal("the input have no filter(channel) number,\
             set channel number manually")
         else:
             num_channels = input.num_filters
 
     l = Layer(
         name=name,
-        num_channels=num_channels,
-        inputs=Input( # TODO: remove me
-            input.name, image=Image(channels=num_channels), **param_attr.attr),
+        inputs=[input.name],
         active_type=act.name,
         type=LayerType.MKLDNN_BN,
         bias=ParamAttr.to_bias(bias_attr),

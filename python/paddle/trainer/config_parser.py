@@ -2185,7 +2185,6 @@ class MkldnnBNLayer(LayerBase):
     def __init__(self,
                  name,
                  inputs,
-                 num_channels,  # TODO: remove me
                  bias=True,
                  active_type="linear",
                  use_global_stats=True,
@@ -2208,7 +2207,7 @@ class MkldnnBNLayer(LayerBase):
         for i in xrange(2):
             inputs.append(
                 Input(
-                    inputs[0].input_layer_name,
+                    inputs[0],
                     initial_std=0.0,
                     initial_mean=0.0,
                     is_static=True,
@@ -2226,8 +2225,6 @@ class MkldnnBNLayer(LayerBase):
             self.config.use_mkldnn_wgt = bool(int(g_command_config_args.get("use_mkldnn_wgt", 1)))
         if use_mkldnn_seq is not None:
             self.config.use_mkldnn_seq = use_mkldnn_seq
-        
-        self.config.num_filters = num_channels;
 
         input_layer = self.get_input_layer(0)
         self.set_layer_size(input_layer.size)# TODO: maybe set 0 if paddle not use it
