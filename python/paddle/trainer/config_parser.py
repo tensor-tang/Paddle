@@ -2140,12 +2140,16 @@ class MkldnnConvLayer(LayerBase):
                  bias=True,
                  num_filters=None,
                  shared_biases=True,
+                 use_mkldnn_wgt=None,
                  **xargs):
         super(MkldnnConvLayer, self).__init__(
             name, 'mkldnn_conv', 0, inputs=inputs, **xargs)
         assert num_filters is not None
         self.config.num_filters = num_filters
-
+        if use_mkldnn_wgt is not None:
+            self.config.use_mkldnn_wgt = use_mkldnn_wgt
+        else:
+            self.config.use_mkldnn_wgt = bool(int(g_command_config_args.get("use_mkldnn_wgt", 1)))
         config_assert(len(self.inputs) == 1,
             'MkldnnConvLayer must have one and only one input')
         idx = 0
@@ -2154,7 +2158,7 @@ class MkldnnConvLayer(LayerBase):
         self.copy_conv_info(self.inputs[idx].conv, conv_conf)
         psize = self.calc_parameter_size(conv_conf)
         self.create_input_parameter(idx, psize)
-        self.set_layer_size(input_layer.size) # maybe set 0, actually i will not use it??
+        self.set_layer_size(input_layer.size) # TODO: maybe set 0 if paddle not use it
 
         assert shared_biases is True
         self.config.shared_biases = shared_biases
@@ -2174,6 +2178,74 @@ class MkldnnConvLayer(LayerBase):
     def calc_parameter_size(self, conv_conf):
         return self.config.num_filters * conv_conf.channels \
                * conv_conf.filter_size * conv_conf.filter_size_y / conv_conf.groups
+
+
+@config_layer('mkldnn_bn')
+class MkldnnBNLayer(LayerBase):
+    def __init__(self,
+                 name,
+                 inputs,
+                 num_channels,  # TODO: remove me
+                 bias=True,
+                 active_type="linear",
+                 use_global_stats=True,
+                 moving_average_fraction=0.9,                 
+                 use_mkldnn_wgt=None,
+                 use_mkldnn_seq=None,
+                 **xargs):
+        if inputs is None:
+            inputs = []
+        elif not isinstance(inputs, list):
+            inputs = [inputs]
+        config_assert(len(inputs) == 1,
+            "MkldnnBatchNormLayer must have one and only one input")
+
+        # Create Input for moving mean and std,
+        # in batch normalization layer.
+        # These paras no need to update, so set is_static is true.
+        # If not use is_static, even set learning_rate = 0, decay_rate = 0,
+        # these paras will change if set average_window in configure.
+        for i in xrange(2):
+            inputs.append(
+                Input(
+                    inputs[0].input_layer_name,
+                    initial_std=0.0,
+                    initial_mean=0.0,
+                    is_static=True,
+                    is_shared=True, ))
+
+        super(MkldnnBNLayer, self).__init__(
+            name, 'mkldnn_bn', 0, active_type=active_type, inputs=inputs, **xargs)
+        if use_global_stats is not None:
+            self.config.use_global_stats = use_global_stats
+        if moving_average_fraction is not None:
+            self.config.moving_average_fraction = moving_average_fraction
+        if use_mkldnn_wgt is not None:
+            self.config.use_mkldnn_wgt = use_mkldnn_wgt
+        else:
+            self.config.use_mkldnn_wgt = bool(int(g_command_config_args.get("use_mkldnn_wgt", 1)))
+        if use_mkldnn_seq is not None:
+            self.config.use_mkldnn_seq = use_mkldnn_seq
+        
+        self.config.num_filters = num_channels;
+
+        input_layer = self.get_input_layer(0)
+        self.set_layer_size(input_layer.size)# TODO: maybe set 0 if paddle not use it
+
+        psize = self.calc_parameter_size()
+        dims = [1, psize]
+        if self.config.use_mkldnn_wgt:
+            self.create_input_parameter(0, psize * 2, [2, psize])  # scale and shift
+            self.create_input_parameter(1, psize, dims)  # mean
+            self.create_input_parameter(2, psize, dims)  # var
+            self.create_bias_parameter(False, 0)
+        else:
+            self.create_input_parameter(0, psize) # scale
+            self.create_input_parameter(1, psize, dims)
+            self.create_input_parameter(2, psize, dims)
+            self.create_bias_parameter(bias, psize) # shift
+    def calc_parameter_size(self):
+        return self.config.num_filters
 
 
 @config_layer('mkldnn_rnn')

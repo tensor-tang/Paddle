@@ -489,6 +489,9 @@ message LayerConfig {
   // use MKLDNN format will get better performance, but the weight will not
   // be compatible with none-MKLDNN CPU layers
   optional bool use_mkldnn_wgt = 54 [default = true];
+
+  // batchnorm layer can use mkldnn seq mode
+  optional bool use_mkldnn_seq = 55 [default = false];
 }
 
 message EvaluatorConfig {

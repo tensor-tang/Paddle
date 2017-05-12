@@ -44,13 +44,17 @@ void MkldnnBatchNormLayer::loadConfig() {
   // first is Input in configure
   // other two are created in config_parser.py saving moving mean and var
   CHECK_EQ(inputLayers_.size(), 3U);
-  CHECK_EQ(inputLayers_.size(), parameters_.size());
-  CHECK_EQ(inputLayers_.size(), size_t(config_.inputs_size()));
-  const ImageConfig& conf = config_.inputs(0).image_conf();
-  // only care about oc from proto
-  oc_ = conf.channels();
+  CHECK_EQ(parameters_.size(), 3U);
+  //const ImageConfig& conf = config_.inputs(0).image_conf();
+  //oc_ = conf.channels();
+  // only care about oc
+  CHECK(config_.has_num_filters()) << "should have set filter(channel) number";
+  oc_ = config_.num_filters();
   if (config_.has_use_mkldnn_wgt()) {
     useMkldnnWgt_ = config_.use_mkldnn_wgt();
+  }
+  if (config_.has_use_mkldnn_seq()) {
+    useMkldnnSeq_ = config_.use_mkldnn_seq();
   }
   if (config_.has_use_global_stats()) {
     useGlobalStats_ = config_.use_global_stats();
@@ -65,6 +69,9 @@ void MkldnnBatchNormLayer::reshapeOutput() {
   // reshape bs and mkl seqlen
   outputMatH_ = inputMatH_;
   seqLen_ = getInput(idx).getMklSeqLen();
+  if (useMkldnnSeq_) {
+    CHECK_GE(seqLen_, 1) << "seq length should larger than 1";
+  }
   if (seqLen_ > 1) {
     bs_ = outputMatH_ / seqLen_;
     CHECK_EQ(bs_ * seqLen_, outputMatH_) << "maybe caused by un-divisible";

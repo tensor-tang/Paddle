@@ -56,6 +56,9 @@ protected:
 
   bool hasInited_;
 
+  // whether use mkldnn seq batchnorm
+  bool useMkldnnSeq_;
+
 public:
   explicit MkldnnBatchNormLayer(const LayerConfig& config)
     : MkldnnLayer(config),
@@ -68,7 +71,8 @@ public:
       diffScaleShift_(nullptr),
       useScaleShift_(true),
       useGlobalStats_(false),
-      hasInited_(false)
+      hasInited_(false),
+      useMkldnnSeq_(false)
     {}
 
   ~MkldnnBatchNormLayer() {}

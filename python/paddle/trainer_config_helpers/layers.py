@@ -1710,6 +1710,7 @@ def mkldnn_conv(input,
                     padding_y=None,
                     name=None,
                     act=None,
+                    use_mkldnn_wgt=None,
                     bias_attr=None,
                     param_attr=None,
                     layer_attr=None):
@@ -1768,6 +1769,7 @@ def mkldnn_conv(input,
         num_filters=num_filters,
         bias=ParamAttr.to_bias(bias_attr),
         shared_biases=True,
+        use_mkldnn_wgt=use_mkldnn_wgt,
         type=LayerType.MKLDNN_CONV,
         **ExtraLayerAttribute.to_kwargs(layer_attr))
     return LayerOutput(
@@ -1779,29 +1781,29 @@ def mkldnn_conv(input,
         size=l.config.size)
 
 
-@wrap_bias_attr_default()
-@wrap_param_attr_default(default_factory=lambda _: ParamAttr(initial_mean=1.0,
-                                                             initial_std=0.))
-@wrap_act_default(act=MkldnnReluActivation())
 @wrap_name_default("mkldnn_bn")
+@wrap_bias_attr_default()
+@wrap_param_attr_default(default_factory=lambda _: ParamAttr(initial_mean=1.0, initial_std=0.))
+@wrap_act_default(act=MkldnnReluActivation())
 @layer_support(DROPOUT)
 def mkldnn_bn(input,
-                     act=None,
-                     name=None,
-                     num_channels=None,
-                     bias_attr=None,
-                     param_attr=None,
-                     layer_attr=None,
-                     batch_norm_type=None,
-                     moving_average_fraction=0.9,
-                     use_global_stats=None):
+                    num_channels=None,
+                    isSeq=False,
+                    act=None,
+                    name=None,
+                    bias_attr=None,
+                    param_attr=None,
+                    layer_attr=None,
+                    moving_average_fraction=0.9,
+                    use_mkldnn_wgt=None,
+                    use_global_stats=None):
     """
 
     """
-    if not isinstance(act, ReluActivation):
+    if not isinstance(act, MkldnnReluActivation):
         logger.log(logging.WARN,
                    "%s is not recommend for batch normalization's activation, "
-                   "maybe the relu is better" % act.name)
+                   "maybe the mkldnn_relu is better" % act.name)
 
     if not isinstance(input.activation, LinearActivation):
         logger.log(logging.WARN,
@@ -1809,27 +1811,29 @@ def mkldnn_bn(input,
                    "previous layer's activation may be Linear")
 
     if num_channels is None:
-        if input.num_filters is not None:
-            num_channels = input.num_filters
+        if input.num_filters is None:
+            logger.fatal("the input have no filter number,\
+            set channel number manually")
         else:
-            num_channels = input.size
-    assert (batch_norm_type is None) or (batch_norm_type == "batch_norm") or \
-           (batch_norm_type == "cudnn_batch_norm")
+            num_channels = input.num_filters
+
     l = Layer(
         name=name,
-        inputs=Input(
+        num_channels=num_channels,
+        inputs=Input( # TODO: remove me
             input.name, image=Image(channels=num_channels), **param_attr.attr),
         active_type=act.name,
-        type=LayerType.BATCH_NORM_LAYER,
-        batch_norm_type=batch_norm_type,
+        type=LayerType.MKLDNN_BN,
         bias=ParamAttr.to_bias(bias_attr),
         moving_average_fraction=moving_average_fraction,
         use_global_stats=use_global_stats,
+        use_mkldnn_seq=isSeq,
+        use_mkldnn_wgt=use_mkldnn_wgt,
         **ExtraLayerAttribute.to_kwargs(layer_attr))
 
     return LayerOutput(
         name=name,
-        layer_type=LayerType.BATCH_NORM_LAYER,
+        layer_type=LayerType.MKLDNN_BN,
         parents=[input],
         activation=act,
         num_filters=num_channels,

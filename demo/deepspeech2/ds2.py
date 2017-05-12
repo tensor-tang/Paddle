@@ -46,6 +46,11 @@ settings(
 )
 
 ####################### Deep Speech 2 Configuration #############
+### TODO:
+###     1. change all relu to clipped relu
+###     2. rnn
+
+
 def mkldnn_CBR(input, kh, kw, sh, sw, ic, oc, clipped = 20):
     tmp = mkldnn_conv(
         input = input,
@@ -58,7 +63,7 @@ def mkldnn_CBR(input, kh, kw, sh, sw, ic, oc, clipped = 20):
     return mkldnn_bn(
         input = tmp,
         num_channels = oc,
-        act = MkldnnReluActivation()) # TODO: change to clippedRelu
+        act = MkldnnReluActivation())
 
 def BiDRNN(input, dim_out, dim_in=None):
     tmp = mkldnn_fc(input=input, size=dim_out, bias_attr=False, act=LinearActivation()) #act=None
@@ -100,7 +105,7 @@ tmp = mkldnn_reorder(
 
 tmp = mkldnn_reshape(input=tmp,
                 name="view_to_mklseq",
-                reshape_type=ReshapeType.TO_MKLDNN_SEQ,
+                reshape_type=ReshapeType.TO_MKL_SEQUENCE,
                 img_dims=[2400, 1, 1],
                 seq_len=-1)
                 
