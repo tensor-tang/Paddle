@@ -40,7 +40,7 @@ fi
 ### other inputs ###
 topology="deepspeech2"
 config="ds2.py"
-layer_num=7
+layer_num=6
 bs=2
 use_dummy=1
 use_mkldnn=1

@@ -5,7 +5,7 @@ use_dummy = get_config_arg("use_dummy", bool, True)
 batch_size = get_config_arg('batch_size', int, 1)
 is_predict = get_config_arg("is_predict", bool, False)
 is_test = get_config_arg("is_test", bool, False)
-layer_num = get_config_arg('layer_num', int, 7)
+layer_num = get_config_arg('layer_num', int, 6)
 
 ####################Data Configuration ##################
 # 10ms as one step
@@ -66,7 +66,10 @@ def mkldnn_CBR(input, kh, kw, sh, sw, ic, oc, clipped = 20):
         act = MkldnnReluActivation())
 
 def BiDRNN(input, dim_out, dim_in=None):
-    tmp = mkldnn_fc(input=input, size=dim_out, bias_attr=False, act=LinearActivation()) #act=None
+    if dim_in is None:
+        dim_in = dim_out
+    tmp = mkldnn_fc(input=input, dim_in=dim_in, dim_out=dim_out,
+                    bias_attr=False, act=LinearActivation()) # maybe act=None
     tmp = mkldnn_bn(input = tmp, isSeq=True, num_channels = dim_out, act = None)
     return mkldnn_rnn(
             input=tmp,
@@ -108,11 +111,15 @@ tmp = mkldnn_reshape(input=tmp,
                 reshape_type=ReshapeType.TO_MKL_SEQUENCE,
                 img_dims=[2400, 1, 1],
                 seq_len=-1)
-                
+
+tmp = BiDRNN(tmp, 1760, 2400)
 for i in xrange(layer_num):
     tmp = BiDRNN(tmp, 1760)
 
-tmp = mkldnn_fc(input=tmp, size=num_classes + 1, act=LinearActivation()) #act=None
+tmp = mkldnn_fc(input=tmp,
+                dim_in = 1760,
+                dim_out=num_classes + 1,
+                act=LinearActivation()) #act=None
 
 # (seq, bs, dim) to (bs, dim, seq)
 tmp = mkldnn_reorder(

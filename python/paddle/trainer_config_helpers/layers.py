@@ -1837,6 +1837,49 @@ def mkldnn_bn(input,
         num_filters=num_channels,
         size=l.config.size)
 
+
+@wrap_name_default("mkldnn_fc")
+@wrap_param_attr_default()
+@wrap_bias_attr_default()
+@wrap_act_default()
+@layer_support(ERROR_CLIPPING, DROPOUT)
+def mkldnn_fc(input,
+            dim_in,
+            dim_out,
+            act=None,
+            name=None,
+            param_attr=None,
+            bias_attr=None,
+            layer_attr=None):
+    """
+
+    """
+    if isinstance(input, LayerOutput):
+        input = [input]
+        assert not isinstance(param_attr, collections.Sequence)
+        param_attr = [param_attr]
+    else:
+        if isinstance(param_attr, collections.Sequence):
+            assert len(input) == len(param_attr)
+        else:
+            param_attr = [copy.deepcopy(param_attr) for _ in range(len(input))]
+
+    assert isinstance(input, collections.Sequence)
+    Layer(
+        inputs=[
+            Input(ipt.name, **attr.attr) for ipt, attr in zip(input, param_attr)
+        ],
+        name=name,
+        type=LayerType.MKLDNN_FC,
+        dim_in=dim_in,
+        dim_out=dim_out,
+        bias=ParamAttr.to_bias(bias_attr),
+        active_type=act.name,
+        **ExtraLayerAttribute.to_kwargs(layer_attr))
+    return LayerOutput(
+        name, LayerType.MKLDNN_FC, input, activation=act, size=dim_out)
+
+
 class RnnInfo(object):
     RELU = 'rnn_relu'
     TANH = 'rnn_tanh'
@@ -1872,80 +1915,6 @@ only can support internal relu without clipped
         parents=[input],
         size=input.size if output_mode == 'sum' else input.size*2)
 
-@wrap_name_default("mkldnn_fc")
-@wrap_param_attr_default()
-@wrap_bias_attr_default()
-@wrap_act_default()
-@layer_support(ERROR_CLIPPING, DROPOUT)
-def mkldnn_fc(input,
-             size,
-             act=None,
-             name=None,
-             param_attr=None,
-             bias_attr=None,
-             layer_attr=None):
-    """
-    Helper for declare fully connected layer.
-
-    The example usage is:
-
-    .. code-block:: python
-
-       fc = fc_layer(input=layer,
-                     size=1024,
-                     act=LinearActivation(),
-                     bias_attr=False)
-
-    which is equal to:
-
-    .. code-block:: python
-
-       with mixed_layer(size=1024) as fc:
-           fc += full_matrix_projection(input=layer)
-
-    :param name: The Layer Name.
-    :type name: basestring
-    :param input: The input layer. Could be a list/tuple of input layer.
-    :type input: LayerOutput|list|tuple
-    :param size: The layer dimension.
-    :type size: int
-    :param act: Activation Type. Default is tanh.
-    :type act: BaseActivation
-    :param param_attr: The Parameter Attribute|list.
-    :type param_attr: ParameterAttribute
-    :param bias_attr: The Bias Attribute. If no bias, then pass False or
-                      something not type of ParameterAttribute. None will get a
-                      default Bias.
-    :type bias_attr: ParameterAttribute|None|Any
-    :param layer_attr: Extra Layer config.
-    :type layer_attr: ExtraLayerAttribute|None
-    :return: LayerOutput object.
-    :rtype: LayerOutput
-    """
-    if isinstance(input, LayerOutput):
-        input = [input]
-        assert not isinstance(param_attr, collections.Sequence)
-        param_attr = [param_attr]
-    else:
-        if isinstance(param_attr, collections.Sequence):
-            assert len(input) == len(param_attr)
-        else:
-            param_attr = [copy.deepcopy(param_attr) for _ in range(len(input))]
-
-    assert isinstance(input, collections.Sequence)
-
-    Layer(
-        inputs=[
-            Input(ipt.name, **attr.attr) for ipt, attr in zip(input, param_attr)
-        ],
-        name=name,
-        type=LayerType.FC_LAYER,
-        size=size,
-        bias=ParamAttr.to_bias(bias_attr),
-        active_type=act.name,
-        **ExtraLayerAttribute.to_kwargs(layer_attr))
-    return LayerOutput(
-        name, LayerType.FC_LAYER, input, activation=act, size=size)
 
 @wrap_name_default()
 @layer_support()

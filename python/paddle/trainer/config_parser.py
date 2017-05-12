@@ -2245,6 +2245,23 @@ class MkldnnBNLayer(LayerBase):
         return self.config.num_filters
 
 
+@config_layer('mkldnn_fc')
+class MkldnnFCLayer(LayerBase):
+    def __init__(self, name, dim_in, dim_out, inputs, bias=True, **xargs):
+        super(MkldnnFCLayer, self).__init__(
+            name, 'mkldnn_fc', dim_out, inputs=inputs, **xargs)
+        config_assert(len(inputs) == 1,
+            "MkldnnFCLayer must have one and only one input")
+        self.set_layer_size(dim_out);
+        psize = dim_out * dim_in
+        dims = [dim_in, dim_out]
+        format = self.inputs[0].format
+        config_assert((format == "") or (format is None),
+            "MkldnnFCLayer do not support sparse format yet")
+        self.create_input_parameter(0, psize, dims)
+        self.create_bias_parameter(bias, self.config.size)
+
+
 @config_layer('mkldnn_rnn')
 class MkldnnRnnLayer(LayerBase):
     def __init__(self, name, inputs,
