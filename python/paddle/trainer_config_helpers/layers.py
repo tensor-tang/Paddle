@@ -1819,7 +1819,8 @@ def mkldnn_bn(input,
 
     l = Layer(
         name=name,
-        inputs=[input.name],
+        inputs=Input(input.name, **param_attr.attr),
+        num_channels=num_channels,
         active_type=act.name,
         type=LayerType.MKLDNN_BN,
         bias=ParamAttr.to_bias(bias_attr),

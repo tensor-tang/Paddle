@@ -9,7 +9,7 @@ using namespace mkldnn;  // NOLINT
 
 namespace paddle {
 
-REGISTER_LAYER(mkldnn_batch_norm, MkldnnBatchNormLayer);
+REGISTER_LAYER(mkldnn_bn, MkldnnBatchNormLayer);
 
 const real MkldnnBatchNormLayer::EPS = 1E-5;
 
