@@ -2134,7 +2134,6 @@ class MkldnnReshapeLayer(LayerBase):
 
 @config_layer('mkldnn_conv')
 class MkldnnConvLayer(LayerBase):
-    layer_type = 'mkldnn_conv'
     def __init__(self,
                  name,
                  inputs=[],
@@ -2142,50 +2141,39 @@ class MkldnnConvLayer(LayerBase):
                  num_filters=None,
                  shared_biases=True,
                  **xargs):
-        super(ConvLayerBase, self).__init__(
-            name, self.layer_type, 0, inputs=inputs, **xargs)
+        super(MkldnnConvLayer, self).__init__(
+            name, 'mkldnn_conv', 0, inputs=inputs, **xargs)
+        assert num_filters is not None
+        self.config.num_filters = num_filters
 
-        if num_filters is not None:
-            self.config.num_filters = num_filters
+        config_assert(len(self.inputs) == 1,
+            'MkldnnConvLayer must have one and only one input')
+        idx = 0
+        input_layer = self.get_input_layer(idx)
+        conv_conf = self.config.inputs[idx].conv_conf
+        self.copy_conv_info(self.inputs[idx].conv, conv_conf)
+        psize = self.calc_parameter_size(conv_conf)
+        self.create_input_parameter(idx, psize)
+        self.set_layer_size(input_layer.size) # maybe set 0, actually i will not use it??
 
-        use_gpu = int(g_command_config_args.get("use_gpu", 0))
-        parallel_nn = int(g_command_config_args.get("parallel_nn", 0))
-
-        # Automatically select cudnn_type for GPU and exconv for CPU
-        # if set type=conv, but still reserve the way user specify
-        # exconv or cudnn_conv manually.
-        if self.layer_type == "cudnn_conv":
-            config_assert(use_gpu, "cudnn_conv only support GPU")
-
-        if (use_gpu == 1 and self.layer_type != "exconv" and
-            (parallel_nn == 0 or self.config.device > -1)):
-            self.layer_type = "cudnn_conv"
-        else:
-            self.layer_type = "exconv"
-        # need to specify layer in config
-        self.config.type = self.layer_type
-
-        if shared_biases is not None:
-            self.config.shared_biases = shared_biases
-
-        for input_index in xrange(len(self.inputs)):
-            input_layer = self.get_input_layer(input_index)
-            conv_conf = self.config.inputs[input_index].conv_conf
-            parse_conv(self.inputs[input_index].conv, input_layer.name,
-                       conv_conf, num_filters)
-            psize = self.calc_parameter_size(conv_conf)
-            self.create_input_parameter(input_index, psize)
-            self.set_cnn_layer(name, conv_conf.output_y, conv_conf.output_x,
-                               self.config.num_filters)
-
-        psize = self.config.size
+        assert shared_biases is True
+        self.config.shared_biases = shared_biases
         if shared_biases:
             psize = self.config.num_filters
         self.create_bias_parameter(bias, psize, [psize, 1])
-
+    def copy_conv_info(self, conv, conv_conf):
+        conv_conf.filter_size = conv.filter_size
+        conv_conf.filter_size_y = conv.filter_size_y
+        conv_conf.channels = conv.channels
+        conv_conf.padding = conv.padding
+        conv_conf.padding_y = conv.padding_y
+        conv_conf.stride = conv.stride
+        conv_conf.stride_y = conv.stride_y
+        conv_conf.groups = conv.groups
+        conv_conf.caffe_mode = conv.caffe_mode
     def calc_parameter_size(self, conv_conf):
-        return self.config.num_filters * conv_conf.filter_channels \
-                    * (conv_conf.filter_size * conv_conf.filter_size_y)
+        return self.config.num_filters * conv_conf.channels \
+               * conv_conf.filter_size * conv_conf.filter_size_y / conv_conf.groups
 
 
 @config_layer('mkldnn_rnn')

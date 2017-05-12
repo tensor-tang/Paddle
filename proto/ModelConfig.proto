@@ -59,13 +59,13 @@ message ConvConfig {
   // groups of 32 filters. Each filter will connect to 8
   // input channels.
   required uint32 groups = 5;
-  required uint32 filter_channels = 6;
+  optional uint32 filter_channels = 6;
 
   // The size of output feature map.
-  required uint32 output_x = 7;
+  optional uint32 output_x = 7;
 
   // The size of input feature map.
-  required uint32 img_size = 8;
+  optional uint32 img_size = 8;
 
   // caffe mode for output size coherence
   required bool caffe_mode = 9 [default = true];

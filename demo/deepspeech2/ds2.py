@@ -51,10 +51,8 @@ def mkldnn_CBR(input, kh, kw, sh, sw, ic, oc, clipped = 20):
         input = input,
         num_channels = ic,
         num_filters = oc,
-        filter_size_y = kh,
-        filter_size = kw,
-        stride_y = sh,
-        stride = sw,
+        filter_size = [kw, kh],
+        stride = [sw, sh],
         act = LinearActivation()
     )
     return mkldnn_bn(

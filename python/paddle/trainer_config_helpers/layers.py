@@ -1699,30 +1699,26 @@ def mkldnn_reshape(input,
 @wrap_act_default(act=MkldnnReluActivation())
 @layer_support(DROPOUT)
 def mkldnn_conv(input,
-                    input_channels,
-                    num_kernels,
-                    kernel_width,
-                    stride_width=1,
-                    padding_width=0,
+                    num_channels,  # ic
+                    num_filters,   # oc
+                    filter_size,   # [kw, kh]
+                    stride=1,      # [sw, sh]
+                    padding=0,     # [pw, ph]
                     groups=1,
-                    kernel_height=None,
-                    stride_height=None,
-                    padding_height=None,
+                    filter_size_y=None,
+                    stride_y=None,
+                    padding_y=None,
                     name=None,
                     act=None,
                     bias_attr=None,
                     param_attr=None,
-                    shared_biases=True,
-                    layer_attr=None,
-                    trans=False):
+                    layer_attr=None):
     """
 
     """
-    
     if num_channels is None:
-        if isSeq:
-            assert input.num_filters is not None
-            num_channels = input.num_filters
+        assert input.num_filters is not None
+        num_channels = input.num_filters
 
     if filter_size_y is None:
         if isinstance(filter_size, collections.Sequence):
@@ -1753,15 +1749,6 @@ def mkldnn_conv(input,
         param_attr.attr["initial_strategy"] = 0
         param_attr.attr["initial_smart"] = False
 
-    if layer_type:
-        if trans:
-            assert layer_type in ["exconvt", "cudnn_convt"]
-        else:
-            assert layer_type in ["exconv", "cudnn_conv"]
-        lt = layer_type
-    else:
-        lt = LayerType.CONVTRANS_LAYER if trans else LayerType.CONV_LAYER
-
     l = Layer(
         name=name,
         inputs=Input(
@@ -1774,26 +1761,28 @@ def mkldnn_conv(input,
                 groups=groups,
                 filter_size_y=filter_size_y,
                 padding_y=padding_y,
-                stride_y=stride_y),
+                stride_y=stride_y,
+                caffe_mode=True),
             **param_attr.attr),
         active_type=act.name,
         num_filters=num_filters,
         bias=ParamAttr.to_bias(bias_attr),
-        shared_biases=shared_biases,
-        type=lt,
+        shared_biases=True,
+        type=LayerType.MKLDNN_CONV,
         **ExtraLayerAttribute.to_kwargs(layer_attr))
     return LayerOutput(
         name,
-        lt,
+        LayerType.MKLDNN_CONV,
         parents=[input],
         activation=act,
         num_filters=num_filters,
         size=l.config.size)
 
+
 @wrap_bias_attr_default()
 @wrap_param_attr_default(default_factory=lambda _: ParamAttr(initial_mean=1.0,
                                                              initial_std=0.))
-@wrap_act_default(act=ReluActivation())
+@wrap_act_default(act=MkldnnReluActivation())
 @wrap_name_default("mkldnn_bn")
 @layer_support(DROPOUT)
 def mkldnn_bn(input,
