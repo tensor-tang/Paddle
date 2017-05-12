@@ -16,42 +16,46 @@ bool MkldnnFcLayer::initDnn(const LayerMap &layerMap,
   CHECK_EQ(config_.inputs_size(), 1) << "Only support one input layer yet!";
   CHECK_EQ(inputLayers_.size(), parameters_.size());
 
-  bs_ = 0;
-  oc_ = getSize();
+  CHECK_EQ(oc_, getSize());
   hasSpatial_ = false;
 
+  // create a new weight
+  size_t height, width;
+  CHECK(!parameters_[0]->isSparse()) << "Do not support sparse yet";
+  CHECK_EQ(parameters_[0]->getSize(), oc_ * inputLayerSize_);
 
-  for (size_t i = 0; i < inputLayers_.size(); i++) {
-    inputSizeByBS_.push_back(inputLayers_[i]->getSize());  // == ic*ih*iw
-    // create a new weight
-    size_t height, width;
-    if (parameters_[i]->isSparse()) {
-      CHECK_LE(parameters_[i]->getSize(), oc_ * inputSizeByBS_[i]);
-    } else {
-      CHECK_EQ(parameters_[i]->getSize(), oc_ * inputSizeByBS_[i]);
-    }
-    selfWgtData_.push_back(nullptr);
-    selfWgtDiff_.push_back(nullptr);
-    if (!useMkldnnWgt_) {
-      height = inputSizeByBS_[i];
-      width = oc_;
-      selfWgtData_[i] = Matrix::create(width, height, false, false);
-      selfWgtDiff_[i] = Matrix::create(width, height, false, false);
-      selfWgtData_[i]->zeroMem();
-      selfWgtDiff_[i]->zeroMem();
-    } else {
-      height = oc_;
-      width = inputSizeByBS_[i];
-    }
-    Weight* w = new Weight(height, width, parameters_[i], 0);
-    weights_.emplace_back(w);
+  selfWgtData_.push_back(nullptr);
+  selfWgtDiff_.push_back(nullptr);
+  if (!useMkldnnWgt_) {
+    height = inputLayerSize_;
+    width = oc_;
+    selfWgtData_[0] = Matrix::create(width, height, false, false);
+    selfWgtDiff_[0] = Matrix::create(width, height, false, false);
+    selfWgtData_[0]->zeroMem();
+    selfWgtDiff_[0]->zeroMem();
+  } else {
+    height = oc_;
+    width = inputLayerSize_;
   }
+  Weight* w = new Weight(height, width, parameters_[0], 0);
+  weights_.emplace_back(w);
 
   // initialize biases_
   if (biasParameter_.get() != NULL) {
     biases_ = std::unique_ptr<Weight>(new Weight(1, oc_, biasParameter_));
   }
   return true;
+}
+
+// load the settings from proto
+void MkldnnFcLayer::loadConfig() {
+  CHECK_EQ(config_.inputs_size(), 1) << "Only support one input config!";
+  if (config_.has_use_mkldnn_wgt()) {
+    useMkldnnWgt_ = config_.use_mkldnn_wgt();
+  }
+  const FCConfig &conf = config_.inputs(0).fc_conf();
+  inputLayerSize_ = conf.dim_in();
+  oc_ = conf.dim_out();
 }
 
 // keep for paddle parameter server
@@ -66,15 +70,10 @@ void MkldnnFcLayer::prefetch() {
   }
 }
 
-// load the settings from proto
-void MkldnnFcLayer::loadConfig() {
-  if (config_.has_use_mkldnn_wgt()) {
-    useMkldnnWgt_ = config_.use_mkldnn_wgt();
-  }
-}
-
 void MkldnnFcLayer::reshapeOutput() {
   CHECK_EQ(inputLayers_.size(), 1UL);
+  CHECK_EQ(inputLayerSize_, inputMatW_) << "should not change input size,"
+    << "which means the weight size would be changed";
   size_t idx = 0;  // input index
   // reshape bs and mkl seqlen
   outputMatH_ = inputMatH_;
@@ -86,7 +85,7 @@ void MkldnnFcLayer::reshapeOutput() {
     bs_ = outputMatH_;
   }
 
-  // reshape image size and check should not change ic
+  // reshape image size and check should not change inputLayerSize
   ih_ = inputLayers_[idx]->getOutput().getFrameHeight();
   iw_ = inputLayers_[idx]->getOutput().getFrameWidth();
   if (ih_ == 0) ih_ = 1;
@@ -94,13 +93,10 @@ void MkldnnFcLayer::reshapeOutput() {
   hasSpatial_ = true;
   if (ih_ == 1 && iw_ == 1) 
     hasSpatial_ = false;
-  int tmpIc = inputMatW_ / (ih_ * iw_);
-  CHECK_EQ(ic_, tmpIc) << "Do not support change channel number,"
-    << "which means the weight size would be changed";
+  ic_ = inputMatW_ / (ih_ * iw_);
   CHECK_EQ(ic_ * ih_ * iw_, inputMatW_) << "maybe caused by un-divisible";
 
   // cal out size
-  oc_ = getSize();
   oh_ = 1;
   ow_ = 1;
   outputMatW_ = oc_ * oh_ * ow_;

@@ -297,6 +297,12 @@ message ReshapeConfig {
   optional int32 seq_len = 3;
 }
 
+message FCConfig {
+  // full connection config
+  required uint64 dim_in = 1;
+  required uint64 dim_out = 2;
+}
+
 message LayerInputConfig {
   required string input_layer_name = 1;
   optional string input_parameter_name = 2;
@@ -317,6 +323,7 @@ message LayerInputConfig {
   optional ViewConfig view_conf = 15;
   optional ReorderConfig reorder_conf = 16;
   optional ReshapeConfig reshape_conf = 17;
+  optional FCConfig fc_conf = 18;
 }
 
 message LayerConfig {

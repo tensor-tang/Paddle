@@ -50,6 +50,8 @@ protected:
   // input size (== ic*ih*iw) by batch size
   std::vector<size_t> inputSizeByBS_;
 
+  size_t inputLayerSize_;
+
 public:
   explicit MkldnnFcLayer(const LayerConfig& config)
     : MkldnnLayer(config),

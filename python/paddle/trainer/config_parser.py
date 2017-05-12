@@ -2254,12 +2254,17 @@ class MkldnnFCLayer(LayerBase):
         config_assert(len(inputs) == 1,
             "MkldnnFCLayer must have one and only one input")
         self.set_layer_size(dim_out);
+        idx = 0
+        fc_conf = self.config.inputs[idx].fc_conf
+        fc_conf.dim_in = dim_in
+        fc_conf.dim_out = dim_out
         psize = dim_out * dim_in
         dims = [dim_in, dim_out]
-        format = self.inputs[0].format
+        format = self.inputs[idx].format
         config_assert((format == "") or (format is None),
             "MkldnnFCLayer do not support sparse format yet")
-        self.create_input_parameter(0, psize, dims)
+
+        self.create_input_parameter(idx, psize, dims)
         self.create_bias_parameter(bias, self.config.size)
 
 

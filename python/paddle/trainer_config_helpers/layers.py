@@ -1853,7 +1853,7 @@ def mkldnn_fc(input,
             bias_attr=None,
             layer_attr=None):
     """
-
+    dim_in is the input layer size(input dim, == ic * ih *iw)
     """
     if isinstance(input, LayerOutput):
         input = [input]
