@@ -55,6 +55,7 @@ bool Layer::init(const LayerMap& layerMap, const ParameterMap& parameterMap) {
 
 
 #ifdef PADDLE_USE_MKLDNN
+  needMklSeqInfo_ = true;
   topDataMD_ = nullptr;
   topDiffMDs_.push_back(nullptr);
 #endif

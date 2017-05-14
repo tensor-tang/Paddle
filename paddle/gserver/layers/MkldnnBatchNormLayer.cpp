@@ -99,7 +99,7 @@ void MkldnnBatchNormLayer::reshapeOutput() {
 }
 
 void MkldnnBatchNormLayer::resetDnnFwd() {
-  CHECK(bs_ == getInput(0).getBatchSize()) << "batchsize should equal";
+//  CHECK(bs_ == getInput(0).getBatchSize()) << "batchsize should equal";
   if (useMkldnnWgt_) {
     useScaleShift_ = weight_ && weight_->getW();
   } else {
