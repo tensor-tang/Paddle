@@ -109,8 +109,7 @@ void MkldnnFcLayer::reshapeOutput() {
 }
 
 void MkldnnFcLayer::resetDnnFwd() {
-  CHECK(bs_ == getInput(0).getBatchSize())
-    << "Assert batchsize of input layers are equal";
+//  CHECK(bs_ == getInput(0).getBatchSize()) << "Assert batchsize of input layers are equal:" << bs_ <<","<< getInput(0).getBatchSize();
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
   prop_kind pk = prop_kind::forward;
   bool hasBias = (biases_ && biases_->getW());
@@ -149,7 +148,7 @@ void MkldnnFcLayer::resetDnnFwd() {
   CHECK_EQ(inputLayers_.size(), 1);
 //  CHECK_EQ(botDatas_.size(), inputLayers_.size());
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
-    CHECK(bs_ == getInput(i).getBatchSize()) << "batchsize should equal";
+//    CHECK(bs_ == getInput(i).getBatchSize()) << "batchsize should equal";
     /// 1. create buffer, could be vector later
     botData_.reset(new MkldnnBuffer());
     wgtData_.reset(new MkldnnBuffer());
