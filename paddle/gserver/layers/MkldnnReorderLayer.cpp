@@ -203,12 +203,13 @@ void MkldnnReorderLayer::reshapeOutput() {
 }
 
 void MkldnnReorderLayer::resetDnnFwd() {
-  mkldnn::engine eg = CpuEngine::Instance().getEngine();
-  mkldnn::memory::data_type tp = memory::data_type::f32;
+  engine eg = CpuEngine::Instance().getEngine();
+  memory::data_type tp = memory::data_type::f32;
 //  CHECK_EQ(real, float) << "only support f32";
 
   memory::desc botMD = memory::desc({botDims_}, tp, botFmt_);
-  memory::desc topMD = memory::desc({topDims_}, tp, topFmt_);
+  // do not use topdim as mkldnn test did
+  memory::desc topMD = memory::desc({botDims_}, tp, topFmt_);
 
   real *botValueData = getInputValue(0)->getData();
   real *topValueData = getOutputValue()->getData();
@@ -216,16 +217,17 @@ void MkldnnReorderLayer::resetDnnFwd() {
   botVal_.reset(new memory(memory::primitive_desc(botMD, eg), botValueData));
   topVal_.reset(new memory(memory::primitive_desc(topMD, eg), topValueData));
 
-  fwd_.reset(new mkldnn::reorder(*botVal_, *topVal_));
+  fwd_.reset(new reorder(*botVal_, *topVal_));
 
 }
 
 void MkldnnReorderLayer::resetDnnBwd() {
-  mkldnn::engine eg = CpuEngine::Instance().getEngine();
-  mkldnn::memory::data_type tp = memory::data_type::f32;
+  engine eg = CpuEngine::Instance().getEngine();
+  memory::data_type tp = memory::data_type::f32;
 
-  memory::desc botMD = memory::desc({botDims_}, tp, botFmt_);
   memory::desc topMD = memory::desc({topDims_}, tp, topFmt_);
+  // use top dim
+  memory::desc botMD = memory::desc({topDims_}, tp, botFmt_);
 
   real *botDiffData = getDnnInputGrad(0)->getData();
   real *topDiffData = getDnnOutputGrad()->getData();
@@ -233,7 +235,7 @@ void MkldnnReorderLayer::resetDnnBwd() {
   botGrd_.reset(new memory(memory::primitive_desc(botMD, eg), botDiffData));
   topGrd_.reset(new memory(memory::primitive_desc(topMD, eg), topDiffData));
 
-  bwd_.reset(new mkldnn::reorder(*topGrd_, *botGrd_));
+  bwd_.reset(new reorder(*topGrd_, *botGrd_));
 
 }
 
