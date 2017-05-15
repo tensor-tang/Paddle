@@ -71,16 +71,14 @@ def BiDRNN(input, dim_out, dim_in=None):
     tmp = mkldnn_fc(input=input, dim_in=dim_in, dim_out=dim_out,
                     bias_attr=False, act=LinearActivation()) # maybe act=None
     tmp = mkldnn_bn(input = tmp, isSeq=True, num_channels = dim_out, act = None)
-    return tmp;
-    '''
     return mkldnn_rnn(
             input=tmp,
-            input_mode="skip_input",
-            bi_direction = True,
-            activation = "rnn_relu",
-            output_mode = "sum",
+            input_mode=MkldnnRnnConfig.SKIP_INPUT,
+            alg_kind = MkldnnRnnConfig.RNN_RELU,  # try to use clipped
+            use_bi_direction = True,
+            sum_output = True,
             layer_num=1)
-            '''
+
 
 ######## DS2 model ########
 tmp = data_layer(name = 'data', size = dataSpec['freqBins'])

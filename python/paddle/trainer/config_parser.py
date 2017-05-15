@@ -2271,17 +2271,29 @@ class MkldnnFCLayer(LayerBase):
 @config_layer('mkldnn_rnn')
 class MkldnnRnnLayer(LayerBase):
     def __init__(self, name, inputs,
-        input_mode, bi_direction, activation, output_mode, layer_num, **xargs):
+        input_mode, alg_kind, use_bi_direction, layer_num, sum_output,
+        bias=False, **xargs):
         super(MkldnnRnnLayer, self).__init__(
             name, 'mkldnn_rnn', 0, inputs=inputs, **xargs)
         config_assert(len(self.inputs) == 1,
             'MkldnnRnnLayer must have one and only one input')
-        config_assert(len(img_dims) == 3, 'from dim len should be 3')
-        # keep size
+        # set config
+        rnn_conf = self.config.inputs[0].rnn_conf
+        rnn_conf.input_mode = input_mode
+        rnn_conf.alg_kind = alg_kind
+        rnn_conf.use_bi_direction = use_bi_direction
+        rnn_conf.layer_num = layer_num
+        if use_bi_direction:
+            config_assert(sum_output is not None, "set concat or sum output")
+            rnn_conf.sum_output = sum_output
+        # set size
         size = self.get_input_layer(0).size
-        if output_mode == 'concat':
+        if use_bi_direction and sum_output:
             size = size * 2
         self.set_layer_size(size)
+        # TODO: create parameter( and bias if needed)
+        #self.create_input_parameter(0, psize, dims)
+        #self.create_bias_parameter(bias, self.config.size)
 
 
 @config_layer('rotate')

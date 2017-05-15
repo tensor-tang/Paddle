@@ -11,9 +11,9 @@
 namespace paddle {
 
 /**
- * @brief A subclass of convolution layer.
+ * @brief A subclass of Mkldnn convolution layer.
  *
- * The config file api is img_conv_layer.
+ * The config file api is mkldnn_conv.
  */
 class MkldnnConvLayer : public MkldnnLayer {
 protected:

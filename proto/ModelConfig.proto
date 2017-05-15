@@ -303,6 +303,22 @@ message FCConfig {
   required uint64 dim_out = 2;
 }
 
+message RNNConfig {
+  // MKLDNN RNN config
+  // input mode: skip_input, linear_input
+  required string input_mode = 1;
+  // algorithm kind: rnn_relu, rnn_tanh, rnn_lstm, rnn_gru
+  required string alg_kind = 2;
+  // if use bi-diretion
+  required bool use_bi_direction = 3 [default = false];
+  // layer num
+  required uint32 layer_num = 4 [default = 1];
+
+  // when in bi-direction, can choose sum output
+  // otherwise will concat output
+  optional bool sum_output = 5;
+}
+
 message LayerInputConfig {
   required string input_layer_name = 1;
   optional string input_parameter_name = 2;
@@ -324,6 +340,7 @@ message LayerInputConfig {
   optional ReorderConfig reorder_conf = 16;
   optional ReshapeConfig reshape_conf = 17;
   optional FCConfig fc_conf = 18;
+  optional RNNConfig rnn_conf = 19;
 }
 
 message LayerConfig {

@@ -13,7 +13,7 @@ namespace paddle {
 /**
  * @brief A subclass of MkldnnLayer fc layer.
  *
- * The config file api is 
+ * The config file api is mkldnn_fc
  */
 class MkldnnFcLayer : public MkldnnLayer {
 protected:

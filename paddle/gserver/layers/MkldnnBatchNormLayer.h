@@ -1,4 +1,4 @@
-/* Copyright (c) 2016 */
+/* Copyright (c) 2017 */
 
 #pragma once
 
@@ -11,9 +11,9 @@
 namespace paddle {
 
 /**
- * @brief A subclass of MkldnnLayer fc layer.
+ * @brief A subclass of MkldnnLayer batch norm layer.
  *
- * The config file api is 
+ * The config file api is mkldnn_bn
  */
 class MkldnnBatchNormLayer : public MkldnnLayer {
 protected:

@@ -43,6 +43,7 @@ __all__ = [
     "mkldnn_conv",
     "mkldnn_bn",
     "mkldnn_fc",
+    "MkldnnRnnConfig",
     "mkldnn_rnn",
     "identity_projection",
     "dotmul_projection",
@@ -1881,40 +1882,61 @@ def mkldnn_fc(input,
         name, LayerType.MKLDNN_FC, input, activation=act, size=dim_out)
 
 
-class RnnInfo(object):
-    RELU = 'rnn_relu'
-    TANH = 'rnn_tanh'
+class MkldnnRnnConfig(object):
+    SKIP_INPUT = 'skip_input'
+    LINEAR_INPUT = 'linear_input'
+    RNN_RELU = 'rnn_relu'
+    RNN_TANH = 'rnn_tanh'
+    RNN_LSTM = 'rnn_lstm'
+    RNN_GRU = 'rnn_gru'
+
 
 @wrap_name_default("mkldnn_rnn")
 @wrap_bias_attr_default()
 @wrap_param_attr_default()
 @layer_support()
 def mkldnn_rnn(input,
-                    input_mode,
-                    bi_direction = False,
-                    activation = "rnn_relu",
-                    output_mode = "concat",
+                    input_mode=MkldnnRnnConfig.LINEAR_INPUT,
+                    alg_kind = MkldnnRnnConfig.RNN_RELU,
+                    use_bi_direction = False,
                     layer_num=1,
+                    sum_output = False,
                     bias_attr=None,
                     param_attr=None,
                     name=None,
                     layer_attr=None):
     """
 
-only can support internal relu without clipped
+    only can support internal relu without clipped
 
+    when in bi-direction, can choose sum output 
+    otherwise will concat output
     """
-    Layer(
+    
+    assert input_mode in [MkldnnRnnConfig.SKIP_INPUT, MkldnnRnnConfig.LINEAR_INPUT]
+    assert alg_kind in [MkldnnRnnConfig.RNN_RELU, MkldnnRnnConfig.RNN_TANH,
+        MkldnnRnnConfig.RNN_LSTM, MkldnnRnnConfig.RNN_GRU]
+    assert layer_num > 0
+
+    if sum_output and not use_bi_direction:
+        logger.log(logging.WARN, "sum output would only be valid in bi-direction rnn")
+
+    l = Layer(
         name=name,
         type=LayerType.MKLDNN_RNN,
         inputs=Input(input.name, **param_attr.attr),
+        input_mode=input_mode,
+        alg_kind=alg_kind,
+        use_bi_direction=use_bi_direction,
+        layer_num=layer_num,
+        sum_output=sum_output,
         bias=ParamAttr.to_bias(bias_attr),
         **ExtraAttr.to_kwargs(layer_attr))
     return LayerOutput(
         name=name,
         layer_type=LayerType.MKLDNN_RNN,
         parents=[input],
-        size=input.size if output_mode == 'sum' else input.size*2)
+        size=l.config.size)
 
 
 @wrap_name_default()
