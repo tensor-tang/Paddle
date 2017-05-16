@@ -117,9 +117,12 @@ tmp = BiDRNN(tmp, 1760, 2400)
 for i in xrange(layer_num):
     tmp = BiDRNN(tmp, 1760)
 
+# since ctc should +1 of the dim
+ctc_dim = num_classes + 1
+
 tmp = mkldnn_fc(input=tmp,
                 dim_in = 1760,
-                dim_out=num_classes + 1,
+                dim_out = ctc_dim,
                 act=LinearActivation()) #act=None
 
 # (seq, bs, dim) to (bs, dim, seq)
@@ -127,7 +130,7 @@ tmp = mkldnn_reorder(
                 input = tmp,
                 format_from='chwn',
                 format_to='nhwc',
-                dims_from=[-1, -1, num_classes + 1, 1],
+                dims_from=[-1, -1, ctc_dim, 1],
                 bs_index=1)
 
 # (bs, dim, seq) to (bs, seq, dim)
@@ -135,18 +138,18 @@ tmp = mkldnn_reorder(
                 input = tmp,
                 format_from='nchw',
                 format_to='nhwc',
-                dims_from=[-1, num_classes + 1, -1, 1],
+                dims_from=[-1, ctc_dim, -1, 1],
                 bs_index=0)
 
 output = mkldnn_reshape(input=tmp,
                 name="view_to_paddle_seq",
                 reshape_type=ReshapeType.TO_PADDLE_SEQUENCE,
-                img_dims=[-1, 1, 1],
+                img_dims=[ctc_dim, 1, 1],
                 seq_len=-1)
 
 if not is_predict:
     lbl = data_layer(name='label', size=num_classes)
-    cost = warp_ctc_layer(input=output, name = "WarpCTC", blank = 0, label=lbl, size = num_classes + 1) # CTC size should +1
+    cost = warp_ctc_layer(input=output, name = "WarpCTC", blank = 0, label=lbl, size = ctc_dim) # CTC size should +1
 # use ctc so we can use multi threads
 #    cost = ctc_layer(input=output, name = "CTC", label=lbl, size = num_classes + 1) # CTC size should +1
     outputs(cost)

@@ -176,6 +176,20 @@ public:
     if (inputElmCnt_ != getInputValue(0)->getElementCnt()) {
       VLOG(1) << "reshape mkldnn layout of layer: " << getName();
       if (prepareOnce_) {
+        dnnOutGrads_.resize(nextLayers_.size(), nullptr);
+        for (size_t i = 0; i < nextLayers_.size(); ++i) {
+          topDiffMDs_.push_back(nullptr);
+          dnnOutIdxMap_[nextLayers_[i]->getName()] = i;
+        //  LOG(INFO)<<"next name:" << nextLayers_[i]->getName();
+        }
+        if (nextLayers_.size() > 0 && topDiffMDs_.size() > nextLayers_.size()) {
+          // in base layer init will add one nullptr for PASS_grad check
+          // so remove the redundant one
+          topDiffMDs_.pop_back();
+          CHECK_EQ(topDiffMDs_.size(), nextLayers_.size());
+        } else {
+          CHECK_EQ(topDiffMDs_.size() - 1, nextLayers_.size());
+        }
         initDnnflags();
         prepareOnce_ = false;
       }

@@ -16,9 +16,10 @@ class MkldnnReshapeLayer : public MkldnnLayer {
 protected:
   std::string reshapeType_;
 
-
   // sequence length for input and output, set 1 if do not have seq
   int seqLenIn_;
+  // seq lenght from config
+  int seqLenCfg_;
 
   // used for none to seq
   ICpuGpuVectorPtr seqIdx_;
@@ -104,7 +105,7 @@ void MkldnnReshapeLayer::loadConfig() {
   oc_ = conf.img_dims(0);
   oh_ = conf.img_dims(1);
   ow_ = conf.img_dims(2);  
-  seqLen_ = conf.has_seq_len() ? conf.seq_len() : -1;
+  seqLenCfg_ = conf.has_seq_len() ? conf.seq_len() : -1;
 }
 
 void MkldnnReshapeLayer::configToNonSeq() {
@@ -118,9 +119,10 @@ void MkldnnReshapeLayer::configToNonSeq() {
 
 // confirm seqlen, output matrix height and width
 void MkldnnReshapeLayer::prepareSeqInfo() {  
-  if (seqLen_ > 0) {
+  if (seqLenCfg_ > 0) {
     // if have set from proto
-    outputMatW_ = inputMatW_ / seqLen_;
+    outputMatW_ = inputMatW_ / seqLenCfg_;
+    seqLen_ = seqLenCfg_;
   } else {
     CHECK(oc_ > 0 && oh_ > 0 && ow_ > 0)
       << "all of them should be larger than 0, when uncertain seq_len";
@@ -153,8 +155,23 @@ void MkldnnReshapeLayer::generatePaddleSeqInfo() {
 }
 
 void MkldnnReshapeLayer::configToPaddleSeq() {
-  CHECK_EQ(seqLenIn_, 1) << "only support reshape from nonseq yet";
-  prepareSeqInfo();
+//  CHECK_EQ(seqLenIn_, 1) << "only support reshape from nonseq yet";
+  if (seqLenIn_ > 1) {
+    // reshape from seq
+    outputMatW_ = inputMatW_;
+    outputMatH_ = inputMatH_;
+    seqLen_ = seqLenIn_;
+    if (seqLenCfg_ > 0) {
+      CHECK_EQ(seqLenIn_, seqLenCfg_);
+    }
+    bs_ = outputMatH_ / seqLen_;
+    CHECK_EQ(seqLen_ * bs_, inputMatH_) << "maybe caused by un-divisible";
+  } else {
+    // reshape from non seq
+    prepareSeqInfo();
+  }
+
+  setNeedMklSeqInfo(false);
   setNeedSequenceInfo(true);
   generatePaddleSeqInfo();
 }
@@ -191,7 +208,7 @@ void MkldnnReshapeLayer::reshapeOutput() {
   } else {
     seqLenIn_ = 1;
   }
- 
+
   // set output matrix height and width
   if (reshapeType_ == "ToNonSeq") {
     configToNonSeq();

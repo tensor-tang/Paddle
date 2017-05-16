@@ -35,6 +35,9 @@ struct Argument {
         strs(nullptr),
         frameHeight(0),
         frameWidth(0),
+#ifdef PADDLE_USE_MKLDNN
+        mklAlignedSeqLen(0),
+#endif
         sequenceStartPositions(nullptr),
         subSequenceStartPositions(nullptr),
         cpuSequenceDims(nullptr),
