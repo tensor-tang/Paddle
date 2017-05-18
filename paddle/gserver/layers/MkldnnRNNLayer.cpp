@@ -11,7 +11,7 @@ namespace paddle {
 
 REGISTER_LAYER(mkldnn_rnn, MkldnnRNNLayer);
 
-bool MkldnnRNNLayer::initDnn(const LayerMap &layerMap,
+bool MkldnnRNNLayer::initDnnWgt(const LayerMap &layerMap,
                            const ParameterMap &parameterMap) {
   // TODO(TJ): initialize the weight
 

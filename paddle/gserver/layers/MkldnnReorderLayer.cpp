@@ -26,7 +26,7 @@ public:
   explicit MkldnnReorderLayer(const LayerConfig& config)
     : MkldnnLayer(config) {}
 
-  virtual bool initDnn(const LayerMap& layerMap,
+  virtual bool initDnnWgt(const LayerMap& layerMap,
     const ParameterMap& parameterMap) {return true;}
 
   // reload the settings from proto

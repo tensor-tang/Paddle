@@ -13,7 +13,7 @@ REGISTER_LAYER(mkldnn_bn, MkldnnBatchNormLayer);
 
 const real MkldnnBatchNormLayer::EPS = 1E-5;
 
-bool MkldnnBatchNormLayer::initDnn(const LayerMap &layerMap,
+bool MkldnnBatchNormLayer::initDnnWgt(const LayerMap &layerMap,
                            const ParameterMap &parameterMap) {
   /* initialize the weightList */
   if (!useMkldnnWgt_) {

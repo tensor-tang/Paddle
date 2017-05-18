@@ -76,18 +76,17 @@ public:
 
   ~MkldnnConvLayer() {}
 
-  bool initDnn(const LayerMap& layerMap, const ParameterMap& parameterMap);
+  // load the settings from proto
+  virtual void loadConfig();
 
-  bool hasMkldnnRelu() {
-    if (!hasActivation()) {
-      return false;
-    }
-    const std::string dnn("mkldnn_relu");
-    const std::string& type = activation_->getName();
-    return type.compare(0, dnn.length(), dnn) == 0 ? true : false;
-  }
+  bool initDnnWgt(const LayerMap& layerMap, const ParameterMap& parameterMap);
 
-  virtual void clearAllDnnCvtFlags() {
+  // reshape 
+  // output matrix height and width 
+  // and the bs
+  void reshapeOutputInfo();
+
+  void clearAllDnnCvtFlags() {
     MkldnnLayer::clearAllDnnCvtFlags();
     if (topDiffBwdWgt_) topDiffBwdWgt_->clearCvtFlag();
     if (biasData_) biasData_->clearCvtFlag();
@@ -97,26 +96,27 @@ public:
     if (wgtDiff_) wgtDiff_->clearCvtFlag();
   }
 
-  // load the settings from proto
-  virtual void loadConfig();
-
-  // reshape 
-  // output matrix height and width 
-  // and the bs
-  virtual void reshapeOutputInfo();
-
-
   void resetDnnFwd();
 
   void resetDnnBwd();
 
   void submitDnnFwd();
 
+  void submitDnnBwd(const UpdateCallback& callback);
+
+protected:
+  bool hasMkldnnRelu() {
+    if (!hasActivation()) {
+      return false;
+    }
+    const std::string dnn("mkldnn_relu");
+    const std::string& type = activation_->getName();
+    return type.compare(0, dnn.length(), dnn) == 0 ? true : false;
+  }
+
   void submitBwdData(int idx);
 
   void submitBwdWgts(int idx);
-
-  void submitDnnBwd(const UpdateCallback& callback);
 
   void printInfo() {
     VLOG(2) << "bs: " << bs_

@@ -10,7 +10,7 @@ namespace paddle {
 
 REGISTER_LAYER(mkldnn_conv, MkldnnConvLayer);
 
-bool MkldnnConvLayer::initDnn(const LayerMap &layerMap,
+bool MkldnnConvLayer::initDnnWgt(const LayerMap &layerMap,
                            const ParameterMap &parameterMap) {
   CHECK_EQ(config_.inputs_size(), 1) << "Only support one input layer yet!";
   // mkldnn only support float type by now

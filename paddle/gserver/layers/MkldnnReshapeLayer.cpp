@@ -6,7 +6,7 @@ namespace paddle {
 
 REGISTER_LAYER(mkldnn_reshape, MkldnnReshapeLayer);
 
-bool MkldnnReshapeLayer::initDnn(const LayerMap& layerMap,
+bool MkldnnReshapeLayer::initDnnWgt(const LayerMap& layerMap,
                        const ParameterMap& parameterMap) {
   CHECK_EQ(1U, inputLayers_.size());
 

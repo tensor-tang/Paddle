@@ -10,13 +10,24 @@ namespace paddle {
 
 REGISTER_LAYER(mkldnn_fc, MkldnnFcLayer);
 
-bool MkldnnFcLayer::initDnn(const LayerMap &layerMap,
+// load the settings from proto
+void MkldnnFcLayer::loadConfig() {
+  CHECK_EQ(config_.inputs_size(), 1) << "Only support one input config!";
+  if (config_.has_use_mkldnn_wgt()) {
+    useMkldnnWgt_ = config_.use_mkldnn_wgt();
+  }
+  const FCConfig &conf = config_.inputs(0).fc_conf();
+  inputLayerSize_ = conf.dim_in();
+  oc_ = conf.dim_out();
+}
+
+bool MkldnnFcLayer::initDnnWgt(const LayerMap &layerMap,
                            const ParameterMap &parameterMap) {
   // only support 1 input layer by now
-  CHECK_EQ(config_.inputs_size(), 1) << "Only support one input layer yet!";
+  CHECK_EQ(inputLayers_.size(), 1) << "Only support one input layer yet!";
   CHECK_EQ(inputLayers_.size(), parameters_.size());
-
   CHECK_EQ(oc_, getSize());
+
   hasSpatial_ = false;
 
   // create a new weight
@@ -47,28 +58,6 @@ bool MkldnnFcLayer::initDnn(const LayerMap &layerMap,
   return true;
 }
 
-// load the settings from proto
-void MkldnnFcLayer::loadConfig() {
-  CHECK_EQ(config_.inputs_size(), 1) << "Only support one input config!";
-  if (config_.has_use_mkldnn_wgt()) {
-    useMkldnnWgt_ = config_.use_mkldnn_wgt();
-  }
-  const FCConfig &conf = config_.inputs(0).fc_conf();
-  inputLayerSize_ = conf.dim_in();
-  oc_ = conf.dim_out();
-}
-
-// keep for paddle parameter server
-void MkldnnFcLayer::prefetch() {
-  for (size_t i = 0; i != inputLayers_.size(); ++i) {
-    auto* sparseParam =
-        dynamic_cast<SparsePrefetchRowCpuMatrix*>(weights_[i]->getW().get());
-    if (sparseParam) {
-      MatrixPtr input = getInputValue(i);
-      sparseParam->addRows(input);
-    }
-  }
-}
 
 void MkldnnFcLayer::reshapeOutputInfo() {
   CHECK_EQ(inputLayers_.size(), 1UL);

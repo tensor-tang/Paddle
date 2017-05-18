@@ -66,9 +66,17 @@ public:
 
   ~MkldnnFcLayer() {}
 
-  bool initDnn(const LayerMap& layerMap, const ParameterMap& parameterMap);
+  // load the settings from proto
+  void loadConfig();
 
-  virtual void clearAllDnnCvtFlags() {
+  bool initDnnWgt(const LayerMap& layerMap, const ParameterMap& parameterMap);
+
+  // reshape 
+  // output matrix height and width 
+  // and the bs
+  void reshapeOutputInfo();
+
+  void clearAllDnnCvtFlags() {
     MkldnnLayer::clearAllDnnCvtFlags();
     if (topDiffBwdWgt_) topDiffBwdWgt_->clearCvtFlag();
     if (biasData_) biasData_->clearCvtFlag();
@@ -77,31 +85,18 @@ public:
     if (wgtDiff_) wgtDiff_->clearCvtFlag();
   }
 
-  // load the settings from proto
-  virtual void loadConfig();
-
-  // reshape 
-  // output matrix height and width 
-  // and the bs
-  virtual void reshapeOutputInfo();
-
   void resetDnnFwd();
 
   void resetDnnBwd();
 
   void submitDnnFwd();
 
+  void submitDnnBwd(const UpdateCallback& callback);
+
+protected:
   void submitBwdData(int idx);
 
   void submitBwdWgts(int idx);
-
-  void submitDnnBwd(const UpdateCallback& callback);
-
-  // keep as paddle did
-  void prefetch();
-
-  // keep as paddle did
-  Weight& getWeight(int idx) { return *weights_[idx]; }
 
 };
 

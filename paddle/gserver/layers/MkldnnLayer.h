@@ -91,15 +91,14 @@ public:
     if (!Layer::init(layerMap, parameterMap)) return false;
 
     // buffers
-    botDims_ = {0};
-    wgtDims_ = {0};
-    biasDims_ = {0};
-    topDims_ = {0};
+    botDims_ = {};
+    wgtDims_ = {};
+    biasDims_ = {};
+    topDims_ = {};
     botFmt_ = mkldnn::memory::format::nchw;
     wgtFmt_ = mkldnn::memory::format::format_undef;
     biasFmt_ = mkldnn::memory::format::x;
     topFmt_ = mkldnn::memory::format::nchw;
-
 
     inputElmCnt_ = 0;
     bs_ = 0; seqLen_ = 0;
@@ -109,7 +108,7 @@ public:
     // load from proto setting
     loadConfig();
 
-    return initDnn(layerMap, parameterMap);
+    return initDnnWgt(layerMap, parameterMap);
   }
 
 
@@ -144,7 +143,7 @@ public:
    * each dnn layer should have function 
    * to init weight
    */
-  virtual bool initDnn(const LayerMap& layerMap,
+  virtual bool initDnnWgt(const LayerMap& layerMap,
                            const ParameterMap& parameterMap) = 0;
 
   /** 

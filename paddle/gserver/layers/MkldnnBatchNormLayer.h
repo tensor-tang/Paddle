@@ -77,7 +77,10 @@ public:
 
   ~MkldnnBatchNormLayer() {}
 
-  bool initDnn(const LayerMap& layerMap, const ParameterMap& parameterMap);
+  // load the settings from proto
+  void loadConfig();
+
+  bool initDnnWgt(const LayerMap& layerMap, const ParameterMap& parameterMap);
 
   virtual void clearAllDnnCvtFlags() {
     MkldnnLayer::clearAllDnnCvtFlags();
@@ -88,18 +91,10 @@ public:
   //  if (diffBias_) diffBias_->clearCvtFlag();
   }
 
-  /// Calculate moving mean and variance.
-  void calMovingMeanAndVar();
-
-
-  // load the settings from proto
-  virtual void loadConfig();
-
-
   // reshape 
   // output matrix height and width 
   // and the bs
-  virtual void reshapeOutputInfo();
+  void reshapeOutputInfo();
 
   void resetDnnFwd();
 
@@ -116,6 +111,9 @@ public:
   /// keep for paddle
   static Layer* create(const LayerConfig& config);
 
+protected:
+/// Calculate moving mean and variance.
+  void calMovingMeanAndVar();
 };
 
 }  // namespace paddle

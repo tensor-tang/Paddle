@@ -47,21 +47,19 @@ public:
 
   ~MkldnnRNNLayer() {}
 
-  bool initDnn(const LayerMap& layerMap, const ParameterMap& parameterMap);
-
-  virtual void clearAllDnnCvtFlags() {
-    MkldnnLayer::clearAllDnnCvtFlags();
-  }
-
-
   // load the settings from proto
   virtual void loadConfig();
 
+  bool initDnnWgt(const LayerMap& layerMap, const ParameterMap& parameterMap);
 
   // reshape 
   // output matrix height and width 
   // and the bs
-  virtual void reshapeOutputInfo();
+  void reshapeOutputInfo();
+
+  void clearAllDnnCvtFlags() {
+    MkldnnLayer::clearAllDnnCvtFlags();
+  }
 
   void resetDnnFwd();
 

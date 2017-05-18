@@ -35,31 +35,31 @@ public:
   explicit MkldnnReshapeLayer(const LayerConfig& config)
     : MkldnnLayer(config) {}
 
-  virtual bool initDnn(const LayerMap& layerMap,
-                           const ParameterMap& parameterMap);
-
   // reload the settings from proto
-  virtual void loadConfig();
+  void loadConfig();
+
+  bool initDnnWgt(const LayerMap& layerMap,
+                           const ParameterMap& parameterMap);
 
   // reshape 
   // output matrix height and width
-  virtual void reshapeOutputInfo();
+  void reshapeOutputInfo();
 
   /** 
    * each dnn layer should have function
    * to init or reset forward mkldnn
    */
-  virtual void resetDnnFwd() {};
+  void resetDnnFwd() {};
 
   /** 
    * each dnn layer should have function
    * to init or reset backward mkldnn
    */
-  virtual void resetDnnBwd() {};
+  void resetDnnBwd() {};
 
-  virtual void submitDnnFwd();
+  void submitDnnFwd();
 
-  virtual void submitDnnBwd(const UpdateCallback& callback);
+  void submitDnnBwd(const UpdateCallback& callback);
 
 protected:
   int getOutputSeqLen();
