@@ -166,11 +166,18 @@ public:
   // reload the settings from proto
   virtual void loadConfig() = 0;
 
-  // reshape 
+  // reshape output info:
   // output matrix height and width 
-  // and the bs
-  // and the output buffer
-  virtual void reshapeOutput() = 0;
+  // bs and sometimes seqlen
+  virtual void reshapeOutputInfo() = 0;
+
+  // reshape the buffer of output
+  virtual void reshapeOutputBuffer() {
+    CHECK_EQ(outputMatW_, getSize())
+      << "maybe forget to set new layersize when reshape output info";
+    resetOutput(outputMatH_, outputMatW_);
+  }
+
 
   void forward(PassType passType) {
     if (inputElmCnt_ != getInputValue(0)->getElementCnt()) {
@@ -193,29 +200,17 @@ public:
         initDnnflags();
         prepareOnce_ = false;
       }
-      // get new input size info
-      inputElmCnt_ = getInputValue(0)->getElementCnt();
-      inputMatW_ = getInputValue(0)->getWidth();
-      inputMatH_ = getInputValue(0)->getHeight();
-      CHECK_EQ(inputElmCnt_, inputMatW_ * inputMatH_);
 
-      // reshape output buffer and need re-calculate bs and image size info
-      reshapeOutput();
-      resetOutput(outputMatH_, outputMatW_);
-      CHECK_EQ(outputMatW_, getSize())
-        << "maybe forget to set new layersize when changed it";
+      updateInputInfo();
 
-      // resest MKLDNN layout
+      reshapeOutputInfo();
+
+      reshapeOutputBuffer();
+
       resetDnnFwd();
 
-      // print the data flow
-      if (botData_ && topData_) {
-        VLOG(1) << "data format flow --- "
-          << DNN_FMTS[botData_->getUserFmt()] << " >>> ("
-          << DNN_FMTS[botData_->getIntlFmt()] << " >>> "
-          << DNN_FMTS[topData_->getIntlFmt()] << ") >>> "
-          << DNN_FMTS[topData_->getUserFmt()];
-      }
+      printDataFlow();
+
       needResetBwd_ = true;
       printInfo();
     }
@@ -258,7 +253,22 @@ public:
       submitDnnBwd(callback);
     }
   }
-
+protected:
+  void updateInputInfo() {
+    inputElmCnt_ = getInputValue(0)->getElementCnt();
+    inputMatW_ = getInputValue(0)->getWidth();
+    inputMatH_ = getInputValue(0)->getHeight();
+    CHECK_EQ(inputElmCnt_, inputMatW_ * inputMatH_);
+  }
+  void printDataFlow() {
+    if (botData_ && topData_) {
+      VLOG(1) << "data format flow --- "
+        << DNN_FMTS[botData_->getUserFmt()] << " >>> ("
+        << DNN_FMTS[botData_->getIntlFmt()] << " >>> "
+        << DNN_FMTS[topData_->getIntlFmt()] << ") >>> "
+        << DNN_FMTS[topData_->getUserFmt()];
+    }
+  }
   /**
    * if have several input topdiffs
    * then create handle to sum them

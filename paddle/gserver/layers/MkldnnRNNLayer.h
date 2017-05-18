@@ -61,8 +61,7 @@ public:
   // reshape 
   // output matrix height and width 
   // and the bs
-  // and the output buffer
-  virtual void reshapeOutput();
+  virtual void reshapeOutputInfo();
 
   void resetDnnFwd();
 

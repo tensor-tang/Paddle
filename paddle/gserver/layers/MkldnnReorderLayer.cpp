@@ -35,7 +35,7 @@ public:
   // reshape 
   // output matrix height and width
   // and the output buffer
-  virtual void reshapeOutput();
+  virtual void reshapeOutputInfo();
 
   /** 
    * each dnn layer should have function
@@ -149,7 +149,7 @@ void MkldnnReorderLayer::confirmTopDims(
 }
 
 
-void MkldnnReorderLayer::reshapeOutput() {
+void MkldnnReorderLayer::reshapeOutputInfo() {
   // get input seqlen
   const Argument& input = getInput(0);
   if (input.hasMklSeq()) {

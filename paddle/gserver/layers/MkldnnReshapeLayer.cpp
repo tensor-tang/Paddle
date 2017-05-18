@@ -1,88 +1,8 @@
 /* Copyright (c) 2017*/
 
-#include "Layer.h"
-#include "paddle/math/BaseMatrix.h"
-#include "paddle/math/Matrix.h"
-
-#include "MkldnnLayer.h"
+#include "MkldnnReshapeLayer.h"
 
 namespace paddle {
-
-/**
- * @brief A layer for view
- * @note
- */
-class MkldnnReshapeLayer : public MkldnnLayer {
-protected:
-  std::string reshapeType_;
-
-  // sequence length for input and output, set 1 if do not have seq
-  int seqLenIn_;
-  // seq lenght from config
-  int seqLenCfg_;
-
-  // used for none to seq
-  ICpuGpuVectorPtr seqIdx_;
-  // for further use
-  ICpuGpuVectorPtr subSeqIdx_;
-  IVectorPtr seqDims_;
-
-public:
-  explicit MkldnnReshapeLayer(const LayerConfig& config)
-    : MkldnnLayer(config) {}
-
-  virtual bool initDnn(const LayerMap& layerMap,
-                           const ParameterMap& parameterMap);
-
-  // reload the settings from proto
-  virtual void loadConfig();
-
-  // reshape 
-  // output matrix height and width
-  // and the output buffer
-  virtual void reshapeOutput();
-
-  /** 
-   * each dnn layer should have function
-   * to init or reset forward mkldnn
-   */
-  virtual void resetDnnFwd() {};
-
-  /** 
-   * each dnn layer should have function
-   * to init or reset backward mkldnn
-   */
-  virtual void resetDnnBwd() {};
-
-  virtual void submitDnnFwd();
-  virtual void submitDnnBwd(const UpdateCallback& callback);
-
-protected:
-
-
-  // check size of channel, height and width
-  // should have only one uncertain size at most.
-  // sz == channel * height * width
-  void checkOutputImgSize(size_t sz);
-
-
-  // generate sequence index, used in NoneToSeq
-  void generatePaddleSeqInfo();
-
-  // set sequence info to arg
-  void setPaddleSeqInfo(Argument& arg);
-
-  // prepare output matrix height, width, and seqlen
-  void prepareSeqInfo();
-  
-  // configure
-  void configToNonSeq();
-  
-  void configToMklSeq();
-
-  void configToPaddleSeq();
-};
-
 
 REGISTER_LAYER(mkldnn_reshape, MkldnnReshapeLayer);
 
@@ -102,132 +22,207 @@ void MkldnnReshapeLayer::loadConfig() {
     LOG(FATAL) << "Unknown view type: " << reshapeType_;
   }
   CHECK_EQ(conf.img_dims_size(), 3);
-  oc_ = conf.img_dims(0);
-  oh_ = conf.img_dims(1);
-  ow_ = conf.img_dims(2);  
-  seqLenCfg_ = conf.has_seq_len() ? conf.seq_len() : -1;
+  confChannel_ = conf.img_dims(0);
+  confHeight_ = conf.img_dims(1);
+  confWidth_ = conf.img_dims(2);  
+  confSeqLen_ = conf.has_seq_len() ? conf.seq_len() : -1;
+
+  if (reshapeType_ == "ToNonSeq" && confSeqLen_ > 0) {
+    LOG(WARNING) << "conf seqlen is invalid when reshape to nonseq";
+  }
 }
 
-void MkldnnReshapeLayer::configToNonSeq() {
-  outputMatH_ = inputMatH_ / seqLenIn_;
-  //bs_ = outputMatH_;
-  CHECK_EQ(outputMatH_ * seqLenIn_, inputMatH_) << "maybe caused by un-divisible";
-  outputMatW_ = seqLenIn_ * inputMatW_;
+void MkldnnReshapeLayer::reshapeOutputInfo() {
+  int seqLen = getOutputSeqLen();
+
+  reshapeOutMatSize(seqLen);
+
+  reshapeImgSize(outputMatW_);
+
+  resetSeqInfo(seqLen);
+
+  resetOutputSize();
+}
+
+void MkldnnReshapeLayer::submitDnnFwd() {
+  setSeqInfo();
+
+  shareValue();
+}
+
+void MkldnnReshapeLayer::submitDnnBwd(const UpdateCallback& callback) {
+  const MatrixPtr& input = getInputGrad(0);
+  if (!input) {
+    return;
+  }
+  shareGrad();
+}
+
+/// protected methods
+
+int MkldnnReshapeLayer::getOutputSeqLen() {
+  if (reshapeType_ == "ToNonSeq") {
+    return 1;
+  }
+
+  int inputSeqLen = getInputSeqLen();
+  if (inputSeqLen > 1) {
+    if (confSeqLen_ > 0) {
+      CHECK_EQ(inputSeqLen, confSeqLen_) << "can't change seqlen if input is seq";
+    }
+    return inputSeqLen;
+  }
+
+  if (confSeqLen_ > 0) {
+    return confSeqLen_;
+  }
+
+  CHECK(confChannel_ > 0 && confHeight_ > 0 && confWidth_ > 0)
+    << "all of them should be larger than 0, when uncertain seq_len";
+  int layerSize = confChannel_ * confHeight_ * confWidth_;
+  int seqLen = inputMatW_ / layerSize;
+  CHECK_EQ(inputMatW_, seqLen * layerSize) << "not divisible";
+  return seqLen;
+}
+
+// set the seqinfo
+void MkldnnReshapeLayer::resetSeqInfo(const int seqLen) {
   setNeedSequenceInfo(false);
   setNeedMklSeqInfo(false);
-}
-
-// confirm seqlen, output matrix height and width
-void MkldnnReshapeLayer::prepareSeqInfo() {  
-  if (seqLenCfg_ > 0) {
-    // if have set from proto
-    outputMatW_ = inputMatW_ / seqLenCfg_;
-    seqLen_ = seqLenCfg_;
-  } else {
-    CHECK(oc_ > 0 && oh_ > 0 && ow_ > 0)
-      << "all of them should be larger than 0, when uncertain seq_len";
-    outputMatW_ = oc_ * oh_ * ow_;
-    seqLen_ = inputMatW_ / outputMatW_;
+  if (reshapeType_ == "ToNonSeq") {
+    return;
   }
-  CHECK_EQ(seqLen_ * outputMatW_, inputMatW_)
-    << "maybe caused by un-divisible";
-  outputMatH_ = inputMatH_ * seqLen_;
-}
 
-void MkldnnReshapeLayer::configToMklSeq() {
-  CHECK_EQ(seqLenIn_, 1) << "only support reshape from nonseq yet";
-  prepareSeqInfo();
-  setNeedMklSeqInfo(true);
-}
-
-void MkldnnReshapeLayer::generatePaddleSeqInfo() {
-  size_t bs = outputMatH_ / seqLen_;
-  CHECK_EQ(bs * seqLen_, outputMatH_) << "maybe caused by un-divisible";
-  ICpuGpuVector::resizeOrCreate(seqIdx_, bs + 1, /* useGpu= */ false);
-  int* buf = seqIdx_->getMutableData(false);
-  buf[0] = 0;
-  for (size_t i = 1; i <= bs; ++i) {
-    buf[i] = buf[i - 1] + seqLen_;
+  if (reshapeType_ == "ToPaddleSeq") {
+    resetPaddleSeqInfo(seqLen);
+    return;
   }
-  CHECK_EQ(buf[bs], outputMatH_);
-  subSeqIdx_ = nullptr;  // not use sub yet
-  seqDims_ = nullptr;  // not figure out usage yet
+
+  resetMklSeqInfo(seqLen);
 }
 
-void MkldnnReshapeLayer::configToPaddleSeq() {
-//  CHECK_EQ(seqLenIn_, 1) << "only support reshape from nonseq yet";
-  if (seqLenIn_ > 1) {
-    // reshape from seq
-    outputMatW_ = inputMatW_;
+// reshape the output matrix height and width
+void MkldnnReshapeLayer::reshapeOutMatSize(const int seqLen) {
+  if (reshapeType_ == "ToNonSeq") {
+    int inputSeqLen = getInputSeqLen();
+    // do not need to separate from seq or not
+    outputMatH_ = inputMatH_ / inputSeqLen;
+    CHECK_EQ(outputMatH_ * inputSeqLen, inputMatH_) << "not divisible";
+    outputMatW_ = inputSeqLen * inputMatW_;
+    return;
+  }
+
+  // to seq: mklseq or paddle seq
+  if (inputIsSequential()) {
     outputMatH_ = inputMatH_;
-    seqLen_ = seqLenIn_;
-    if (seqLenCfg_ > 0) {
-      CHECK_EQ(seqLenIn_, seqLenCfg_);
-    }
-    bs_ = outputMatH_ / seqLen_;
-    CHECK_EQ(seqLen_ * bs_, inputMatH_) << "maybe caused by un-divisible";
-  } else {
-    // reshape from non seq
-    prepareSeqInfo();
+    outputMatW_ = inputMatW_;
+    return;
   }
 
-  setNeedMklSeqInfo(false);
-  setNeedSequenceInfo(true);
-  generatePaddleSeqInfo();
+  outputMatW_ = inputMatW_ / seqLen;
+  CHECK_EQ(outputMatW_ * seqLen, inputMatW_) << "not divisible";
+  outputMatH_ = inputMatH_ * seqLen;
 }
 
-void MkldnnReshapeLayer::checkOutputImgSize(size_t size) {
-  if (oc_ <= 0 || oh_ <= 0 || ow_ <= 0) {
-    if (ow_ <= 0) {
-      CHECK(oc_ > 0 && oh_ > 0) << "only should have one uncertain";
-      ow_ = size / (oc_ * oh_);
-    } else if (oh_ <= 0) {
-      CHECK(oc_ > 0 && ow_ > 0) << "only should have one uncertain";
-      oh_ = size / (oc_ * ow_);
+void MkldnnReshapeLayer::reshapeImgSize(const size_t layerSize) {
+  if (confChannel_ <= 0 || confWidth_ <= 0 || confHeight_ <= 0) {
+    if (confWidth_ <= 0) {
+      CHECK(confChannel_ > 0 && confHeight_ > 0) << "allow only one uncertain";
+      oc_ = confChannel_;
+      oh_ = confHeight_;
+      ow_ = layerSize / (oc_ * oh_);
+    } else if (confHeight_ <= 0) {
+      CHECK(confChannel_ > 0 && confWidth_ > 0) << "allow only one uncertain";
+      oc_ = confChannel_;
+      ow_ = confWidth_;
+      oh_ = layerSize / (oc_ * ow_);
     } else {
-      CHECK(oh_ > 0 && ow_ > 0) << "only should have one uncertain";
-      oc_ = size / (oh_ * ow_);
+      CHECK(confHeight_ > 0 && confWidth_ > 0) << "allow only one uncertain";
+      oh_ = confHeight_;
+      ow_ = confWidth_;
+      oc_ = layerSize / (oh_ * ow_);
     }
-    CHECK_EQ(oc_ * oh_ * ow_, size) << "maybe caused by un-divisible";
+    CHECK_EQ(oc_ * oh_ * ow_, layerSize) << getName() << "not divisible";
   } else {
-    CHECK_EQ(oc_ * oh_ * ow_, size) << "size does not match";
+    oc_ = confChannel_;
+    oh_ = confHeight_;
+    ow_ = confWidth_;
+    CHECK_EQ(oc_ * oh_ * ow_, layerSize)
+      << getName() << " layerSize does not match";
   }
 }
 
-void MkldnnReshapeLayer::reshapeOutput() {
-  // get input seqlen
+void MkldnnReshapeLayer::resetOutputSize() {
+// update new layer size, in case it would be used in other layers
+  config_.set_size(outputMatW_);
+  getOutput().setFrameHeight(oh_);
+  getOutput().setFrameWidth(ow_);
+}
+
+int MkldnnReshapeLayer::getInputSeqLen() {
   const Argument& input = getInput(0);
   if (input.hasMklSeq()) {
     CHECK(nullptr == input.sequenceStartPositions)
       << "should only have one: mklseq or paddleseq";
-    seqLenIn_ = input.getMklSeqLen();
+    return input.getMklSeqLen();
   } else if (input.sequenceStartPositions) {
     // if has seq, get aligned seq length
     CHECK(!input.hasSubseq()) << "Do not support sub seqence yet";
-    seqLenIn_ = getPaddleAlignedSeqLen(input);
-  } else {
-    seqLenIn_ = 1;
+    return getPaddleAlignedSeqLen(input);
   }
+  return -1;
+}
 
-  // set output matrix height and width
+bool MkldnnReshapeLayer::inputIsSequential() {
+  const Argument& input = getInput(0);
+  bool hasMklSeq = input.hasMklSeq();
+  bool hasPaddleSeq = input.sequenceStartPositions != nullptr;
+  return hasMklSeq || hasPaddleSeq ? true : false;
+}
+
+void MkldnnReshapeLayer::resetMklSeqInfo(int seqLen) {
+  mklSeqLen_ = seqLen;
+}
+
+void MkldnnReshapeLayer::resetPaddleSeqInfo(int seqLen) {
+  size_t bs = outputMatH_ / seqLen;
+  CHECK_EQ(bs * seqLen, outputMatH_) << "not divisible";
+
+  ICpuGpuVector::resizeOrCreate(seqIdx_, bs + 1, /* useGpu= */ false);
+  int* buf = seqIdx_->getMutableData(false);
+  buf[0] = 0;
+  for (size_t i = 1; i <= bs; ++i) {
+    buf[i] = buf[i - 1] + seqLen;
+  }
+  CHECK_EQ(buf[bs], outputMatH_);
+
+  subSeqIdx_ = nullptr;  // not use sub yet
+  seqDims_ = nullptr;  // not figure out usage yet
+}
+
+inline void MkldnnReshapeLayer::setSeqInfo() {
   if (reshapeType_ == "ToNonSeq") {
-    configToNonSeq();
-  } else if (reshapeType_ == "ToMklSeq") {
-    configToMklSeq();
-  } else if (reshapeType_ == "ToPaddleSeq") {
-    configToPaddleSeq();
-  } else {
-    LOG(FATAL) << "Unknown view type: " << reshapeType_;
     return;
   }
 
-  checkOutputImgSize(outputMatW_);
-  // update new layer size, in case it would be used in other layers
-  config_.set_size(outputMatW_);
-  
-  resetOutput(outputMatH_, outputMatW_);
-  getOutput().setFrameHeight(oh_);
-  getOutput().setFrameWidth(ow_);
+  Argument& output = getOutput();
+  if (reshapeType_ == "ToMklSeq") {
+    setMklSeqInfo(output);
+  } else if (reshapeType_ == "ToPaddleSeq") {
+    setPaddleSeqInfo(output);
+  }
+}
+
+inline void MkldnnReshapeLayer::shareValue() {
+  const MatrixPtr& input = getInputValue(0);
+  real* value = input->getData();
+  output_.value->setData(value);
+}
+
+inline void MkldnnReshapeLayer::shareGrad() {
+  const MatrixPtr& output = getOutputGrad();
+  real* grad = output->getData();
+  inputLayers_[0]->getOutput().grad->setData(grad);
 }
 
 void MkldnnReshapeLayer::setPaddleSeqInfo(Argument& arg) {
@@ -236,26 +231,10 @@ void MkldnnReshapeLayer::setPaddleSeqInfo(Argument& arg) {
   arg.cpuSequenceDims = seqDims_;
 }
 
-void MkldnnReshapeLayer::submitDnnFwd() {
-  const Argument& input = getInput(0);
-  if (reshapeType_ == "ToPaddleSeq") {
-    setPaddleSeqInfo(getOutput());
-  }
-  if (reshapeType_ == "ToMklSeq") {
-    getOutput().setMklSeqLen(seqLen_);
-  }
-  output_.value = Matrix::create(input.value->getData(),
-    outputMatH_, getSize(), false, false);
+void MkldnnReshapeLayer::setMklSeqInfo(Argument& arg) {
+  arg.setMklSeqLen(mklSeqLen_);
 }
 
-void MkldnnReshapeLayer::submitDnnBwd(const UpdateCallback& callback) {
-  const Argument& input = getInput(0);
-  if (!input.grad) {
-    return;
-  }
-  inputLayers_[0]->getOutput().grad = Matrix::create(output_.grad->getData(),
-    inputMatH_, inputMatW_, false, false);
-}
 
 }  // namespace paddle
 

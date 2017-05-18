@@ -35,7 +35,7 @@ void MkldnnRNNLayer::loadConfig() {
   }
 }
 
-void MkldnnRNNLayer::reshapeOutput() {
+void MkldnnRNNLayer::reshapeOutputInfo() {
   size_t idx = 0;
   // reshape bs and mkl seqlen
   outputMatH_ = inputMatH_;

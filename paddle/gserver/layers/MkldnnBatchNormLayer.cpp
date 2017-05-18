@@ -64,13 +64,13 @@ void MkldnnBatchNormLayer::loadConfig() {
     << " --- global stats";
 }
 
-void MkldnnBatchNormLayer::reshapeOutput() {
+void MkldnnBatchNormLayer::reshapeOutputInfo() {
   size_t idx = 0;
   // reshape bs and mkl seqlen
   outputMatH_ = inputMatH_;
   seqLen_ = getInput(idx).getMklSeqLen();
   if (useMkldnnSeq_) {
-    CHECK_GE(seqLen_, 1) << "seq length should larger than 1";
+    CHECK_GE(seqLen_, 1) << getName() << " seq length should larger than 1";
   }
   if (seqLen_ > 1) {
     bs_ = outputMatH_ / seqLen_;

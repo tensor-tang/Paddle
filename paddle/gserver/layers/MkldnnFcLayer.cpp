@@ -70,7 +70,7 @@ void MkldnnFcLayer::prefetch() {
   }
 }
 
-void MkldnnFcLayer::reshapeOutput() {
+void MkldnnFcLayer::reshapeOutputInfo() {
   CHECK_EQ(inputLayers_.size(), 1UL);
   CHECK_EQ(inputLayerSize_, inputMatW_) << "should not change input size,"
     << "which means the weight size would be changed";

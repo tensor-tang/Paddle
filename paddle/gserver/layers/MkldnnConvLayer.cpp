@@ -77,7 +77,7 @@ void MkldnnConvLayer::loadConfig() {
 }
 
 
-void MkldnnConvLayer::reshapeOutput() {
+void MkldnnConvLayer::reshapeOutputInfo() {
   CHECK_EQ(inputLayers_.size(), 1UL);
   size_t idx = 0;  // input index
   // reshape bs and mkl seqlen
