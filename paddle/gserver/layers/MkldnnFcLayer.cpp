@@ -127,9 +127,14 @@ void MkldnnFcLayer::resetDnnFwd() {
   }
   topDims_ = {bs_, oc_};
   topFmt_ = memory::format::nc;
-  biasDims_ = {oc_};
-  biasFmt_ = memory::format::x;
 
+  if (hasBias) {
+    biasFmt_ = memory::format::x;
+    biasDims_ = {oc_};
+  } else {
+    biasDims_ = {};
+    biasFmt_ = memory::format::format_undef;
+  }
   bool hasCvtTopData = false;
   bool hasCvtBiasData = false;
   // 1. create mkldnn buffer, only have one output and bias buffer
@@ -290,6 +295,8 @@ void MkldnnFcLayer::resetDnnBwd() {
   if (hasBias) {
     real* biasDiffData = biases_->getWGrad()->getData();
     biasDiff_->initUser(biasDiffData, biasDims_, biasFmt_, eg);
+  } else {
+//    biasDiff_->initUser(NULL, biasDims_, biasFmt_, eg);
   }
   // use internal top diff if use dnn input
   const std::shared_ptr<mkldnn::memory::desc>& prv = getTopDiffMD();
@@ -306,8 +313,6 @@ void MkldnnFcLayer::resetDnnBwd() {
       VLOG(4) << "use prev diff fmt: " << DNN_FMTS[topDiff_->getUserFmt()];
     }
   }
-  // TODO(TJ): only care about i==0 yet
-  CHECK_EQ(inputLayers_.size(), 1);
   for (size_t i = 0; i != inputLayers_.size(); ++i) {
     // 1. create mkldnn buffer and init user
     CHECK(weights_[i]->getWGrad()) << "should have weight anyway";
@@ -326,18 +331,24 @@ void MkldnnFcLayer::resetDnnBwd() {
       MkldnnBuffer::getMD(topDims_)));
     bwdFwdPD.reset(new inner_product_forward::primitive_desc(
       *bwdFwdDesc, eg));
-    CHECK(hasBias) << "only support with bias in mkldnn";
-    bwdWgtDesc.reset(new inner_product_backward_weights::desc(
-      botData_->getIntlMD(),
-      MkldnnBuffer::getMD(wgtDims_),
-      biasData_->getIntlMD(),  // bias do not use any
-      MkldnnBuffer::getMD(topDims_)));
+    if (hasBias) {
+      bwdWgtDesc.reset(new inner_product_backward_weights::desc(
+        botData_->getIntlMD(),
+        MkldnnBuffer::getMD(wgtDims_),
+        biasData_->getIntlMD(),  // bias do not use any
+        MkldnnBuffer::getMD(topDims_)));
+    } else {
+      bwdWgtDesc.reset(new inner_product_backward_weights::desc(
+        botData_->getIntlMD(),
+        MkldnnBuffer::getMD(wgtDims_),
+        MkldnnBuffer::getMD(topDims_)));
+    }
     bwdWgtPD.reset(new inner_product_backward_weights::primitive_desc(
       *bwdWgtDesc, eg, *bwdFwdPD));
     CHECK(botData_->getIntlPD() == bwdWgtPD->src_primitive_desc());
-// CHECK(wgtData_->getIntlPD() == bwdWgtPD->diff_weights_primitive_desc());
-    CHECK(biasData_->getIntlPD() == bwdWgtPD->diff_bias_primitive_desc());
-
+    if (hasBias) {
+      CHECK(biasData_->getIntlPD() == bwdWgtPD->diff_bias_primitive_desc());
+    }
     // 3. init conversion
     if (useMkldnnWgt_) {
       wgtDiffData = weights_[i]->getWGrad()->getData();
@@ -369,9 +380,16 @@ void MkldnnFcLayer::resetDnnBwd() {
         << "all topDiffData formats should equal";
     }
     // 4. bias backward can only be executed in weight backward with MKL-DNN
-    bwdWgt_.reset(new inner_product_backward_weights(*bwdWgtPD,
-      *(botData_->getIntlMem()), *(topDiffBwdWgt_->getIntlMem()),
-      *(wgtDiff_->getIntlMem()), *(biasDiff_->getIntlMem())));
+    if (hasBias) {
+      bwdWgt_.reset(new inner_product_backward_weights(*bwdWgtPD,
+        *(botData_->getIntlMem()), *(topDiffBwdWgt_->getIntlMem()),
+        *(wgtDiff_->getIntlMem()), *(biasDiff_->getIntlMem())));
+    } else {
+      bwdWgt_.reset(new inner_product_backward_weights(*bwdWgtPD,
+        *(botData_->getIntlMem()), *(topDiffBwdWgt_->getIntlMem()),
+        *(wgtDiff_->getIntlMem()),
+        memory(memory::primitive_desc(memory::desc({}, memory::data_type::f32, biasFmt_), eg))));
+    }
     if (wgtDiff_) {
       VLOG(3) << "weight diff flow --- "
         << DNN_FMTS[wgtDiff_->getUserFmt()]
