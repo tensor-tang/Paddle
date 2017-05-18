@@ -41,7 +41,7 @@ public:
    * each dnn layer should have function
    * to init or reset forward mkldnn
    */
-  virtual void resetDnnFwd();
+  virtual void resetDnnFwd(PassType passType);
 
   /** 
    * each dnn layer should have function
@@ -190,7 +190,7 @@ void MkldnnReorderLayer::reshapeOutputInfo() {
   }
 }
 
-void MkldnnReorderLayer::resetDnnFwd() {
+void MkldnnReorderLayer::resetDnnFwd(PassType passType) {
   engine eg = CpuEngine::Instance().getEngine();
   memory::data_type tp = memory::data_type::f32;
 //  CHECK_EQ(real, float) << "only support f32";

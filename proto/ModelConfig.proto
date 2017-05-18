@@ -509,10 +509,9 @@ message LayerConfig {
   // leave empty or set to -1 to disable this stride pooling.
   optional int32 seq_pool_stride = 53 [default = -1];
 
-  // MKLDNN weight can supports paddle's CPU format for seepdup scoring
-  // use MKLDNN format will get better performance, but the weight will not
-  // be compatible with none-MKLDNN CPU layers
-  optional bool use_mkldnn_wgt = 54 [default = true];
+  // MKLDNN weight can supports test with paddle's CPU format for seepdup scoring
+  // this enable scoring with paddle wgt which may trained without MKLDNN layers
+  optional bool test_with_paddle_wgt = 54 [default = false];
 
   // batchnorm layer can use mkldnn seq mode
   optional bool use_mkldnn_seq = 55 [default = false];

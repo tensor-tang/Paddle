@@ -31,6 +31,7 @@ public:
   /// dims and format for user buffer
   mkldnn::memory::dims botDims_, wgtDims_, biasDims_, topDims_;
   mkldnn::memory::format botFmt_, wgtFmt_, biasFmt_, topFmt_;
+  mkldnn::engine engine_;
 
   // input element cnt
   size_t inputElmCnt_;
@@ -51,6 +52,7 @@ public:
   int oc_, oh_, ow_;
 
   bool needResetBwd_;
+  bool hasInitedWgt_;
 
   /******
    * for support mixed with cpu layers */
@@ -68,7 +70,7 @@ public:
   // layers with weight have an option to choose
   // whether use mkldnn foramt weight to get a better performance
   // sacrificing the compatibility with original CPU layers
-  bool useMkldnnWgt_;
+  bool testWithPaddleWgt;
 
 
 public:
@@ -78,10 +80,12 @@ public:
       botDiff_(nullptr),
       topData_(nullptr),
       topDiff_(nullptr),
+      engine_(mkldnn::engine::cpu, 0),
       needResetBwd_(true),
+      hasInitedWgt_(false),
       nextIsDnn_(false),
       prepareOnce_(true),
-      useMkldnnWgt_(true)
+      testWithPaddleWgt(false)
     {}
 
   ~MkldnnLayer() {}
@@ -150,7 +154,7 @@ public:
    * each dnn layer should have function
    * to init or reset forward mkldnn
    */
-  virtual void resetDnnFwd() = 0;
+  virtual void resetDnnFwd(PassType passType) = 0;
 
   /** 
    * each dnn layer should have function
@@ -199,6 +203,9 @@ public:
         initDnnflags();
         prepareOnce_ = false;
       }
+      if (testWithPaddleWgt && passType != PASS_TEST) {
+        LOG(WARNING) << "testWithPaddleWgt is invalid when training";
+      }
 
       updateInputInfo();
 
@@ -206,7 +213,7 @@ public:
 
       reshapeOutputBuffer();
 
-      resetDnnFwd();
+      resetDnnFwd(passType);
 
       printDataFlow();
 
@@ -227,7 +234,6 @@ public:
 
   void backward(const UpdateCallback& callback) {
     if (needResetBwd_) {
-      CHECK(useMkldnnWgt_) << "use mkldnn wgt for better perf";
       needResetBwd_ = false;
       // mkldnn init or reset backward
       VLOG(1) << "reset backward batch size to " << bs_

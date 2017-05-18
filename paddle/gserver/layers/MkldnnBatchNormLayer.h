@@ -96,7 +96,7 @@ public:
   // and the bs
   void reshapeOutputInfo();
 
-  void resetDnnFwd();
+  void resetDnnFwd(PassType passType);
 
   void resetDnnBwd();
 

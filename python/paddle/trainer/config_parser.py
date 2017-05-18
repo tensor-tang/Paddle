@@ -2140,16 +2140,16 @@ class MkldnnConvLayer(LayerBase):
                  bias=True,
                  num_filters=None,
                  shared_biases=True,
-                 use_mkldnn_wgt=None,
+                 test_with_paddle_wgt=None,
                  **xargs):
         super(MkldnnConvLayer, self).__init__(
             name, 'mkldnn_conv', 0, inputs=inputs, **xargs)
         assert num_filters is not None
         self.config.num_filters = num_filters
-        if use_mkldnn_wgt is not None:
-            self.config.use_mkldnn_wgt = use_mkldnn_wgt
+        if test_with_paddle_wgt is not None:
+            self.config.test_with_paddle_wgt = test_with_paddle_wgt
         else:
-            self.config.use_mkldnn_wgt = bool(int(g_command_config_args.get("use_mkldnn_wgt", 1)))
+            self.config.test_with_paddle_wgt = bool(int(g_command_config_args.get("test_with_paddle_wgt", 0)))
         config_assert(len(self.inputs) == 1,
             'MkldnnConvLayer must have one and only one input')
         idx = 0
@@ -2190,7 +2190,7 @@ class MkldnnBNLayer(LayerBase):
                  active_type="linear",
                  use_global_stats=True,
                  moving_average_fraction=0.9,                 
-                 use_mkldnn_wgt=None,
+                 test_with_paddle_wgt=None,
                  use_mkldnn_seq=None,
                  **xargs):
         if inputs is None:
@@ -2220,10 +2220,10 @@ class MkldnnBNLayer(LayerBase):
             self.config.use_global_stats = use_global_stats
         if moving_average_fraction is not None:
             self.config.moving_average_fraction = moving_average_fraction
-        if use_mkldnn_wgt is not None:
-            self.config.use_mkldnn_wgt = use_mkldnn_wgt
+        if test_with_paddle_wgt is not None:
+            self.config.test_with_paddle_wgt = test_with_paddle_wgt
         else:
-            self.config.use_mkldnn_wgt = bool(int(g_command_config_args.get("use_mkldnn_wgt", 1)))
+            self.config.test_with_paddle_wgt = bool(int(g_command_config_args.get("test_with_paddle_wgt", 0)))
         if use_mkldnn_seq is not None:
             self.config.use_mkldnn_seq = use_mkldnn_seq
 
@@ -2232,16 +2232,16 @@ class MkldnnBNLayer(LayerBase):
         self.config.num_filters = num_channels
         psize = self.calc_parameter_size()
         dims = [1, psize]
-        if self.config.use_mkldnn_wgt:
-            self.create_input_parameter(0, psize * 2, [2, psize])  # scale and shift
-            self.create_input_parameter(1, psize, dims)  # mean
-            self.create_input_parameter(2, psize, dims)  # var
-            self.create_bias_parameter(False, 0)
-        else:
+        if self.config.test_with_paddle_wgt:
             self.create_input_parameter(0, psize) # scale
             self.create_input_parameter(1, psize, dims)
             self.create_input_parameter(2, psize, dims)
             self.create_bias_parameter(bias, psize) # shift
+        else:
+            self.create_input_parameter(0, psize * 2, [2, psize])  # scale and shift
+            self.create_input_parameter(1, psize, dims)  # mean
+            self.create_input_parameter(2, psize, dims)  # var
+            self.create_bias_parameter(False, 0)
     def calc_parameter_size(self):
         return self.config.num_filters
 

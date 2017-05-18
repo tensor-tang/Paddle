@@ -49,7 +49,7 @@ public:
    * each dnn layer should have function
    * to init or reset forward mkldnn
    */
-  void resetDnnFwd() {};
+  void resetDnnFwd(PassType passType) {};
 
   /** 
    * each dnn layer should have function

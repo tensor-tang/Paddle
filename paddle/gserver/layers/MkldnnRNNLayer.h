@@ -61,7 +61,7 @@ public:
     MkldnnLayer::clearAllDnnCvtFlags();
   }
 
-  void resetDnnFwd();
+  void resetDnnFwd(PassType passType);
 
   void resetDnnBwd();
 

@@ -13,10 +13,34 @@ REGISTER_LAYER(mkldnn_bn, MkldnnBatchNormLayer);
 
 const real MkldnnBatchNormLayer::EPS = 1E-5;
 
+void MkldnnBatchNormLayer::loadConfig() {
+  // first is Input
+  // other two are created in config_parser.py for saving moving mean and var
+  CHECK_EQ(inputLayers_.size(), 3U);
+  CHECK_EQ(parameters_.size(), 3U);
+  //const ImageConfig& conf = config_.inputs(0).image_conf();
+  //oc_ = conf.channels();
+  // only care about oc
+  CHECK(config_.has_num_filters()) << "should have set filter(channel) number";
+  oc_ = config_.num_filters();
+  if (config_.has_test_with_paddle_wgt()) {
+    testWithPaddleWgt = config_.test_with_paddle_wgt();
+  }
+  if (config_.has_use_mkldnn_seq()) {
+    useMkldnnSeq_ = config_.use_mkldnn_seq();
+  }
+  if (config_.has_use_global_stats()) {
+    useGlobalStats_ = config_.use_global_stats();
+  }
+
+  VLOG(1) << "--- " << (useGlobalStats_ ? "use" : "do not use")
+    << " --- global stats";
+}
+
 bool MkldnnBatchNormLayer::initDnnWgt(const LayerMap &layerMap,
                            const ParameterMap &parameterMap) {
   /* initialize the weightList */
-  if (!useMkldnnWgt_) {
+  if (testWithPaddleWgt) {
     selfScaleShiftData_ = Matrix::create(2, oc_, false, false);
     selfScaleShiftDiff_ = Matrix::create(2, oc_, false, false);
     selfScaleShiftData_->zeroMem();
@@ -38,30 +62,6 @@ bool MkldnnBatchNormLayer::initDnnWgt(const LayerMap &layerMap,
   movingMean_.reset(new Weight(1, oc_, parameters_[1]));
   movingVar_.reset(new Weight(1, oc_, parameters_[2]));
   return true;
-}
-
-void MkldnnBatchNormLayer::loadConfig() {
-  // first is Input
-  // other two are created in config_parser.py for saving moving mean and var
-  CHECK_EQ(inputLayers_.size(), 3U);
-  CHECK_EQ(parameters_.size(), 3U);
-  //const ImageConfig& conf = config_.inputs(0).image_conf();
-  //oc_ = conf.channels();
-  // only care about oc
-  CHECK(config_.has_num_filters()) << "should have set filter(channel) number";
-  oc_ = config_.num_filters();
-  if (config_.has_use_mkldnn_wgt()) {
-    useMkldnnWgt_ = config_.use_mkldnn_wgt();
-  }
-  if (config_.has_use_mkldnn_seq()) {
-    useMkldnnSeq_ = config_.use_mkldnn_seq();
-  }
-  if (config_.has_use_global_stats()) {
-    useGlobalStats_ = config_.use_global_stats();
-  }
-
-  VLOG(1) << "--- " << (useGlobalStats_ ? "use" : "do not use")
-    << " --- global stats";
 }
 
 void MkldnnBatchNormLayer::reshapeOutputInfo() {
@@ -98,9 +98,10 @@ void MkldnnBatchNormLayer::reshapeOutputInfo() {
   getOutput().setFrameWidth(ow_);
 }
 
-void MkldnnBatchNormLayer::resetDnnFwd() {
+void MkldnnBatchNormLayer::resetDnnFwd(PassType passType) {
+  passType_ = passType;
 //  CHECK(bs_ == getInput(0).getBatchSize()) << "batchsize should equal";
-  if (useMkldnnWgt_) {
+  if (!testWithPaddleWgt) {
     useScaleShift_ = weight_ && weight_->getW();
   } else {
     bool hasShift = (biases_ && biases_->getW());
@@ -137,7 +138,7 @@ void MkldnnBatchNormLayer::resetDnnFwd() {
       localMean_->copyFrom(*(movingMean_->getW()));
       localVar_->copyFrom(*(movingVar_->getW()));
     }
-    if (useScaleShift_ && useMkldnnWgt_ && passType_ != PASS_TEST) {
+    if (useScaleShift_ && !testWithPaddleWgt && passType_ != PASS_TEST) {
       // re-randomize scale and zero shift(bias in paddle) just as paddle did
       const ParameterConfig& wgtConfig = parameters_[0]->getConfig();
       VectorPtr wgt = parameters_[0]->getBuf(PARAMETER_VALUE);
@@ -204,8 +205,8 @@ void MkldnnBatchNormLayer::resetDnnFwd() {
   topData_->initCvt(fwdPD_->dst_primitive_desc(), dnnCvtIntl2User);
   // weight(scale) and bias(shift)
   if (useScaleShift_) {
-    real *ssData = useMkldnnWgt_ ? weight_->getW()->getData()
-      : selfScaleShiftData_->getData();
+    real *ssData = testWithPaddleWgt ? selfScaleShiftData_->getData()
+      : weight_->getW()->getData();
     dataScaleShift_->initUser(ssData, wgtDims_, wgtFmt_, eg);
     CHECK(dataScaleShift_->getUserPD() == fwdPD_->weights_primitive_desc())
       << "scaleshiftPD should be {2, oc} with nc format, check mkldnn version.";
@@ -313,8 +314,8 @@ void MkldnnBatchNormLayer::resetDnnBwd() {
   botDiff_->initCvt(botData_->getIntlPD(), dnnCvtIntl2User);
   // weight(scale) and bias(shift)
   if (useScaleShift_) {
-    real *ssDiff = useMkldnnWgt_ ? weight_->getWGrad()->getData()
-      : selfScaleShiftDiff_->getData();
+    real *ssDiff = testWithPaddleWgt ? selfScaleShiftDiff_->getData()
+      : weight_->getWGrad()->getData();
     diffScaleShift_->initUser(ssDiff, wgtDims_, wgtFmt_, eg);
     CHECK(diffScaleShift_->getUserPD() == bwdPD->diff_weights_primitive_desc())
       << "scaleshiftPD should be {2,oc} with nc format, check mkldnn version.";
@@ -362,9 +363,9 @@ void MkldnnBatchNormLayer::submitDnnFwd() {
 
   // prepare weight data of scale and shift
   if (useScaleShift_) {
-    real *wgtDataData = useMkldnnWgt_ ? weight_->getW()->getData()
-      : selfScaleShiftData_->getData();
-    if (!useMkldnnWgt_) {
+    real *wgtDataData = testWithPaddleWgt ? selfScaleShiftData_->getData()
+      : weight_->getW()->getData();
+    if (testWithPaddleWgt) {
       // copy data from paddle weight and bias
       memcpy(selfScaleShiftData_->getData(), weight_->getW()->getData(),
         sizeof(real) * oc_);
@@ -397,16 +398,16 @@ void MkldnnBatchNormLayer::submitDnnBwd(const UpdateCallback &callback) {
   topDiff_->submitCvt(pipeline, topDiffData);
   botData_->submitCvt(pipeline, botDataData);
   if (useScaleShift_) {
-    real *wgtDataData = useMkldnnWgt_ ? weight_->getW()->getData()
-      : selfScaleShiftData_->getData();
+    real *wgtDataData = testWithPaddleWgt ? selfScaleShiftData_->getData()
+      : weight_->getW()->getData();
     dataScaleShift_->submitCvt(pipeline, wgtDataData);
   }
   pipeline.push_back(*bwd_);
   botDiff_->submitCvt(pipeline, botDiffData);
   // output scaleshift diff
   if (useScaleShift_) {
-    real *wgtDiffData = useMkldnnWgt_ ? weight_->getWGrad()->getData()
-      : selfScaleShiftDiff_->getData();
+    real *wgtDiffData = testWithPaddleWgt ? selfScaleShiftDiff_->getData()
+      : weight_->getWGrad()->getData();
     diffScaleShift_->submitCvt(pipeline, wgtDiffData);
   }
   stream(stream::kind::eager).submit(pipeline).wait();

@@ -10,6 +10,27 @@ namespace paddle {
 
 REGISTER_LAYER(mkldnn_conv, MkldnnConvLayer);
 
+void MkldnnConvLayer::loadConfig() {
+  CHECK_EQ(config_.inputs_size(), 1) << "Only support one input layer yet!";
+  if (config_.has_test_with_paddle_wgt()) {
+    testWithPaddleWgt = config_.test_with_paddle_wgt();
+  }
+  oc_ = config_.num_filters();
+  const ConvConfig &conf = config_.inputs(0).conv_conf();
+  ic_ = conf.channels();
+  fw_ = conf.filter_size();
+  fh_ = conf.filter_size_y();
+  pw_ = conf.padding();
+  ph_ = conf.padding_y();
+  sw_ = conf.stride();
+  sh_ = conf.stride_y();
+  gp_ = conf.groups();
+  bool caffeMode = conf.caffe_mode();
+
+  CHECK_EQ(gp_, 1) << "Only support group 1";
+  CHECK(caffeMode) << "Only support caffe mode with MKL-DNN by now!";
+}
+
 bool MkldnnConvLayer::initDnnWgt(const LayerMap &layerMap,
                            const ParameterMap &parameterMap) {
   CHECK_EQ(config_.inputs_size(), 1) << "Only support one input layer yet!";
@@ -25,7 +46,7 @@ bool MkldnnConvLayer::initDnnWgt(const LayerMap &layerMap,
   size_t height, width;
   selfWgtData_.push_back(nullptr);
   selfWgtDiff_.push_back(nullptr);
-  if (!useMkldnnWgt_) {
+  if (testWithPaddleWgt) {
     height = ic_ * fh_ * fw_ / gp_;
     width = oc_;
     selfWgtData_[0] = Matrix::create(width, height, false, false);
@@ -54,28 +75,6 @@ bool MkldnnConvLayer::initDnnWgt(const LayerMap &layerMap,
   }
   return true;
 }
-
-void MkldnnConvLayer::loadConfig() {
-  CHECK_EQ(config_.inputs_size(), 1) << "Only support one input layer yet!";
-  if (config_.has_use_mkldnn_wgt()) {
-    useMkldnnWgt_ = config_.use_mkldnn_wgt();
-  }
-  oc_ = config_.num_filters();
-  const ConvConfig &conf = config_.inputs(0).conv_conf();
-  ic_ = conf.channels();
-  fw_ = conf.filter_size();
-  fh_ = conf.filter_size_y();
-  pw_ = conf.padding();
-  ph_ = conf.padding_y();
-  sw_ = conf.stride();
-  sh_ = conf.stride_y();
-  gp_ = conf.groups();
-  bool caffeMode = conf.caffe_mode();
-
-  CHECK_EQ(gp_, 1) << "Only support group 1";
-  CHECK(caffeMode) << "Only support caffe mode with MKL-DNN by now!";
-}
-
 
 void MkldnnConvLayer::reshapeOutputInfo() {
   CHECK_EQ(inputLayers_.size(), 1UL);
@@ -113,7 +112,8 @@ void MkldnnConvLayer::reshapeOutputInfo() {
 
 }
 
-void MkldnnConvLayer::resetDnnFwd() {
+void MkldnnConvLayer::resetDnnFwd(PassType passType) {
+  passType_ = passType;
   mkldnn::engine eg = CpuEngine::Instance().getEngine();
   algorithm algo = algorithm::convolution_direct;
   prop_kind fwdpk = passType_ == PASS_TEST ? prop_kind::forward_scoring
@@ -164,7 +164,7 @@ void MkldnnConvLayer::resetDnnFwd() {
     /// 2. init user ***********************************************************
     real *botDataData = getPrev(i)->getOutputValue()->getData();
     // if use mkldnn wgt directly save into weight parameter
-    real *wgtDataData = useMkldnnWgt_ ? weights_[i]->getW()->getData()
+    real *wgtDataData = !testWithPaddleWgt ? weights_[i]->getW()->getData()
       : selfWgtData_[i]->getData();
     botData_->initUser(botDataData, botDims_, botFmt_, eg);
     wgtData_->initUser(wgtDataData, wgtDims_, wgtFmt_, eg);
@@ -214,7 +214,7 @@ void MkldnnConvLayer::resetDnnFwd() {
     }
     /// 4. init conversion *****************************************************
     botData_->initCvt(fwdPD->src_primitive_desc(), dnnCvtUser2Intl);
-    if (useMkldnnWgt_) {
+    if (!testWithPaddleWgt) {
       // directly use internal format and save in paddle weight parameter
       wgtDataData = weights_[i]->getW()->getData();
       wgtData_->resetUser(wgtDataData, fwdPD->weights_primitive_desc());
@@ -228,7 +228,7 @@ void MkldnnConvLayer::resetDnnFwd() {
     // only init wgt once
     if (!hasInited_) {
       hasInited_ = true;
-      if (useMkldnnWgt_) {
+      if (!testWithPaddleWgt) {
         // cvt the initial paddle wgt to mkldnn wgt only once when training
         // in testing phase do not need cvt
         if (passType_ != PASS_TEST) {
@@ -371,7 +371,7 @@ void MkldnnConvLayer::resetDnnBwd() {
     }
     // 1. create wgt buffer and init, could be vector later
     wgtDiff_.reset(new MkldnnBuffer());
-    real *wgtDiffData = useMkldnnWgt_? weights_[i]->getWGrad()->getData()
+    real *wgtDiffData = !testWithPaddleWgt? weights_[i]->getWGrad()->getData()
       : selfWgtDiff_[i]->getData();
     wgtDiff_->initUser(wgtDiffData, wgtDims_, wgtFmt_, eg);
     // 2. prepare backward weight and bias PD-----------------------------------
@@ -421,7 +421,7 @@ void MkldnnConvLayer::resetDnnBwd() {
 //    CHECK(topData_->getIntlPD() == bwdWgtPD->diff_dst_primitive_desc());
     CHECK(weights_[i]->getWGrad()) << "should have weight";
     // 3. init conversion
-    if (useMkldnnWgt_) {
+    if (!testWithPaddleWgt) {
       wgtDiff_->resetUser(wgtDiffData, bwdWgtPD->diff_weights_primitive_desc());
       wgtDiff_->initCvt(wgtDiff_->getUserPD(), dnnCvtNoNeed);
       CHECK_EQ(wgtDiff_->getIntlSize(), wgtData_->getIntlSize())
@@ -540,7 +540,7 @@ void MkldnnConvLayer::submitDnnFwd() {
     real* botDataData = getPrev(i)->getOutputValue()->getData();
     std::vector<primitive> pipeline;
     botData_->submitCvt(pipeline, botDataData);
-    if (!useMkldnnWgt_ && passType_ != PASS_TEST) {
+    if (testWithPaddleWgt && passType_ != PASS_TEST) {
       // transpose and cvt every time in training if do not use mkldnn wgt
       weights_[i]->getW()->transpose(selfWgtData_[i], false);
       real* wgtDataData = selfWgtData_[i]->getData();

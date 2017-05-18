@@ -20,8 +20,8 @@ bool MkldnnRNNLayer::initDnnWgt(const LayerMap &layerMap,
 
 void MkldnnRNNLayer::loadConfig() {
   CHECK_EQ(inputLayers_.size(), 1U);
-  if (config_.has_use_mkldnn_wgt()) {
-    useMkldnnWgt_ = config_.use_mkldnn_wgt();
+  if (config_.has_test_with_paddle_wgt()) {
+    testWithPaddleWgt = config_.test_with_paddle_wgt();
   }
   const RNNConfig &conf = config_.inputs(0).rnn_conf();
   inputMode_ = conf.input_mode();
@@ -67,7 +67,8 @@ void MkldnnRNNLayer::reshapeOutputInfo() {
   getOutput().setFrameWidth(ow_);
 }
 
-void MkldnnRNNLayer::resetDnnFwd() {
+void MkldnnRNNLayer::resetDnnFwd(PassType passType) {
+  passType_ = passType;
 }
 
 void MkldnnRNNLayer::resetDnnBwd() {

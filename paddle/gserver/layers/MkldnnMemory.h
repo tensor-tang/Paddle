@@ -54,22 +54,31 @@ public:
 
   void initUser(void *pd,
     mkldnn::memory::dims dm, mkldnn::memory::format fmt, mkldnn::engine eg) {
-    initUser(pd, mkldnn::memory::desc({dm}, tp_, fmt), eg);
+//    LOG(INFO) << "---------------2";
+    initUser(pd, mkldnn::memory::desc(dm, tp_, fmt), eg);
   }
 
   void initUser(void *pd, mkldnn::memory::desc md, mkldnn::engine eg) {
     CHECK_EQ(int(md.data.data_type), int(tp_))
       << "input data type does not match: "
       << md.data.data_type << " vs " << tp_;
-    pUser_.reset(
-      new mkldnn::memory(mkldnn::memory::primitive_desc(md, eg), pd));
+    if (pd == NULL) {
+      LOG(INFO)<<"---------------";
+      pUser_.reset(new mkldnn::memory(mkldnn::memory::primitive_desc(md, eg)));
+    } else {
+      pUser_.reset(
+        new mkldnn::memory(mkldnn::memory::primitive_desc(md, eg), pd));
+    }
   }
 
   void initUser(void *pdata, mkldnn::memory::primitive_desc pd) {
     CHECK_EQ(int(pd.desc().data.data_type), int(tp_))
       << "input data type does not match: "
       << pd.desc().data.data_type << " vs " << tp_;
-    pUser_.reset(new mkldnn::memory(pd, pdata));
+    if (pdata == NULL)
+      pUser_.reset(new mkldnn::memory(pd));
+    else
+      pUser_.reset(new mkldnn::memory(pd, pdata));
   }
 
   void resetUser(void *pd,
@@ -169,6 +178,16 @@ public:
     return getMDFmt(getUserMD());
   }
 
+  static mkldnn::memory::dims getMDDims(const mkldnn::memory::desc& md) {
+    const int* dm = md.data.dims;
+    int ndims = md.data.ndims;
+    std::vector<int> v(dm, dm + ndims);
+    return v;
+  }
+
+  mkldnn::memory::dims getUserDims() {
+    return getMDDims(getUserMD());
+  }
   // get user memory format
   int getIntlFmt() {
     CHECK(pIntl_) << "haven't init internal layout, call initUser then initCvt";

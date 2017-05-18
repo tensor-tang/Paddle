@@ -28,6 +28,10 @@ protected:
   // if image width and height !=0
   bool hasSpatial_;
 
+  bool hasBias_;
+
+  bool usePrevLayout_;
+
   /// weight data and diff buffers
   MkldnnBufferPtr wgtData_;
   MkldnnBufferPtr wgtDiff_;
@@ -35,13 +39,12 @@ protected:
   MkldnnBufferPtr biasData_;
   MkldnnBufferPtr biasDiff_;
 
-  // fc
-  WeightList weights_;
+  // fc weight
+  std::unique_ptr<Weight> weight_;
   std::unique_ptr<Weight> biases_;
 
-  // dnn self wgt, only create if use paddle fmt
-  std::vector<MatrixPtr> selfWgtData_;
-  std::vector<MatrixPtr> selfWgtDiff_;
+  // support inference with paddle format wgt if do not use dnn wgt
+  MatrixPtr paddleWgt_;
 
   // use paddle weight format
   bool usePaddleFmt_;
@@ -57,10 +60,13 @@ public:
     : MkldnnLayer(config),
       fwd_(nullptr),
       hasSpatial_(false),
+      hasBias_(false),
+      usePrevLayout_(false),
       wgtData_(nullptr),
       wgtDiff_(nullptr),
       biasData_(nullptr),
       biasDiff_(nullptr),
+      paddleWgt_(nullptr),
       hasInited_(false)
     {}
 
@@ -85,7 +91,7 @@ public:
     if (wgtDiff_) wgtDiff_->clearCvtFlag();
   }
 
-  void resetDnnFwd();
+  void resetDnnFwd(PassType passType);
 
   void resetDnnBwd();
 
@@ -94,6 +100,46 @@ public:
   void submitDnnBwd(const UpdateCallback& callback);
 
 protected:
+  // fc can only change the out mat height but not width(layersize)
+  // since when input width changed, the wgt would need be changed too
+  void reshapeOutMatSize();
+
+  void reshapeBatchSize();
+
+  // reshape input and output channel, height and width
+  // layerSize == channel * height * width
+  void reshapeImgSize();
+
+  // FC do not change output size
+  void keepOutputSize();
+
+  void resetDnnConfigs();
+
+  void resetDnnFwdBuffers();
+
+  void resetDnnUserLayout();
+
+  void usePrevDnnLayout();
+
+  void resetDnnFwdPD(
+    std::shared_ptr<mkldnn::inner_product_forward::primitive_desc>& fwdPD);
+
+  void resetDnnIntlLayout(
+    const std::shared_ptr<mkldnn::inner_product_forward::primitive_desc>& fwdPD);
+
+  void keepDnnLayoutToNext(
+    const std::shared_ptr<mkldnn::inner_product_forward::primitive_desc>& fwdPD);
+
+  void resetDnnFwdHandle(
+    const std::shared_ptr<mkldnn::inner_product_forward::primitive_desc>& fwdPD);
+
+  // when training get initial wgt from paddle format
+  // when scoring from paddle also need get initial wgt from paddle format
+  // however when scoring with mkldnn wgt donot need get initial wgt
+  void getInitialWgtFromPaddle();
+
+  void forwardDnn();
+
   void submitBwdData(int idx);
 
   void submitBwdWgts(int idx);

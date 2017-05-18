@@ -96,7 +96,7 @@ public:
     if (wgtDiff_) wgtDiff_->clearCvtFlag();
   }
 
-  void resetDnnFwd();
+  void resetDnnFwd(PassType passType);
 
   void resetDnnBwd();
 
