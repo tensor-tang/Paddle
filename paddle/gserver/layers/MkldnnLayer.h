@@ -116,21 +116,15 @@ public:
   }
 
 
+  // reload the settings from proto
+  virtual void loadConfig() = 0;
 
   /**
-   * init the flags whether to set memory desc
-   * of top data or bot diff.
-   * each layer can have its own implements.
-   * Caution: Do not call it at init function
-   *          this function can work only after all layers init have done
+   * each dnn layer should have function 
+   * to init weight
    */
-  void initDnnflags() {
-    // set topdata internal only if all next layers are MKLDNN layers
-    nextIsDnn_ = areNextAllDnn();
-    for (size_t i = 0; i != inputLayers_.size(); ++i) {
-      prevIsDnn_.push_back(isPrevDnn(i));
-    }
-  }
+  virtual bool initDnnWgt(const LayerMap& layerMap,
+                           const ParameterMap& parameterMap) = 0;
 
   /** 
    * each dnn layer should have function
@@ -143,12 +137,27 @@ public:
     if (topDiff_) topDiff_->clearCvtFlag();
   }
 
-  /**
-   * each dnn layer should have function 
-   * to init weight
-   */
-  virtual bool initDnnWgt(const LayerMap& layerMap,
-                           const ParameterMap& parameterMap) = 0;
+  // reset activation fwd
+  virtual void resetDnnFwdAct() {
+    if (!hasMkldnnAct()) {
+      return;
+    }
+    std::shared_ptr<mkldnn::memory::desc> md(
+      new mkldnn::memory::desc(topData_->getUserMD()));
+    CHECK(md);
+    activation_->resetDnnFwd(output_, std::static_pointer_cast<void>(md));
+  }
+
+  // reset activation bwd
+  virtual void resetDnnBwdAct() {
+    if (!hasMkldnnAct()) {
+      return;
+    }
+    std::shared_ptr<mkldnn::memory::desc> md(
+      new mkldnn::memory::desc(topDiff_->getUserMD()));
+    CHECK(md);
+    activation_->resetDnnBwd(output_, std::static_pointer_cast<void>(md));
+  }
 
   /** 
    * each dnn layer should have function
@@ -163,11 +172,8 @@ public:
   virtual void resetDnnBwd() = 0;
 
   virtual void submitDnnFwd() = 0;
+
   virtual void submitDnnBwd(const UpdateCallback& callback) = 0;
-
-
-  // reload the settings from proto
-  virtual void loadConfig() = 0;
 
   // reshape output info:
   // output matrix height and width 
@@ -181,30 +187,17 @@ public:
     resetOutput(outputMatH_, outputMatW_);
   }
 
-
   void forward(PassType passType) {
     if (inputElmCnt_ != getInputValue(0)->getElementCnt()) {
-      VLOG(1) << "reshape mkldnn layout of layer: " << getName();
-      if (prepareOnce_) {
-        dnnOutGrads_.resize(nextLayers_.size(), nullptr);
-        for (size_t i = 0; i < nextLayers_.size(); ++i) {
-          topDiffMDs_.push_back(nullptr);
-          dnnOutIdxMap_[nextLayers_[i]->getName()] = i;
-        //  LOG(INFO)<<"next name:" << nextLayers_[i]->getName();
-        }
-        if (nextLayers_.size() > 0 && topDiffMDs_.size() > nextLayers_.size()) {
-          // in base layer init will add one nullptr for PASS_grad check
-          // so remove the redundant one
-          topDiffMDs_.pop_back();
-          CHECK_EQ(topDiffMDs_.size(), nextLayers_.size());
-        } else {
-          CHECK_EQ(topDiffMDs_.size() - 1, nextLayers_.size());
-        }
-        initDnnflags();
-        prepareOnce_ = false;
-      }
+      VLOG(1) << "reshape mkldnn fwd of layer: " << getName();
+
       if (testWithPaddleWgt && passType != PASS_TEST) {
         LOG(WARNING) << "testWithPaddleWgt is invalid when training";
+      }
+
+      if (prepareOnce_) {
+        prepareOnce_ = false;
+        prepare();
       }
 
       updateInputInfo();
@@ -215,9 +208,12 @@ public:
 
       resetDnnFwd(passType);
 
+      resetDnnFwdAct();
+
       printDataFlow();
 
       needResetBwd_ = true;
+
       printInfo();
     }
 
@@ -235,36 +231,65 @@ public:
   void backward(const UpdateCallback& callback) {
     if (needResetBwd_) {
       needResetBwd_ = false;
-      // mkldnn init or reset backward
-      VLOG(1) << "reset backward batch size to " << bs_
-        << " of mkldnn layer: " << getName();
+      VLOG(1) << "reshape mkldnn bwd of layer: " << getName();
 
       gatherTopDiffs();
+
       resetDnnBwd();
 
-      // print the diff flow
-      if (botDiff_ && topDiff_) {
-        VLOG(1) << "diff format flow --- "
-          << DNN_FMTS[botDiff_->getUserFmt()] << " <<< ("
-          << DNN_FMTS[botDiff_->getIntlFmt()] << " <<< "
-          << DNN_FMTS[topDiff_->getIntlFmt()] << ") <<< "
-          << DNN_FMTS[topDiff_->getUserFmt()];
-      }
-    }
+      resetDnnBwdAct();
 
+      printDiffFlow();      
+    }
     {
       //REGISTER_TIMER_DYNAMIC("Bwd_" + getName());
       REGISTER_TIMER_INFO("mkldnn_BwdTimer", getName().c_str());
       submitDnnBwd(callback);
     }
   }
+
 protected:
+  // TODO: add comment or rename
+  void prepare() {
+    dnnOutGrads_.resize(nextLayers_.size(), nullptr);
+    for (size_t i = 0; i < nextLayers_.size(); ++i) {
+      topDiffMDs_.push_back(nullptr);
+      dnnOutIdxMap_[nextLayers_[i]->getName()] = i;
+    //  LOG(INFO)<<"next name:" << nextLayers_[i]->getName();
+    }
+    if (nextLayers_.size() > 0 && topDiffMDs_.size() > nextLayers_.size()) {
+      // in base layer init will add one nullptr for PASS_grad check
+      // so remove the redundant one
+      topDiffMDs_.pop_back();
+      CHECK_EQ(topDiffMDs_.size(), nextLayers_.size());
+    } else {
+      CHECK_EQ(topDiffMDs_.size() - 1, nextLayers_.size());
+    }
+    initDnnflags();
+  }
+
+  /**
+   * init the flags whether to set memory desc
+   * of top data or bot diff.
+   * each layer can have its own implements.
+   * Caution: Do not call it at init function
+   *          this function can work only after all layers init have done
+   */
+  void initDnnflags() {
+    // set topdata internal only if all next layers are MKLDNN layers
+    nextIsDnn_ = areNextAllDnn();
+    for (size_t i = 0; i != inputLayers_.size(); ++i) {
+      prevIsDnn_.push_back(isPrevDnn(i));
+    }
+  }
+
   void updateInputInfo() {
     inputElmCnt_ = getInputValue(0)->getElementCnt();
     inputMatW_ = getInputValue(0)->getWidth();
     inputMatH_ = getInputValue(0)->getHeight();
     CHECK_EQ(inputElmCnt_, inputMatW_ * inputMatH_);
   }
+
   void printDataFlow() {
     if (botData_ && topData_) {
       VLOG(1) << "data format flow --- "
@@ -274,6 +299,18 @@ protected:
         << DNN_FMTS[topData_->getUserFmt()];
     }
   }
+
+  void printDiffFlow() {
+    // print the diff flow
+    if (botDiff_ && topDiff_) {
+      VLOG(1) << "diff format flow --- "
+        << DNN_FMTS[botDiff_->getUserFmt()] << " <<< ("
+        << DNN_FMTS[botDiff_->getIntlFmt()] << " <<< "
+        << DNN_FMTS[topDiff_->getIntlFmt()] << ") <<< "
+        << DNN_FMTS[topDiff_->getUserFmt()];
+    }
+  }
+
   /**
    * if have several input topdiffs
    * then create handle to sum them

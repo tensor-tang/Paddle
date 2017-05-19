@@ -358,14 +358,6 @@ void Layer::showOutputStats() {
 
 void Layer::forwardActivation() {
   /* activation */
-#ifdef PADDLE_USE_MKLDNN
-  // TODO(TJ): 1. make reshape; 2. only do once
-  if (hasMkldnnAct()) {
-    activation_->resetDnnFwd(output_,
-    std::static_pointer_cast<void>(topDataMD_));
-  }
-#endif
-
   auto status = activation_->forward(output_);
   status.check();
 
@@ -407,14 +399,6 @@ void Layer::backwardActivation() {
     MatrixPtr oGrad = getOutputGrad();
     oGrad->dotMul(*oGrad, *dropOutMask_);
   }
-
-#ifdef PADDLE_USE_MKLDNN
-  // TODO(TJ): 1. make reshape; 2. only do once
-  if (hasMkldnnAct()) {
-    activation_->resetDnnBwd(output_,
-    std::static_pointer_cast<void>(topDiffMDs_[0]));
-  }
-#endif
 
   auto status = activation_->backward(output_);
   status.check();
