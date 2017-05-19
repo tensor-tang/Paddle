@@ -54,31 +54,30 @@ public:
 
   void initUser(void *pd,
     mkldnn::memory::dims dm, mkldnn::memory::format fmt, mkldnn::engine eg) {
-//    LOG(INFO) << "---------------2";
     initUser(pd, mkldnn::memory::desc(dm, tp_, fmt), eg);
   }
 
   void initUser(void *pd, mkldnn::memory::desc md, mkldnn::engine eg) {
-    CHECK_EQ(int(md.data.data_type), int(tp_))
-      << "input data type does not match: "
-      << md.data.data_type << " vs " << tp_;
     if (pd == NULL) {
-      LOG(INFO)<<"---------------";
       pUser_.reset(new mkldnn::memory(mkldnn::memory::primitive_desc(md, eg)));
     } else {
+      CHECK_EQ(int(md.data.data_type), int(tp_))
+        << "input data type does not match: "
+        << md.data.data_type << " vs " << tp_;
       pUser_.reset(
         new mkldnn::memory(mkldnn::memory::primitive_desc(md, eg), pd));
     }
   }
 
   void initUser(void *pdata, mkldnn::memory::primitive_desc pd) {
-    CHECK_EQ(int(pd.desc().data.data_type), int(tp_))
-      << "input data type does not match: "
-      << pd.desc().data.data_type << " vs " << tp_;
-    if (pdata == NULL)
+    if (pdata == NULL) {
       pUser_.reset(new mkldnn::memory(pd));
-    else
+    } else {
+      CHECK_EQ(int(pd.desc().data.data_type), int(tp_))
+        << "input data type does not match: "
+        << pd.desc().data.data_type << " vs " << tp_;
       pUser_.reset(new mkldnn::memory(pd, pdata));
+    }
   }
 
   void resetUser(void *pd,

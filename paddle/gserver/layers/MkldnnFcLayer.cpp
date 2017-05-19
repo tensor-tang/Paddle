@@ -6,7 +6,8 @@
 
 using namespace mkldnn;  // NOLINT
 typedef mkldnn::inner_product_forward fc_fwd;
-//typedef mkldnn::inner_product_backward_data fc_bwdData;
+typedef mkldnn::inner_product_backward_weights fc_bwdWgt;
+typedef mkldnn::inner_product_backward_data fc_bwdData;
 
 namespace paddle {
 
@@ -68,7 +69,6 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
   CHECK_EQ(inputLayers_.size(), 1);
   CHECK_EQ(hasBias_, biases_ && biases_->getW());
   passType_ = passType;
-  usePrevLayout_ = false;
 
   engine_ = CpuEngine::Instance().getEngine();
 
@@ -76,16 +76,21 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
 
   resetDnnFwdBuffers();
 
-  resetDnnUserLayout();
+  resetDnnFwdUserLayout();
 
-  usePrevDnnLayout();
+  if (prevIsDnn_[0]) {
+    resetBotValUserWithPrevLayout();
+  }
 
   std::shared_ptr<fc_fwd::primitive_desc> fwdPD;
   resetDnnFwdPD(fwdPD);
 
-  resetDnnIntlLayout(fwdPD);
+  resetDnnFwdIntlLayout(fwdPD);
 
-  keepDnnLayoutToNext(fwdPD);
+  if (nextIsDnn_) {
+    resetTopValUserLayout(fwdPD);
+    keepLayoutToNextLayert();
+  }
 
   resetDnnFwdHandle(fwdPD);
 
@@ -96,233 +101,50 @@ void MkldnnFcLayer::resetDnnFwd(PassType passType) {
 }
 
 void MkldnnFcLayer::resetDnnBwd() {
-  mkldnn::engine engine_ = CpuEngine::Instance().getEngine();
-  prop_kind pk = prop_kind::forward;
-
   CHECK_EQ(hasBias_, biases_ && biases_->getWGrad());
 
-  bool hasCvtTopDiffBwdData = false;
-  bool hasCvtTopDiffBwdWgt = false;
-  bool hasCvtBiasDiff = false;
+  resetDnnBwdBuffers();
 
-  // 1. create mkldnn buffer, only have one output and bias buffer
-  topDiff_.reset(new MkldnnBuffer());
-  topDiffBwdWgt_.reset(new MkldnnBuffer());
-  if (hasBias_) {
-    biasDiff_.reset(new MkldnnBuffer());
+  resetDnnBwdUserLayout();
+
+  if (nextIsDnn_) {
+    resetTopDiffUserWithNextLayout();
   }
-  // 2. init user top and bias
-  real *topDiffData = getDnnOutputGrad()->getData();
-  topDiff_->initUser(topDiffData, topDims_, topFmt_, engine_);
-  topDiffBwdWgt_->initUser(topDiffData, topDims_, topFmt_, engine_);
-  if (hasBias_) {
-    real* biasDiffData = biases_->getWGrad()->getData();
-    biasDiff_->initUser(biasDiffData, biasDims_, biasFmt_, engine_);
-  } else {
-//    biasDiff_->initUser(NULL, biasDims_, biasFmt_, engine_);
+
+  std::shared_ptr<fc_bwdWgt::primitive_desc> bwdWgtPD;
+  std::shared_ptr<fc_bwdData::primitive_desc> bwdDataPD;
+ 
+  resetDnnBwdWgtPD(bwdWgtPD);
+
+  resetDnnBwdDataPD(bwdDataPD);
+
+  resetDnnBwdIntlLayout(bwdWgtPD, bwdDataPD);
+
+  if (prevIsDnn_[0]) {
+    resetBotGradUserLayout(bwdDataPD);
+    keepLayoutToPrevLayer();
   }
-  // use internal top diff if use dnn input
-  const std::shared_ptr<mkldnn::memory::desc>& prv = getTopDiffMD();
-  if (prv) {
-    topDiff_->resetUser(topDiffData, *prv, engine_);
-    topDiffBwdWgt_->resetUser(topDiffData, *prv, engine_);
-    bool isNCHW = topDiff_->getUserFmt() == memory::format::nchw;
-    if (isNCHW && oh_ == ow_ && oh_ == 1) {
-      // if prv is nchw and h==w==1, use nc instead
-      topDiff_->resetUser(topDiffData, topDims_, memory::format::nc, engine_);
-      topDiffBwdWgt_->resetUser(topDiffData, topDims_, memory::format::nc, engine_);
-      VLOG(4) << "use nc diff fmt";
-    } else {
-      VLOG(4) << "use prev diff fmt: " << DNN_FMTS[topDiff_->getUserFmt()];
-    }
-  }
-  for (size_t i = 0; i != inputLayers_.size(); ++i) {
-    // 1. create mkldnn buffer and init user
-    CHECK(weight_->getWGrad()) << "should have weight anyway";
-    wgtDiff_.reset(new MkldnnBuffer());
-    real *wgtDiffData = weight_->getWGrad()->getData();
-    wgtDiff_->initUser(wgtDiffData, wgtDims_, wgtFmt_, engine_);
-    // 2. prepare backward weight and bias
-    std::shared_ptr<fc_fwd::desc> bwdFwdDesc;
-    std::shared_ptr<fc_fwd::primitive_desc> bwdFwdPD;
-    std::shared_ptr<inner_product_backward_weights::desc> bwdWgtDesc;
-    std::shared_ptr<inner_product_backward_weights::primitive_desc> bwdWgtPD;
-    bwdFwdDesc.reset(new fc_fwd::desc(pk,
-      botData_->getIntlMD(),
-      MkldnnBuffer::getMD(wgtDims_),
-      MkldnnBuffer::getMD(topDims_)));
-    bwdFwdPD.reset(new fc_fwd::primitive_desc(
-      *bwdFwdDesc, engine_));
-    if (hasBias_) {
-      bwdWgtDesc.reset(new inner_product_backward_weights::desc(
-        botData_->getIntlMD(),
-        MkldnnBuffer::getMD(wgtDims_),
-        biasData_->getIntlMD(),  // bias do not use any
-        MkldnnBuffer::getMD(topDims_)));
-    } else {
-      bwdWgtDesc.reset(new inner_product_backward_weights::desc(
-        botData_->getIntlMD(),
-        MkldnnBuffer::getMD(wgtDims_),
-        MkldnnBuffer::getMD(topDims_)));
-    }
-    bwdWgtPD.reset(new inner_product_backward_weights::primitive_desc(
-      *bwdWgtDesc, engine_, *bwdFwdPD));
-    CHECK(botData_->getIntlPD() == bwdWgtPD->src_primitive_desc());
-    if (hasBias_) {
-      CHECK(biasData_->getIntlPD() == bwdWgtPD->diff_bias_primitive_desc());
-    }
-    // 3. init conversion
-    if (!testWithPaddleWgt) {
-      wgtDiffData = weight_->getWGrad()->getData();
-      wgtDiff_->resetUser(wgtDiffData, bwdWgtPD->diff_weights_primitive_desc());
-      wgtDiff_->initCvt(bwdWgtPD->diff_weights_primitive_desc(), dnnCvtNoNeed);
-      CHECK_EQ(wgtDiff_->getIntlSize(), wgtData_->getIntlSize())
-        << "can not use mkldnn wgt since memory size does not equal";
-    } else {
-      wgtDiff_->initCvt(
-        bwdWgtPD->diff_weights_primitive_desc(), dnnCvtIntl2User);
-    }
-    if (hasBias_) {
-      if (!hasCvtBiasDiff) {
-        hasCvtBiasDiff = true;
-        CHECK(biasDiff_->getUserPD() == bwdWgtPD->diff_bias_primitive_desc())
-          << "should always be format::x, or changed in new mkldnn version";
-        biasDiff_->initCvt(biasDiff_->getUserPD(), dnnCvtNoNeed);
-      } else {
-        CHECK(biasDiff_->getIntlPD() == bwdWgtPD->diff_bias_primitive_desc())
-          << "all bias formats should equal";
-      }
-    }
-    if (!hasCvtTopDiffBwdWgt) {
-      hasCvtTopDiffBwdWgt = true;
-      topDiffBwdWgt_->initCvt(bwdWgtPD->diff_dst_primitive_desc(),
-        dnnCvtUser2Intl);
-    } else {
-      CHECK(topDiffBwdWgt_->getIntlPD() == bwdWgtPD->diff_dst_primitive_desc())
-        << "all topDiffData formats should equal";
-    }
-    // 4. bias backward can only be executed in weight backward with MKL-DNN
-    if (hasBias_) {
-      bwdWgt_.reset(new inner_product_backward_weights(*bwdWgtPD,
-        *(botData_->getIntlMem()), *(topDiffBwdWgt_->getIntlMem()),
-        *(wgtDiff_->getIntlMem()), *(biasDiff_->getIntlMem())));
-    } else {
-      bwdWgt_.reset(new inner_product_backward_weights(*bwdWgtPD,
-        *(botData_->getIntlMem()), *(topDiffBwdWgt_->getIntlMem()),
-        *(wgtDiff_->getIntlMem()),
-        memory(memory::primitive_desc(memory::desc({}, memory::data_type::f32, biasFmt_), engine_))));
-    }
-    if (wgtDiff_) {
-      VLOG(3) << "weight diff flow --- "
-        << DNN_FMTS[wgtDiff_->getUserFmt()]
-        << " <<< "
-        << DNN_FMTS[wgtDiff_->getIntlFmt()];
-    }
-    // then prepare backward data ----------------------------------------------
-    LayerPtr prevLayer = getPrev(i);
-    if (NULL == prevLayer->getOutputGrad()) {
-      continue;  // data layer has not diff
-    }
-    // 1. create buffer and init user
-    real* botDiffData = getDnnInputGrad(i)->getData();
-    botDiff_.reset(new MkldnnBuffer());
-    botDiff_->initUser(botDiffData, botDims_, botFmt_, engine_);
-    // 2. init backward data primitive desc
-    std::shared_ptr<inner_product_backward_data::desc> bwdDataDesc;
-    std::shared_ptr<inner_product_backward_data::primitive_desc> bwdDataPD;
-    bwdDataDesc.reset(new inner_product_backward_data::desc(
-      MkldnnBuffer::getMD(botDims_),
-      wgtData_->getIntlMD(),
-      MkldnnBuffer::getMD(topDims_)));
-    bwdDataPD.reset(new inner_product_backward_data::primitive_desc(
-      *bwdDataDesc, engine_, *bwdFwdPD));
-// CHECK(botData_->getIntlPD() == bwdDataPD->diff_src_primitive_desc());
-    CHECK(wgtData_->getIntlPD() == bwdDataPD->weights_primitive_desc());
-// CHECK(topDiffBwdWgt_->getIntlPD() == bwdDataPD->diff_dst_primitive_desc());
-    // 3. init conversion
-    if (prevIsDnn_[i]) {
-      botDiff_->resetUser(
-        botDiffData, bwdDataPD->diff_src_primitive_desc());
-      prevLayer->setTopDiffMD(this->getName(), botDiff_->getUserMD());
-      VLOG(4) << "set next diff fmt: " << DNN_FMTS[botDiff_->getUserFmt()];
-    }
-    botDiff_->initCvt(
-      bwdDataPD->diff_src_primitive_desc(), dnnCvtIntl2User);
-    if (!hasCvtTopDiffBwdData) {
-      hasCvtTopDiffBwdData = true;
-      topDiff_->initCvt(bwdDataPD->diff_dst_primitive_desc(), dnnCvtUser2Intl);
-    } else {
-      CHECK(topDiff_->getIntlPD() == bwdDataPD->diff_dst_primitive_desc())
-        << "all topDiffData formats should equal";
-    }
-    // 4. create bwd data handle
-    bwdData_.reset(new inner_product_backward_data(
-      *bwdDataPD, *(topDiff_->getIntlMem()),
-      *(wgtData_->getIntlMem()), *(botDiff_->getIntlMem())));
-  }
+
+  resetDnnBwdHandle(bwdWgtPD, bwdDataPD);
 }
 
 void MkldnnFcLayer::submitDnnFwd() {
-  forwardDnn();
+  forwardDnnVal();
 
-  forwardActivation();
-}
-
-void MkldnnFcLayer::submitBwdData(int idx) {
-  const MatrixPtr& botGrad = getDnnInputGrad(idx);
-  if (botGrad == NULL) {
-    return;
-  }
-  real* botDiffData = botGrad->getData();
-  real* topDiffData = getDnnOutputGrad()->getData();
-  std::vector<primitive> pipeline;
-  if (testWithPaddleWgt) {  // no need cvt wgt without testWithPaddleWgt
-    CHECK(paddleWgt_);
-    real* wgtValData = paddleWgt_->getData();
-    wgtData_->submitCvt(pipeline, wgtValData);
-  }
-  topDiff_->submitCvt(pipeline, topDiffData);
-  pipeline.push_back(*bwdData_);
-  botDiff_->submitCvt(pipeline, botDiffData);
-  stream(stream::kind::eager).submit(pipeline).wait();
-}
-
-void MkldnnFcLayer::submitBwdWgts(int idx) {
-  real* botValData = getInputValue(idx)->getData();
-  real* topDiffData = getDnnOutputGrad()->getData();
-  real* wgtDiffData = weight_->getWGrad()->getData();
-
-  std::vector<primitive> pipeline;
-  topDiffBwdWgt_->submitCvt(pipeline, topDiffData);
-  botData_->submitCvt(pipeline, botValData);
-  pipeline.push_back(*bwdWgt_);
-  wgtDiff_->submitCvt(pipeline, wgtDiffData);
-  // no need to submit cvt bias since biasfmt would not be changed
-  stream(stream::kind::eager).submit(pipeline).wait();
+  forwardDnnAct();
 }
 
 void MkldnnFcLayer::submitDnnBwd(const UpdateCallback &callback) {
-  backwardActivation();
+  BackwardDnnAct();
 
-  for (size_t i = 0; i != inputLayers_.size(); ++i) {
-    submitBwdData(i);
-    if (weight_->getWGrad()) {
-      submitBwdWgts(i);
-      weight_->getParameterPtr()->incUpdate(callback);
-    }
-  }
-  if (biases_ && biases_->getWGrad()) {
-    biases_->getParameterPtr()->incUpdate(callback);
-  }
+  backwardDnnData();
+
+  backwardDnnWgt();
+
+  updateParameter(callback);
 }
 
-
-
-
-
-
-/// protected method:
-
+/*************************** protected methods: *******************************/
 void MkldnnFcLayer::reshapeOutMatSize() {
   // input layer size can not be changed
   CHECK_EQ(inputLayerSize_, inputMatW_) << "should not change input layer size,"
@@ -410,7 +232,7 @@ void MkldnnFcLayer::resetDnnFwdBuffers() {
     biasData_.reset(new MkldnnBuffer());
   }
 }
-void MkldnnFcLayer::resetDnnUserLayout() {
+void MkldnnFcLayer::resetDnnFwdUserLayout() {
   CHECK(getInput(0).value) << "The input of mkldnn fc layer must be matrix";
 
   const MatrixPtr& botVal = getInputValue(0);
@@ -427,28 +249,6 @@ void MkldnnFcLayer::resetDnnUserLayout() {
     real *biasDataData = biases_->getW()->getData();
     biasData_->initUser(biasDataData, biasDims_, biasFmt_, engine_);
   }
-}
-
-void MkldnnFcLayer::usePrevDnnLayout() {
-  if (!prevIsDnn_[0]) {
-    return;
-  }
-
-  const std::shared_ptr<memory::desc>& prvMD = getPrev(0)->getTopDataMD();
-  if (!prvMD) {
-    return;
-  }
-
-  const MatrixPtr& botVal = getInputValue(0);
-  real *botValData = botVal->getData();
-  botData_->resetUser(botValData, *prvMD, engine_);
-  VLOG(4) << "use prev data fmt: " << DNN_FMTS[botData_->getUserFmt()];
-
-// TODO: check change it???
-  botDims_ = botData_->getUserDims();
-  LOG(INFO) << "-----------"<<botDims_[0] << "," << botDims_[1];
-  botFmt_ = (mkldnn::memory::format)botData_->getUserFmt();
-  usePrevLayout_ = true;
 }
 
 void MkldnnFcLayer::resetDnnFwdPD(
@@ -470,7 +270,7 @@ void MkldnnFcLayer::resetDnnFwdPD(
   fwdPD.reset(new fc_fwd::primitive_desc(*fwdDesc, engine_));
 }
 
-void MkldnnFcLayer::resetDnnIntlLayout(
+void MkldnnFcLayer::resetDnnFwdIntlLayout(
   const std::shared_ptr<fc_fwd::primitive_desc>& fwdPD) {
   botData_->initCvt(fwdPD->src_primitive_desc(), dnnCvtUser2Intl);
   topData_->initCvt(fwdPD->dst_primitive_desc(), dnnCvtIntl2User);
@@ -490,19 +290,6 @@ void MkldnnFcLayer::resetDnnIntlLayout(
       << "should always be format::x, or changed in new mkldnn version";
     biasData_->initCvt(biasData_->getUserPD(), dnnCvtNoNeed);
   }
-}
-
-void MkldnnFcLayer::keepDnnLayoutToNext(
-  const std::shared_ptr<fc_fwd::primitive_desc>& fwdPD) {
-  if (!nextIsDnn_) {
-    return;
-  }
-
-  const MatrixPtr& topVal = getOutputValue();
-  real *topValData = topVal->getData();
-  topData_->resetUser(topValData, fwdPD->dst_primitive_desc());
-  setTopDataMD(topData_->getUserMD());
-  VLOG(4) << "set next data fmt: " << DNN_FMTS[topData_->getUserFmt()];
 }
 
 void MkldnnFcLayer::resetDnnFwdHandle(
@@ -543,7 +330,7 @@ void MkldnnFcLayer::getInitialWgtFromPaddle() {
   memcpy(dst, tmp->getIntlData(), tmp->getIntlSize() * sizeof(real));
 }
 
-void MkldnnFcLayer::forwardDnn() {
+void MkldnnFcLayer::forwardDnnVal() {
   real *topValData = getOutputValue()->getData();
   real *botValData = getPrev(0)->getOutputValue()->getData();
   std::vector<primitive> pipeline;
@@ -554,5 +341,286 @@ void MkldnnFcLayer::forwardDnn() {
 
   stream(stream::kind::eager).submit(pipeline).wait();
 }
+
+void MkldnnFcLayer::resetDnnBwdBuffers() {
+  // topdiff buffer in bwdwgt may have differen format with bwddata
+  // so have two different buffer
+  topDiff_.reset(new MkldnnBuffer());
+  topDiffBwdWgt_.reset(new MkldnnBuffer());
+
+  CHECK(weight_->getWGrad()) << "should have weight grad anyway";
+  wgtDiff_.reset(new MkldnnBuffer());
+
+  // always create bias buffer even do not hasbias for empty bias buffer
+  biasDiff_.reset(new MkldnnBuffer());
+
+  if (!hasBotGrad()) {
+    return;
+  }
+
+  botDiff_.reset(new MkldnnBuffer());
+}
+
+void MkldnnFcLayer::resetDnnBwdUserLayout() {
+  const MatrixPtr& topGrad = getDnnOutputGrad();
+  const MatrixPtr& wgtGrad = weight_->getWGrad();
+
+  real *topGradData = topGrad->getData();
+  real *wgtGradData = wgtGrad->getData();
+  topDiff_->initUser(topGradData, topDims_, topFmt_, engine_);
+  topDiffBwdWgt_->initUser(topGradData, topDims_, topFmt_, engine_);
+  wgtDiff_->initUser(wgtGradData, wgtDims_, wgtFmt_, engine_);
+
+  if (hasBias_) {
+    real* biasGradData = biases_->getWGrad()->getData();
+    biasDiff_->initUser(biasGradData, biasDims_, biasFmt_, engine_);
+  } else {
+    biasDiff_->initUser(NULL, biasDims_, biasFmt_, engine_);
+  }
+
+  if (!hasBotGrad()) {
+    return;
+  }
+
+  const MatrixPtr& botGrad = getDnnInputGrad(0);
+  real* botGradData = botGrad->getData();
+  botDiff_->initUser(botGradData, botDims_, botFmt_, engine_);
+}
+
+void MkldnnFcLayer::resetDnnBwdWgtPD(
+  std::shared_ptr<fc_bwdWgt::primitive_desc>& bwdWgtPD) {
+  std::shared_ptr<fc_fwd::primitive_desc> bwdFwdPD;
+  std::shared_ptr<fc_bwdWgt::desc> bwdWgtDesc;
+
+  getBwdFwdPD(bwdFwdPD);
+
+  if (hasBias_) {
+    bwdWgtDesc.reset(new fc_bwdWgt::desc(
+      botData_->getIntlMD(),
+      MkldnnBuffer::getMD(wgtDims_),
+      biasData_->getIntlMD(),
+      MkldnnBuffer::getMD(topDims_)));
+  } else {
+    bwdWgtDesc.reset(new fc_bwdWgt::desc(
+      botData_->getIntlMD(),
+      MkldnnBuffer::getMD(wgtDims_),
+      MkldnnBuffer::getMD(topDims_)));
+  }
+  bwdWgtPD.reset(new fc_bwdWgt::primitive_desc(
+    *bwdWgtDesc, engine_, *bwdFwdPD));
+  CHECK(botData_->getIntlPD() == bwdWgtPD->src_primitive_desc());
+  if (hasBias_) {
+    CHECK(biasData_->getIntlPD() == bwdWgtPD->diff_bias_primitive_desc());
+  }
+}
+
+void MkldnnFcLayer::resetDnnBwdDataPD(
+  std::shared_ptr<fc_bwdData::primitive_desc>& bwdDataPD) {
+  if (!hasBotGrad()) {
+    return;
+  }
+
+  std::shared_ptr<fc_fwd::primitive_desc> bwdFwdPD;
+  std::shared_ptr<inner_product_backward_data::desc> bwdDataDesc;
+
+  getBwdFwdPD(bwdFwdPD);
+
+  bwdDataDesc.reset(new inner_product_backward_data::desc(
+    MkldnnBuffer::getMD(botDims_),
+    wgtData_->getIntlMD(),
+    MkldnnBuffer::getMD(topDims_)));
+  bwdDataPD.reset(new inner_product_backward_data::primitive_desc(
+    *bwdDataDesc, engine_, *bwdFwdPD));
+
+// CHECK(botData_->getIntlPD() == bwdDataPD->diff_src_primitive_desc());
+  CHECK(wgtData_->getIntlPD() == bwdDataPD->weights_primitive_desc());
+// CHECK(topDiffBwdWgt_->getIntlPD() == bwdDataPD->diff_dst_primitive_desc());
+}
+
+void MkldnnFcLayer::getBwdFwdPD(
+  std::shared_ptr<mkldnn::inner_product_forward::primitive_desc>& bwdFwdPD) {
+  prop_kind pk = prop_kind::forward;
+  std::shared_ptr<fc_fwd::desc> bwdFwdDesc;
+  bwdFwdDesc.reset(new fc_fwd::desc(pk,
+      botData_->getIntlMD(),
+      MkldnnBuffer::getMD(wgtDims_),
+      MkldnnBuffer::getMD(topDims_)));
+  bwdFwdPD.reset(new fc_fwd::primitive_desc(*bwdFwdDesc, engine_));
+}
+
+void MkldnnFcLayer::resetDnnBwdIntlLayout(
+  const std::shared_ptr<fc_bwdWgt::primitive_desc>& bwdWgtPD,
+  const std::shared_ptr<fc_bwdData::primitive_desc>& bwdDataPD) {
+
+  const MatrixPtr& wgtGrad = weight_->getWGrad();
+  real *wgtGradData = wgtGrad->getData();
+  wgtDiff_->resetUser(wgtGradData, bwdWgtPD->diff_weights_primitive_desc());
+  wgtDiff_->initCvt(bwdWgtPD->diff_weights_primitive_desc(), dnnCvtNoNeed);
+  CHECK_EQ(wgtDiff_->getIntlSize(), wgtData_->getIntlSize())
+    << "can not use mkldnn wgt since memory size does not equal";
+  CHECK(wgtDiff_->getUserPD() == wgtDiff_->getIntlPD());
+
+  // topdiff for bwdwgt may differ for bwddata
+  topDiffBwdWgt_->initCvt(bwdWgtPD->diff_dst_primitive_desc(), dnnCvtUser2Intl);
+  VLOG(3) << "topdiff for bwdweight flow --- "
+    << DNN_FMTS[topDiffBwdWgt_->getIntlFmt()]
+    << " <<< "
+    << DNN_FMTS[topDiffBwdWgt_->getUserFmt()];
+
+  if (hasBias_) {
+    CHECK(biasDiff_->getUserPD() == bwdWgtPD->diff_bias_primitive_desc())
+      << "should always be format::x, or changed in new mkldnn version";
+  }
+  biasDiff_->initCvt(biasDiff_->getUserPD(), dnnCvtNoNeed);
+
+  if (!hasBotGrad()) {
+    return;
+  }
+
+  CHECK(bwdDataPD) << "should have bwdDataPD";
+  botDiff_->initCvt(bwdDataPD->diff_src_primitive_desc(), dnnCvtIntl2User);
+  topDiff_->initCvt(bwdDataPD->diff_dst_primitive_desc(), dnnCvtUser2Intl);
+}
+
+void MkldnnFcLayer::resetDnnBwdHandle(
+  const std::shared_ptr<fc_bwdWgt::primitive_desc>& bwdWgtPD,
+  const std::shared_ptr<fc_bwdData::primitive_desc>& bwdDataPD) {
+
+  CHECK(bwdWgtPD);
+  // bias buffer will automatic be empty memory if do not have bias
+  bwdWgt_.reset(new inner_product_backward_weights(*bwdWgtPD,
+    *(botData_->getIntlMem()), *(topDiffBwdWgt_->getIntlMem()),
+    *(wgtDiff_->getIntlMem()), *(biasDiff_->getIntlMem())));
+  //memory emptyBias = memory(memory::primitive_desc(memory::desc({}, memory::data_type::f32, biasFmt_), engine_))
+
+  if (!hasBotGrad()) {
+    return;
+  }
+
+  CHECK(bwdDataPD);
+  bwdData_.reset(new inner_product_backward_data(*bwdDataPD, 
+    *(topDiff_->getIntlMem()), *(wgtData_->getIntlMem()),
+    *(botDiff_->getIntlMem())));
+
+}
+
+void MkldnnFcLayer::backwardDnnData() {
+  if (!hasBotGrad()) {
+    return;
+  }
+
+  real* botGradData = getDnnInputGrad(0)->getData();
+  real* topGradData = getDnnOutputGrad()->getData();
+  std::vector<primitive> pipeline;
+  topDiff_->submitCvt(pipeline, topGradData);
+  pipeline.push_back(*bwdData_);
+  botDiff_->submitCvt(pipeline, botGradData);
+  stream(stream::kind::eager).submit(pipeline).wait();
+}
+
+void MkldnnFcLayer::backwardDnnWgt() {
+  real* botValData = getInputValue(0)->getData();
+  real* topGradData = getDnnOutputGrad()->getData();
+
+  std::vector<primitive> pipeline;
+  topDiffBwdWgt_->submitCvt(pipeline, topGradData);
+  botData_->submitCvt(pipeline, botValData);
+  pipeline.push_back(*bwdWgt_);
+  // no need to cvt wgt, user and intl are the same format
+  // wgtDiff_->submitCvt(pipeline, wgtGradData);
+  // no need to submit cvt bias since biasfmt would not be changed
+  stream(stream::kind::eager).submit(pipeline).wait(); 
+}
+
+void MkldnnFcLayer::updateParameter(const UpdateCallback &callback) {
+  if (weight_->getWGrad()) {
+    weight_->getParameterPtr()->incUpdate(callback);
+  }
+  
+  if (hasBias_) {
+    biases_->getParameterPtr()->incUpdate(callback);
+  }
+}
+
+// others
+void MkldnnFcLayer::resetBotValUserWithPrevLayout() {
+  const std::shared_ptr<memory::desc>& prvMD = getPrev(0)->getTopDataMD();
+  if (!prvMD) {
+    LOG(WARNING) << "should have prev dnn layout!!! double check it!";
+    return;
+  }
+
+  const MatrixPtr& botVal = getInputValue(0);
+  real *botValData = botVal->getData();
+  botData_->resetUser(botValData, *prvMD, engine_);
+  VLOG(4) << "use prev data fmt: " << DNN_FMTS[botData_->getUserFmt()];
+
+  // TODO: double check does it right?
+  botDims_ = botData_->getUserDims();
+  LOG(INFO) << "-----------"<<botDims_[0] << "," << botDims_[1];
+  botFmt_ = (mkldnn::memory::format)botData_->getUserFmt();
+}
+
+void MkldnnFcLayer::resetTopDiffUserWithNextLayout() {
+  const std::shared_ptr<memory::desc>& topMD = getTopDiffMD();
+  if (!topMD) {
+    LOG(WARNING) << "should have next dnn layout!!! double check it!";
+    return;
+  }
+
+  const MatrixPtr& topGrad = getDnnOutputGrad();
+  real *topGradData = topGrad->getData();
+  topDiff_->resetUser(topGradData, *topMD, engine_);
+  topDiffBwdWgt_->resetUser(topGradData, *topMD, engine_);
+
+  bool isNCHW = topDiff_->getUserFmt() == memory::format::nchw;
+  if (isNCHW && oh_ == ow_ && oh_ == 1) {
+    // if prv is nchw and h==w==1, use nc instead
+    CHECK_EQ(topFmt_, memory::format::nc);
+    topDiff_->resetUser(topGradData, topDims_, topFmt_, engine_);
+    topDiffBwdWgt_->resetUser(topGradData, topDims_, topFmt_, engine_);
+    VLOG(4) << "use nc diff fmt";
+  } else {
+    VLOG(4) << "use prev diff fmt: " << DNN_FMTS[topDiff_->getUserFmt()];
+  }
+}
+
+void MkldnnFcLayer::resetTopValUserLayout(
+  const std::shared_ptr<fc_fwd::primitive_desc>& fwdPD) {
+  CHECK(fwdPD);
+  const MatrixPtr& topVal = getOutputValue();
+  real *topValData = topVal->getData();
+  topData_->resetUser(topValData, fwdPD->dst_primitive_desc());
+  CHECK(topData_->getUserPD() == topData_->getIntlPD());
+}
+
+void MkldnnFcLayer::resetBotGradUserLayout(
+  const std::shared_ptr<fc_bwdData::primitive_desc>& bwdDataPD) {
+  if (!hasBotGrad()) {
+    return;
+  }
+
+  CHECK(bwdDataPD);
+  const MatrixPtr& botGrad = getDnnInputGrad(0);
+  real* botGradData = botGrad->getData();
+  botDiff_->resetUser(botGradData, bwdDataPD->diff_src_primitive_desc());
+  CHECK(botDiff_->getUserPD() == botDiff_->getIntlPD());
+}
+
+void MkldnnFcLayer::keepLayoutToNextLayert() {
+  setTopDataMD(topData_->getUserMD());
+  VLOG(4) << "set next data fmt: " << DNN_FMTS[topData_->getUserFmt()];
+}
+
+void MkldnnFcLayer::keepLayoutToPrevLayer() {
+  inputLayers_[0]->setTopDiffMD(this->getName(), botDiff_->getUserMD());
+  VLOG(4) << "set prev diff fmt: " << DNN_FMTS[botDiff_->getUserFmt()];
+}
+
+inline bool MkldnnFcLayer::hasBotGrad() {
+  return getDnnInputGrad(0) != nullptr ? true : false;
+}
+
+
 
 }  // namespace paddle

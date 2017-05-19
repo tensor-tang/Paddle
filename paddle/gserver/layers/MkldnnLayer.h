@@ -180,6 +180,16 @@ public:
   // bs and sometimes seqlen
   virtual void reshapeOutputInfo() = 0;
 
+  // the activation will auto call dnn act if have
+  virtual void forwardDnnAct() {
+    forwardActivation();
+  }
+
+  // the activation will auto call dnn act if have
+  virtual void BackwardDnnAct() {
+    backwardActivation();
+  }
+
   // reshape the buffer of output
   virtual void reshapeOutputBuffer() {
     CHECK_EQ(outputMatW_, getSize())

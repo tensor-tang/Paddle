@@ -30,8 +30,6 @@ protected:
 
   bool hasBias_;
 
-  bool usePrevLayout_;
-
   /// weight data and diff buffers
   MkldnnBufferPtr wgtData_;
   MkldnnBufferPtr wgtDiff_;
@@ -61,7 +59,6 @@ public:
       fwd_(nullptr),
       hasSpatial_(false),
       hasBias_(false),
-      usePrevLayout_(false),
       wgtData_(nullptr),
       wgtDiff_(nullptr),
       biasData_(nullptr),
@@ -85,6 +82,9 @@ public:
   void clearAllDnnCvtFlags() {
     MkldnnLayer::clearAllDnnCvtFlags();
     if (topDiffBwdWgt_) topDiffBwdWgt_->clearCvtFlag();
+
+    // user and intl are correspond the same in both bias and wgt
+    // TODO(TJ): so maybe do not need to clear flag
     if (biasData_) biasData_->clearCvtFlag();
     if (wgtData_) wgtData_->clearCvtFlag();
     if (biasDiff_) biasDiff_->clearCvtFlag();
@@ -117,18 +117,14 @@ protected:
 
   void resetDnnFwdBuffers();
 
-  void resetDnnUserLayout();
-
-  void usePrevDnnLayout();
+  void resetDnnFwdUserLayout();
 
   void resetDnnFwdPD(
     std::shared_ptr<mkldnn::inner_product_forward::primitive_desc>& fwdPD);
 
-  void resetDnnIntlLayout(
+  void resetDnnFwdIntlLayout(
     const std::shared_ptr<mkldnn::inner_product_forward::primitive_desc>& fwdPD);
 
-  void keepDnnLayoutToNext(
-    const std::shared_ptr<mkldnn::inner_product_forward::primitive_desc>& fwdPD);
 
   void resetDnnFwdHandle(
     const std::shared_ptr<mkldnn::inner_product_forward::primitive_desc>& fwdPD);
@@ -138,12 +134,53 @@ protected:
   // however when scoring with mkldnn wgt donot need get initial wgt
   void getInitialWgtFromPaddle();
 
-  void forwardDnn();
+  void forwardDnnVal();
 
-  void submitBwdData(int idx);
+  // backward
+  void resetDnnBwdBuffers();
 
-  void submitBwdWgts(int idx);
+  void resetDnnBwdUserLayout();
 
+  void resetDnnBwdWgtPD(
+    std::shared_ptr<mkldnn::inner_product_backward_weights::primitive_desc>& bwdWgtPD);
+
+  void resetDnnBwdDataPD(
+    std::shared_ptr<mkldnn::inner_product_backward_data::primitive_desc>& bwdDataPD);
+
+  void getBwdFwdPD(
+    std::shared_ptr<mkldnn::inner_product_forward::primitive_desc>& bwdFwdPD);
+
+  void resetDnnBwdIntlLayout(
+    const std::shared_ptr<mkldnn::inner_product_backward_weights::primitive_desc>& bwdWgtPD,
+    const std::shared_ptr<mkldnn::inner_product_backward_data::primitive_desc>& bwdDataPD);
+
+  void resetDnnBwdHandle(
+    const std::shared_ptr<mkldnn::inner_product_backward_weights::primitive_desc>& bwdWgtPD,
+    const std::shared_ptr<mkldnn::inner_product_backward_data::primitive_desc>& bwdDataPD);
+
+  void backwardDnnData();
+
+  // dnn wgt includes weight and bias
+  void backwardDnnWgt();
+
+  void updateParameter(const UpdateCallback &callback);
+
+  // other functions
+  void resetBotValUserWithPrevLayout();
+
+  void resetTopDiffUserWithNextLayout();
+
+  void resetTopValUserLayout(
+    const std::shared_ptr<mkldnn::inner_product_forward::primitive_desc>& fwdPD);
+
+  void resetBotGradUserLayout(
+    const std::shared_ptr<mkldnn::inner_product_backward_data::primitive_desc>& bwdDataPD);
+
+  void keepLayoutToNextLayert();
+
+  void keepLayoutToPrevLayer();
+
+  bool hasBotGrad();
 };
 
 }  // namespace paddle
