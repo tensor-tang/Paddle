@@ -53,7 +53,7 @@ void MkldnnAddtoLayer::reshape() {
     oh_[i] = ih_[i];
     ow_[i] = iw_[i];
     oc_ = ic_[i];
-    CHECK(ih_[i] * iw_[i]);
+    CHECK(ih_[i] && iw_[i]);
     CHECK(layerSize == 0 || size_t(oh_[i] * ow_[i] * oc_) == layerSize);
     layerSize = oh_[i] * ow_[i] * oc_;
   }

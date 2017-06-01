@@ -95,7 +95,7 @@ void MkldnnFcLayer::reshape() {
     ic_[i] = inputSizeByBS_[i] / (iw_[i] * ih_[i]);
     oh_[i] = 1;
     ow_[i] = 1;
-    CHECK(ih_[i] * iw_[i]);
+    CHECK(ih_[i] && iw_[i]);
     CHECK(layerSize == 0 || size_t(oh_[i] * ow_[i] * oc_) == layerSize);
     layerSize = oh_[i] * ow_[i] * oc_;
   }
