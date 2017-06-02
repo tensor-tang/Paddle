@@ -106,6 +106,7 @@ TEST(MkldnnLayer, convLayer) {
   testConvLayer({3, 1, 64, 14, 14, 32, 14, 14, 3, 3, 1, 1, 1, 1});
   testConvLayer({2, 1, 64, 14, 14, 32, 7, 7, 1, 1, 0, 0, 2, 2});
   // TODO(TJ): enable and test group != 1
+//  testConvLayer({16, 2, 96, 27, 27, 256, 27, 27, 5, 5, 2, 2, 1, 1});
 //  testConvLayer({1, 2, 4, 32, 32, 4, 32, 32, 3, 3, 1, 1, 1, 1});
 //  testConvLayer({128, 2, 64, 14, 14, 32, 14, 14, 3, 3, 1, 1, 1, 1});
 }

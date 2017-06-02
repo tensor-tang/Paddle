@@ -18,7 +18,7 @@ def initHook(settings, crop_size, num_classes, color, is_train, **kwargs):
     else:
         settings.data_size = settings.crop_size * settings.crop_size
 
-    settings.slots = [dense_vector(settings.data_size), integer_value(1)]
+    settings.slots = [dense_vector(settings.data_size), integer_value(settings.num_classes)]
 
 
 @provider(

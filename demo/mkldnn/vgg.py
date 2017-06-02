@@ -12,7 +12,7 @@ img_size = 256
 crop_size = 224
 data_size = 3 * crop_size * crop_size
 num_classes = 1000
-label_size = 1
+label_size = num_classes
 if not is_predict and data_provider:
     train_list = 'data/train.list' if not is_test else None
     test_list = 'data/test.list'
