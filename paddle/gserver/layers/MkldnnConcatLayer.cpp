@@ -132,11 +132,11 @@ void MkldnnConcatLayer::resetDnnFwd() {
   CHECK(prvMDs.size() == 0 || prvMDs.size() == inputLayers_.size())
     << "intl input size does not match: "
     << prvMDs.size() << " vs " << inputLayers_.size();
-  for (size_t i = 1; i < prvMDs.size(); ++i) {
-    CHECK_EQ(MkldnnBuffer::getMDFmt(*prvMDs[i-1]),
-      MkldnnBuffer::getMDFmt(*prvMDs[i]))
-      << "all input formats should be the same";
-  }
+  //for (size_t i = 1; i < prvMDs.size(); ++i) {
+  //  CHECK_EQ(MkldnnBuffer::getMDFmt(*prvMDs[i-1]),
+  //    MkldnnBuffer::getMDFmt(*prvMDs[i]))
+  //    << "all input formats should be the same";
+  //}
 
   // 3. create fwd PD
   std::shared_ptr<concat::primitive_desc> fwdPD;
