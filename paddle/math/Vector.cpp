@@ -617,7 +617,17 @@ void CpuVectorT<real>::histogram(std::ostream& os, int type) {
 
 template <class T>
 void CpuVectorT<T>::zeroMem() {
+#ifdef PADDLE_USE_MKLDNN
+  // use openmp to zero memory in MKLDNN
+  T* dst = this->getData();
+  size_t size = this->getSize();
+  #pragma omp parallel for
+  for (size_t i = 0; i < size; ++i) {
+    dst[i] = 0;
+  }
+#else
   memset(this->getData(), 0, sizeof(T) * this->getSize());
+#endif
 }
 
 template <class T>

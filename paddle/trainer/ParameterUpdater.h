@@ -143,11 +143,15 @@ protected:
     }
 
     para->setValueUpdated();
-#ifndef PADDLE_USE_MKLDNN
-    // in MKL-DNN do not need to clear grad
-    // since the grad will always be overwritten in every iteration
-    para->getBuf(PARAMETER_GRADIENT)->zeroMem();
+#ifdef PADDLE_USE_MKLDNN
+    // in MKL-DNN the grad will always be overwritten in every iteration
+    // so the best way can just skip clear memory
+    // but last change always skip will impact the layers does not use MKLDNN.
+    // so here do not skip now, just change the zeroMem function(used openmp).
+    // anyway todo: skip it only when this para and next layer(this para will 
+    // always be overwritten by next layer) are MKLDNN type
 #endif
+    para->getBuf(PARAMETER_GRADIENT)->zeroMem();
   }
 
 
