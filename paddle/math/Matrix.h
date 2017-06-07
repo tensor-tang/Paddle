@@ -1015,6 +1015,29 @@ public:
                                 const real ratioW) {
     LOG(FATAL) << "Not implemented";
   }
+#ifdef PADDLE_USE_MKLDNN
+public:
+  /**
+   * use openmp to speedup dotMul
+   * @code
+   * this = b * c
+   * @endcode
+   */
+  void dotMul(Matrix& b, Matrix& c) {
+    CHECK_EQ(height_, b.getHeight());
+    CHECK_EQ(width_, b.getWidth());
+    CHECK_EQ(height_, c.getHeight());
+    CHECK_EQ(width_, c.getWidth());
+    size_t size = height_ * width_;
+    real* dst = this->getData();
+    real* srcb = b.getData();
+    real* srcc = c.getData();
+    #pragma omp parallel for
+    for (size_t i = 0; i < size; ++i) {
+      dst[i] = srcb[i] * srcc[i];
+    }
+  }
+#endif
 };
 
 inline std::ostream& operator<<(std::ostream& os, const Matrix& mat) {
