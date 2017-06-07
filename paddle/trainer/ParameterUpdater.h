@@ -143,11 +143,7 @@ protected:
     }
 
     para->setValueUpdated();
-#ifndef PADDLE_USE_MKLDNN
-    // in MKL-DNN do not need to clear grad
-    // since the grad will always be overwritten in every iteration
     para->getBuf(PARAMETER_GRADIENT)->zeroMem();
-#endif
   }
 
 
