@@ -12,7 +12,7 @@ img_size = 256
 crop_size = 224
 data_size = 3 * crop_size * crop_size
 num_classes = 1000
-layer_size = 1
+label_size = num_classes
 if not is_predict and data_provider:
     train_list = 'data/train.list' if not is_test else None
     test_list = 'data/test.list'
@@ -168,7 +168,7 @@ def inception(name, input, channels, \
     return cat
 
 
-lbl = data_layer(name="label", size=layer_size)
+lbl = data_layer(name="label", size=label_size)
 img = data_layer(name="image", size=data_size)
 
 # stage 1
