@@ -1,7 +1,2 @@
-data
-data/*
-models
-models/*
 logs*
 *.log
-*.pyc
