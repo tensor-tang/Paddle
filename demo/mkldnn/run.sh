@@ -82,12 +82,16 @@ elif [ $topology == "resnet" ]; then
     version=50
 fi
 # default use mkldnn and mkldnn_wgt, and do not use dummy data when training
-if [ $task == "train" ] || [ $task == "time" ]; then
+if [ $task == "train" ] || [ $task == "pretrain" ]; then
     use_dummy=0
     use_mkldnn=1
     use_mkldnn_wgt=1
 fi
-
+if [ $task == "time" ]; then
+    use_dummy=1
+    use_mkldnn=1
+    use_mkldnn_wgt=1
+fi
 # get inputs
 if [ $3 ]; then
     bs=$3
@@ -131,7 +135,7 @@ fi
 
 # prepare log
 # alexnet has not version option
-log_prefix="${log_prefix}/log/"
+log_prefix="${log_prefix}/logs/"
 if [ $topology == "alexnet" ]; then
     models_in=models/${topology}/pass-00001/
     models_out=./models/${topology}
