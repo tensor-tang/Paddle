@@ -2,16 +2,15 @@
 set -e
 
 # settings
-num=$((`nproc`))
-use_num=$(($num>0?$num:1))
-echo "------------$use_num"
+threads_num=$(grep 'processor' /proc/cpuinfo | sort -u | wc -l)
+total_num=$(($threads_num>0?$threads_num:1))
 
 use_dummy=1
 use_mkldnn=0
 use_mkldnn_wgt=0
 version=
 use_gpu=0
-trainer_count=$use_num
+trainer_count=$total_num
 cur_dir=$(cd "`dirname $0`"; pwd -P)
 log_prefix=$cur_dir
 dot_period=1
@@ -45,10 +44,10 @@ function time_topology() {
     topology="./${topology}.sh"
     for bs in ${batch_sizes[@]}; do
         # check trainer_count
-        if [ $use_num -gt $bs ]; then
+        if [ $total_num -gt $bs ]; then
             trainer_count=$bs
         fi
-        echo "use trainer_count=$trainer_count, bs=$bs"
+        echo "use trainer_count=$trainer_count at batchsize=$bs"
         $topology time $bs $use_dummy $use_mkldnn $use_mkldnn_wgt \
 $version $use_gpu $trainer_count $log_prefix $dot_period $log_period $test_period
         sleep 10s

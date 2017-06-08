@@ -1,7 +1,8 @@
 #!/bin/bash
 set -e
 unset OMP_NUM_THREADS MKL_NUM_THREADS
-num=$((`nproc`-2))
+threads_num=$(grep 'processor' /proc/cpuinfo | sort -u | wc -l)
+num=$((threads_num-2))
 use_num=$(($num>0?$num:1))
 export OMP_NUM_THREADS=$use_num
 export MKL_NUM_THREADS=$use_num
