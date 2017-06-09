@@ -7,6 +7,7 @@ is_test = get_config_arg("is_test", bool, False)
 use_dummy = get_config_arg("use_dummy", bool, False)
 data_provider = get_config_arg("data_provider", bool, True)
 layer_num = get_config_arg("layer_num", int, 50)
+feed_data = get_config_arg("feed_data", bool, False)
 ####################Data Configuration ##################
 img_size = 256
 crop_size = 224
@@ -22,6 +23,8 @@ if not is_predict and data_provider:
         'img_size': img_size,
         'crop_size': crop_size,
         'num_classes': num_classes,
+        'batch_size': batch_size,
+        'feed_data': feed_data,
         'use_jpeg': True,
         'color': True
     }

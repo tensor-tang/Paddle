@@ -8,9 +8,12 @@ def initHook(settings, crop_size, num_classes, color, is_train, **kwargs):
     settings.crop_size = crop_size
     settings.color = color
     settings.num_classes = num_classes
+    batch_size = kwargs.get('batch_size', 64)
+    feed_data = kwargs.get('feed_data', False)
 
-    if is_train:
-        settings.dummy_size = 256
+    if is_train: # or time
+        # todo, if feed data, more
+        settings.dummy_size = batch_size if not feed_data else 4*batch_size
     else:
         settings.dummy_size = 2048
     if settings.color:

@@ -16,6 +16,7 @@ log_prefix=$cur_dir
 dot_period=1
 log_period=10
 test_period=100
+feed_data=0
 
 batch_sizes=(32 64 128 256 512 1024)
 
@@ -49,7 +50,7 @@ function time_topology() {
         fi
         echo "use trainer_count=$trainer_count at batchsize=$bs"
         $topology time $bs $use_dummy $use_mkldnn $use_mkldnn_wgt \
-$version $use_gpu $trainer_count $log_prefix $dot_period $log_period $test_period
+$version $use_gpu $trainer_count $log_prefix $dot_period $log_period $test_period $feed_data
         sleep 10s
     done
 }

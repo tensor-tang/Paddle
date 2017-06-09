@@ -4,6 +4,7 @@ from paddle.trainer_config_helpers import *
 batch_size = get_config_arg('batch_size', int, 64)
 is_test = get_config_arg("is_test", bool, False)
 use_dummy = get_config_arg("use_dummy", bool, False)
+feed_data = get_config_arg("feed_data", bool, False)
 ####################Data Configuration ##################
 img_size = 256
 crop_size = 227
@@ -18,6 +19,8 @@ args = {
     'img_size': img_size,
     'crop_size': crop_size,
     'num_classes': num_classes,
+    'batch_size': batch_size,
+    'feed_data': feed_data,
     'use_jpeg': True,
     'color': True
 }

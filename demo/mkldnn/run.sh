@@ -10,7 +10,7 @@ export MKL_NUM_THREADS=$use_num
 function usage() {
     echo "run.sh topology task (batch_size) (use_dummy)\
  (use_mkldnn) (use_mkldnn_wgt) (version/layer_num) (use_gpu) (trainer_count)\
- (log_prefix) (dot_period) (log_period) (test_period)"
+ (log_prefix) (dot_period) (log_period) (test_period) (feed_data)"
     echo "Two required inputs: "
     echo "    topology: alexnet/googlenet/vgg/resnet."
     echo "    task    : train/test/pretrain/time."
@@ -66,6 +66,7 @@ log_prefix="."
 dot_period=1
 log_period=10
 test_period=100
+feed_data=0
 models_in=
 models_out=
 log_dir=
@@ -125,6 +126,9 @@ if [ ${12} ]; then
 fi
 if [ ${13} ]; then
     test_period=${13}
+fi
+if [ ${14} ]; then
+    feed_data=${14}
 fi
 
 # check trainer_count
@@ -226,6 +230,7 @@ elif [ $task == "time" ]; then
         --log_period=$log_period \
         --test_period=$test_period \
         --config_args=$args \
+        --feed_data=$feed_data \
         2>&1 | tee -a $log 2>&1 
 else  # pretrain or test
     paddle train --job=$task \
