@@ -15,7 +15,7 @@ log_period=25
 test_period=150
 feed_data=0
 
-batch_sizes=(32 64 128 256 512 1024)
+batch_sizes=(32 64 128 256 512)
 
 
 function usage() {

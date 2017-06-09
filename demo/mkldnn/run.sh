@@ -6,6 +6,7 @@ num=$((threads_num-2))
 use_num=$(($num>0?$num:1))
 export OMP_NUM_THREADS=$use_num
 export MKL_NUM_THREADS=$use_num
+export OMP_DYNAMIC="FALSE"
 
 function usage() {
     echo "run.sh topology task (batch_size) (use_dummy)\
@@ -196,7 +197,7 @@ if [ $is_test -eq 1 ] || [ $task == "pretrain" ]; then
 fi
 
 if [ $use_mkldnn -eq 0 ]; then
-    unset OMP_NUM_THREADS MKL_NUM_THREADS KMP_AFFINITY
+    unset OMP_NUM_THREADS MKL_NUM_THREADS OMP_DYNAMIC KMP_AFFINITY
 fi
 
 # init args
