@@ -7,6 +7,8 @@ use_num=$(($num>0?$num:1))
 export OMP_NUM_THREADS=$use_num
 export MKL_NUM_THREADS=$use_num
 export OMP_DYNAMIC="FALSE"
+export KMP_AFFINITY="granularity=fine,compact,0,0"
+#export KMP_AFFINITY="verbose,granularity=fine,compact"
 
 function usage() {
     echo "run.sh topology task (batch_size) (use_dummy)\
@@ -22,8 +24,9 @@ function usage() {
  otherwise is the gpu number. Set 1 when use_mkldnn=1"
 }
 
-if [ $# -lt 2 ]; then
-    echo "At least two input!"
+clear
+if [ $# -lt 1 ]; then
+    echo "At least one input!"
     usage
     exit 0
 fi
@@ -39,13 +42,16 @@ fi
 
 ### required inputs ###
 topology=$1
-task=$2
+task="time"
 # check inputs
 if [ $topology != "googlenet" ] && [ $topology != "vgg" ] \
  && [ $topology != "resnet" ] && [ $topology != "alexnet" ]; then
     echo "unknown topology: ${topology}"
     usage
     exit 0
+fi
+if [ $2 ]; then
+    task=$2
 fi
 if [ $task != "train" ] && [ $task != "time" ] \
  && [ $task != "test" ] && [ $task != "pretrain" ]; then
@@ -65,7 +71,7 @@ use_gpu=0
 trainer_count=1
 log_prefix="."
 dot_period=1
-log_period=10
+log_period=25
 test_period=100
 feed_data=0
 models_in=
@@ -150,9 +156,12 @@ else
     models_out=./models/${topology}_${version}
     log_dir=${log_prefix}${topology}_${version}
 fi
+
 if [ ! -d $log_dir ]; then
     mkdir -p $log_dir
 fi
+
+echo "${task} ${topology}_${version}, batch size ${bs}"
 # log name
 log="${log_dir}/log_${task}_${topology}_${version}_bs${bs}"
 if [ $trainer_count -gt 1 ]; then
@@ -165,7 +174,7 @@ else
 fi
 log="${log}.log"
 if [ -f $log ]; then
-    echo "remove old $log"
+    #echo "remove old $log"
     rm -f $log
 fi
 # check data
@@ -221,7 +230,7 @@ if [ $task == "train" ]; then
         --num_passes=2 \
         --save_dir=$models_out \
         --config_args=$args \
-        2>&1 | tee -a $log 2>&1
+        2>&1 | tee -a $log
 elif [ $task == "time" ]; then
     paddle train --job=$task \
         --config=$config \
@@ -232,7 +241,7 @@ elif [ $task == "time" ]; then
         --test_period=$test_period \
         --config_args=$args \
         --feed_data=$feed_data \
-        2>&1 | tee -a $log 2>&1 
+        2>&1 | tee -a $log
 else  # pretrain or test
     paddle train --job=$task \
         --config=$config \
@@ -243,7 +252,7 @@ else  # pretrain or test
         --test_period=$test_period \
         --init_model_path=$models_in \
         --config_args=$args \
-        2>&1 | tee -a $log 2>&1 
+        2>&1 | tee -a $log
 fi
 
 # clean lists

@@ -1,5 +1,8 @@
 #!/usr/bin/env python
 from paddle.trainer_config_helpers import *
+import logging
+logger = logging.getLogger('paddle')
+logger.setLevel(logging.ERROR)
 
 batch_size = get_config_arg('batch_size', int, 64)
 is_test = get_config_arg("is_test", bool, False)
