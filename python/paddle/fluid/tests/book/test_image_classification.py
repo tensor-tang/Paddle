@@ -25,14 +25,15 @@ import os
 import numpy as np
 
 
-def resnet_cifar10(input, depth=32):
+def resnet_cifar10(input, depth=32, use_mkldnn=False):
     def conv_bn_layer(input,
                       ch_out,
                       filter_size,
                       stride,
                       padding,
                       act='relu',
-                      bias_attr=False):
+                      bias_attr=False,
+                      use_mkldnn=False):
         tmp = fluid.layers.conv2d(
             input=input,
             filter_size=filter_size,
@@ -40,41 +41,61 @@ def resnet_cifar10(input, depth=32):
             stride=stride,
             padding=padding,
             act=None,
-            bias_attr=bias_attr)
-        return fluid.layers.batch_norm(input=tmp, act=act)
+            bias_attr=bias_attr,
+            use_mkldnn=use_mkldnn)
+        return fluid.layers.batch_norm(
+            input=tmp, act=act, use_mkldnn=use_mkldnn)
 
-    def shortcut(input, ch_in, ch_out, stride):
+    def shortcut(input, ch_in, ch_out, stride, use_mkldnn):
         if ch_in != ch_out:
-            return conv_bn_layer(input, ch_out, 1, stride, 0, None)
+            return conv_bn_layer(
+                input, ch_out, 1, stride, 0, None, use_mkldnn=use_mkldnn)
         else:
             return input
 
-    def basicblock(input, ch_in, ch_out, stride):
-        tmp = conv_bn_layer(input, ch_out, 3, stride, 1)
-        tmp = conv_bn_layer(tmp, ch_out, 3, 1, 1, act=None, bias_attr=True)
-        short = shortcut(input, ch_in, ch_out, stride)
+    def basicblock(input, ch_in, ch_out, stride, use_mkldnn):
+        tmp = conv_bn_layer(input, ch_out, 3, stride, 1, use_mkldnn=use_mkldnn)
+        tmp = conv_bn_layer(
+            tmp,
+            ch_out,
+            3,
+            1,
+            1,
+            act=None,
+            bias_attr=True,
+            use_mkldnn=use_mkldnn)
+        short = shortcut(input, ch_in, ch_out, stride, use_mkldnn)
         return fluid.layers.elementwise_add(x=tmp, y=short, act='relu')
 
-    def layer_warp(block_func, input, ch_in, ch_out, count, stride):
-        tmp = block_func(input, ch_in, ch_out, stride)
+    def layer_warp(block_func, input, ch_in, ch_out, count, stride, use_mkldnn):
+        tmp = block_func(input, ch_in, ch_out, stride, use_mkldnn)
         for i in range(1, count):
-            tmp = block_func(tmp, ch_out, ch_out, 1)
+            tmp = block_func(tmp, ch_out, ch_out, 1, use_mkldnn)
         return tmp
 
     assert (depth - 2) % 6 == 0
     n = (depth - 2) / 6
     conv1 = conv_bn_layer(
-        input=input, ch_out=16, filter_size=3, stride=1, padding=1)
-    res1 = layer_warp(basicblock, conv1, 16, 16, n, 1)
-    res2 = layer_warp(basicblock, res1, 16, 32, n, 2)
-    res3 = layer_warp(basicblock, res2, 32, 64, n, 2)
+        input=input,
+        ch_out=16,
+        filter_size=3,
+        stride=1,
+        padding=1,
+        use_mkldnn=use_mkldnn)
+    res1 = layer_warp(basicblock, conv1, 16, 16, n, 1, use_mkldnn)
+    res2 = layer_warp(basicblock, res1, 16, 32, n, 2, use_mkldnn)
+    res3 = layer_warp(basicblock, res2, 32, 64, n, 2, use_mkldnn)
     pool = fluid.layers.pool2d(
-        input=res3, pool_size=8, pool_type='avg', pool_stride=1)
+        input=res3,
+        pool_size=8,
+        pool_type='avg',
+        pool_stride=1,
+        use_mkldnn=use_mkldnn)
     return pool
 
 
-def vgg16_bn_drop(input):
-    def conv_block(input, num_filter, groups, dropouts):
+def vgg16_bn_drop(input, use_mkldnn):
+    def conv_block(input, num_filter, groups, dropouts, use_mkldnn):
         return fluid.nets.img_conv_group(
             input=input,
             pool_size=2,
@@ -84,23 +105,30 @@ def vgg16_bn_drop(input):
             conv_act='relu',
             conv_with_batchnorm=True,
             conv_batchnorm_drop_rate=dropouts,
-            pool_type='max')
+            pool_type='max',
+            use_mkldnn=False)
 
-    conv1 = conv_block(input, 64, 2, [0.3, 0])
-    conv2 = conv_block(conv1, 128, 2, [0.4, 0])
-    conv3 = conv_block(conv2, 256, 3, [0.4, 0.4, 0])
-    conv4 = conv_block(conv3, 512, 3, [0.4, 0.4, 0])
-    conv5 = conv_block(conv4, 512, 3, [0.4, 0.4, 0])
+    conv1 = conv_block(input, 64, 2, [0.3, 0], use_mkldnn)
+    conv2 = conv_block(conv1, 128, 2, [0.4, 0], use_mkldnn)
+    conv3 = conv_block(conv2, 256, 3, [0.4, 0.4, 0], use_mkldnn)
+    conv4 = conv_block(conv3, 512, 3, [0.4, 0.4, 0], use_mkldnn)
+    conv5 = conv_block(conv4, 512, 3, [0.4, 0.4, 0], use_mkldnn)
 
     drop = fluid.layers.dropout(x=conv5, dropout_prob=0.5)
-    fc1 = fluid.layers.fc(input=drop, size=4096, act=None)
-    bn = fluid.layers.batch_norm(input=fc1, act='relu')
+    fc1 = fluid.layers.fc(input=drop,
+                          size=4096,
+                          act=None,
+                          use_mkldnn=use_mkldnn)
+    bn = fluid.layers.batch_norm(input=fc1, act='relu', use_mkldnn=use_mkldnn)
     drop2 = fluid.layers.dropout(x=bn, dropout_prob=0.5)
-    fc2 = fluid.layers.fc(input=drop2, size=4096, act=None)
+    fc2 = fluid.layers.fc(input=drop2,
+                          size=4096,
+                          act=None,
+                          use_mkldnn=use_mkldnn)
     return fc2
 
 
-def train(net_type, use_cuda, save_dirname, is_local):
+def train(net_type, use_cuda, use_mkldnn, save_dirname, is_local):
     classdim = 10
     data_shape = [3, 32, 32]
 
@@ -109,14 +137,17 @@ def train(net_type, use_cuda, save_dirname, is_local):
 
     if net_type == "vgg":
         print("train vgg net")
-        net = vgg16_bn_drop(images)
+        net = vgg16_bn_drop(images, use_mkldnn)
     elif net_type == "resnet":
         print("train resnet")
-        net = resnet_cifar10(images, 32)
+        net = resnet_cifar10(images, 32, use_mkldnn)
     else:
         raise ValueError("%s network is not supported" % net_type)
 
-    predict = fluid.layers.fc(input=net, size=classdim, act='softmax')
+    predict = fluid.layers.fc(input=net,
+                              size=classdim,
+                              act='softmax',
+                              use_mkldnn=use_mkldnn)
     cost = fluid.layers.cross_entropy(input=predict, label=label)
     avg_cost = fluid.layers.mean(cost)
     acc = fluid.layers.accuracy(input=predict, label=label)
@@ -200,10 +231,11 @@ def train(net_type, use_cuda, save_dirname, is_local):
             train_loop(t.get_trainer_program())
 
 
-def infer(use_cuda, save_dirname=None):
+def infer(use_cuda, use_mkldnn, save_dirname=None):
     if save_dirname is None:
         return
-
+    # Can not run both at one time
+    assert (use_cuda and use_mkldnn) == False
     place = fluid.CUDAPlace(0) if use_cuda else fluid.CPUPlace()
     exe = fluid.Executor(place)
 
@@ -248,33 +280,38 @@ def infer(use_cuda, save_dirname=None):
                                       inference_transpiler_program)
 
 
-def main(net_type, use_cuda, is_local=True):
+def main(net_type, use_cuda, use_mkldnn=False, is_local=True):
     if use_cuda and not fluid.core.is_compiled_with_cuda():
         return
 
     # Directory for saving the trained model
     save_dirname = "image_classification_" + net_type + ".inference.model"
 
-    train(net_type, use_cuda, save_dirname, is_local)
-    infer(use_cuda, save_dirname)
+    train(net_type, use_cuda, use_mkldnn, save_dirname, is_local)
+    infer(use_cuda, use_mkldnn, save_dirname)
 
 
 class TestImageClassification(unittest.TestCase):
-    def test_vgg_cuda(self):
-        with self.scope_prog_guard():
-            main('vgg', use_cuda=True)
+    #    def test_vgg_cuda(self):
+    #        with self.scope_prog_guard():
+    #            main('vgg', use_cuda=True)
+    #
+    #    def test_resnet_cuda(self):
+    #        with self.scope_prog_guard():
+    #            main('resnet', use_cuda=True)
+    #
+    #    def test_vgg_cpu(self):
+    #        with self.scope_prog_guard():
+    #            main('vgg', use_cuda=False)
+    #
+    #    def test_resnet_cpu(self):
+    #        with self.scope_prog_guard():
+    #            main('resnet', use_cuda=False)
 
-    def test_resnet_cuda(self):
+    def test_resnet_mkldnn(self):
         with self.scope_prog_guard():
-            main('resnet', use_cuda=True)
-
-    def test_vgg_cpu(self):
-        with self.scope_prog_guard():
-            main('vgg', use_cuda=False)
-
-    def test_resnet_cpu(self):
-        with self.scope_prog_guard():
-            main('resnet', use_cuda=False)
+            main('resnet', use_cuda=False, use_mkldnn=True)
+            print(fluid.default_main_program())
 
     @contextlib.contextmanager
     def scope_prog_guard(self):
