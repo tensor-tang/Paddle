@@ -57,3 +57,7 @@ inference_download_test_demo(se_resnext50_inference_demo
 inference_download_test_demo(ocr_inference_demo
     SRCS vis_demo.cc
     URL ${URL_ROOT}ocr.tar.gz)
+
+cc_test(test_inference_ocr
+    SRCS test_inference_ocr.cc
+    DEPS paddle_inference_api paddle_fluid)
