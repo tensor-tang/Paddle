@@ -19,6 +19,11 @@ namespace paddle {
 namespace framework {
 
 TEST(EigenDim, From) {
+#ifdef EIGEN_USE_MKL_ALL
+  printf("--------------use mkl\n");
+#else
+  printf("--------------no use mkl\n");
+#endif
   EigenDim<3>::Type ed = EigenDim<3>::From(make_ddim({1, 2, 3}));
   ASSERT_EQ(1, ed[0]);
   ASSERT_EQ(2, ed[1]);
