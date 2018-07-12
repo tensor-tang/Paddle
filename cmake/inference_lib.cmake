@@ -59,6 +59,8 @@ copy(glog_lib
   DSTS ${dst_dir} ${dst_dir}/lib
   DEPS glog
 )
+set(static_lib "${FLUID_INSTALL_DIR}/static_lib")
+copy(static_glog_lib SRCS ${GLOG_LIBRARIES} DSTS ${static_lib} DEPS glog)
 
 set(dst_dir "${FLUID_INSTALL_DIR}/third_party/boost/")
 copy(boost_lib
@@ -74,6 +76,7 @@ if(NOT PROTOBUF_FOUND)
       DSTS ${dst_dir} ${dst_dir}/lib
       DEPS extern_protobuf
     )
+  copy(static_protobuf SRCS  ${PROTOBUF_LIBRARY} DSTS ${static_lib} DEPS extern_protobuf)
 endif()
 
 if(NOT CBLAS_FOUND)
@@ -83,6 +86,7 @@ if(NOT CBLAS_FOUND)
       DSTS ${dst_dir} ${dst_dir}
       DEPS extern_openblas
     )
+  copy(static_openblas SRCS   ${PROTOBUF_LIBRARY} DSTS ${static_lib} DEPS extern_openblas)
 elseif (WITH_MKLML)
     set(dst_dir "${FLUID_INSTALL_DIR}/third_party/install/mklml")
     copy(mklml_lib
@@ -90,6 +94,7 @@ elseif (WITH_MKLML)
       DSTS ${dst_dir}/lib ${dst_dir}/lib ${dst_dir}
       DEPS mklml
     )
+  copy(static_mklml SRCS ${MKLML_LIB_DIR} DSTS ${static_lib} DEPS mklml)
 endif()
 
 if(WITH_MKLDNN)
@@ -119,6 +124,9 @@ if(NOT MOBILE_INFERENCE AND NOT RPI)
     SRCS ${ZLIB_INCLUDE_DIR} ${ZLIB_LIBRARIES}
     DSTS ${dst_dir} ${dst_dir}/lib
     DEPS zlib)
+  copy(static_snappy SRCS ${SNAPPY_LIBRARIES} DSTS ${static_lib} DEPS snappy)
+  copy(static_snappystream SRCS ${SNAPPYSTREAM_LIBRARIES}  DSTS ${static_lib} DEPS snappystream)
+  copy(static_zlib SRCS ${ZLIB_LIBRARIES}  DSTS ${static_lib} DEPS zlib)
 endif()
 
 # paddle fluid module
@@ -155,6 +163,10 @@ if(WITH_CONTRIB)
         ${PADDLE_BINARY_DIR}/paddle/contrib/inference/libpaddle_inference_api*
         DSTS ${contrib_dst_dir} ${contrib_dst_dir})
   list(APPEND inference_deps contrib_inference_lib)
+
+  copy(static_contrib SRCS
+        ${PADDLE_BINARY_DIR}/paddle/contrib/inference/libpaddle_inference_api*
+     DSTS ${static_lib} DEPS ${inference_deps})
 endif()
 
 set(module "inference")
@@ -162,6 +174,7 @@ copy(inference_lib DEPS ${inference_deps}
   SRCS ${src_dir}/${module}/*.h ${PADDLE_BINARY_DIR}/paddle/fluid/inference/libpaddle_fluid.*
   DSTS ${dst_dir}/${module} ${dst_dir}/${module}
 )
+copy(static_infer SRCS ${PADDLE_BINARY_DIR}/paddle/fluid/inference/libpaddle_fluid.* DSTS ${static_lib} DEPS ${inference_deps})
 
 set(module "platform")
 copy(platform_lib DEPS profiler_py_proto
@@ -186,7 +199,14 @@ copy(cmake_cache
   SRCS ${CMAKE_CURRENT_BINARY_DIR}/CMakeCache.txt
   DSTS ${FLUID_INSTALL_DIR})
 
+add_custom_target(gen_static_lib DEPENDS ${inference_lib_dist_dep})
+add_custom_command(TARGET gen_static_lib PRE_BUILD
+        COMMAND cd "${static_lib}"
+        COMMAND ar x *.a
+        COMMAND ar rcs inference_static_lib.a *.o)
+list(APPEND inference_lib_dist_dep gen_static_lib)
 add_custom_target(inference_lib_dist DEPENDS ${inference_lib_dist_dep}) 
+# TODO: hidden symbol of this lib
 
 # paddle fluid version
 execute_process(
