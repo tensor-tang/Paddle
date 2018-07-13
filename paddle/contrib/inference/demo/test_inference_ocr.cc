@@ -47,16 +47,17 @@ TEST(inference, ocr) {
   config.prog_file = FLAGS_dirname + "/model";
   config.use_gpu = false;
   config.device = 0;
-  using namespace paddle;
+
   LOG(INFO) << "init predictor";
   auto predictor =
       CreatePaddlePredictor<NativeConfig, PaddleEngineKind::kNative>(config);
 
-  PaddleTensor input{
-      .name = "xx",
-      .shape = {FLAGS_batchsize, 1, 48, 512},
-      .data = PaddleBuf(sizeof(float) * FLAGS_batchsize * 48 * 512),
-      .dtype = PaddleDType::FLOAT32};
+  float input_len = sizeof(float) * FLAGS_batchsize * 48 * 512;
+  float* input_data = (float*)malloc(input_len);
+  PaddleTensor input{.name = "xx",
+                     .shape = {FLAGS_batchsize, 1, 48, 512},
+                     .data = PaddleBuf(input_data, input_len),
+                     .dtype = PaddleDType::FLOAT32};
   RandomData<float>(static_cast<float*>(input.data.data()),
                     FLAGS_batchsize * 48 * 512,
                     0.f,
@@ -65,4 +66,6 @@ TEST(inference, ocr) {
   LOG(INFO) << "run executor";
   std::vector<PaddleTensor> output;
   predictor->Run({input}, &output);
+
+  free(input_data);
 }
