@@ -26,14 +26,9 @@ int main(int argc, char** argv) {
   for (int i = 0; i < argc; ++i) {
     new_argv.push_back(argv[i]);
   }
-#ifdef PADDLE_WITH_CUDA
   new_argv.push_back(
-      strdup("--tryfromenv=fraction_of_gpu_memory_to_use,use_pinned_memory"));
-#else
-  new_argv.push_back(strdup(
-      "--tryfromenv=use_pinned_memory,use_mkldnn,initial_cpu_memory_in_mb"));
+      strdup("--tryfromenv=use_mkldnn,initial_cpu_memory_in_mb"));
   new_argv.push_back(strdup("--undefok=use_mkldnn,initial_cpu_memory_in_mb"));
-#endif
   int new_argc = static_cast<int>(new_argv.size());
   char** new_argv_address = new_argv.data();
   google::ParseCommandLineFlags(&new_argc, &new_argv_address, false);

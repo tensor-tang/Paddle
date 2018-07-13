@@ -60,4 +60,4 @@ inference_download_test_demo(ocr_inference_demo
 
 cc_test(test_inference_ocr
     SRCS test_inference_ocr.cc
-    DEPS paddle_inference_api paddle_fluid)
+    DEPS paddle_inference_api_shared paddle_fluid_shared)
