@@ -39,6 +39,8 @@ inference_test(recommender_system)
 #inference_test(understand_sentiment ARGS conv)
 inference_test(word2vec)
 
+inference_test(ocr)
+
 # This is an unly work around to make this test run
 # TODO(TJ): clean me up
 cc_test(test_inference_nlp
