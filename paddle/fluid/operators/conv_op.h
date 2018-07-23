@@ -198,8 +198,7 @@ class GemmConvKernel : public framework::OpKernel<T> {
         int transA = CblasPacked;
         int transB = CblasNoTrans;
 
-        blas.GEMM_ALLOC(CblasAMatrix, M, N, K);
-        T* packed_data = NULL;
+        T* packed_data = blas.GEMM_ALLOC(CblasAMatrix, M, N, K);
         blas.GEMM_PACK(CblasAMatrix, CblasNoTrans, M, N, K, T(1.0),
                        filter_slice.data<T>(), K, packed_data);
         // gemm

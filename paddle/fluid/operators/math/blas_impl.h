@@ -31,8 +31,8 @@ struct CBlas<float> {
   }
 
   template <typename... ARGS>
-  static void GEMM_ALLOC(ARGS... args) {
-    platform::dynload::cblas_sgemm_alloc(args...);
+  static float *GEMM_ALLOC(ARGS... args) {
+    return platform::dynload::cblas_sgemm_alloc(args...);
   }
 
   template <typename... ARGS>
@@ -84,8 +84,8 @@ struct CBlas<double> {
   }
 
   template <typename... ARGS>
-  static void GEMM_ALLOC(ARGS... args) {
-    platform::dynload::cblas_dgemm_alloc(args...);
+  static double *GEMM_ALLOC(ARGS... args) {
+    return platform::dynload::cblas_dgemm_alloc(args...);
   }
 
   template <typename... ARGS>
@@ -189,10 +189,10 @@ struct CBlas<platform::float16> {
 
 template <>
 template <typename T>
-void Blas<platform::CPUDeviceContext>::GEMM_ALLOC(const CBLAS_IDENTIFIER id,
-                                                  const int M, const int N,
-                                                  const int K) const {
-  CBlas<T>::GEMM_ALLOC(id, M, N, K);
+T *Blas<platform::CPUDeviceContext>::GEMM_ALLOC(const CBLAS_IDENTIFIER id,
+                                                const int M, const int N,
+                                                const int K) const {
+  return CBlas<T>::GEMM_ALLOC(id, M, N, K);
 }
 
 template <>

@@ -87,8 +87,8 @@ class Blas {
             int lda, const T* B, int ldb, T beta, T* C, int ldc) const;
 
   template <typename T>
-  void GEMM_ALLOC(const CBLAS_IDENTIFIER id, const int M, const int N,
-                  const int K) const;
+  T* GEMM_ALLOC(const CBLAS_IDENTIFIER id, const int M, const int N,
+                const int K) const;
 
   template <typename T>
   void GEMM_PACK(const CBLAS_IDENTIFIER id, const CBLAS_TRANSPOSE trans, int M,
@@ -160,8 +160,8 @@ class BlasT : private Blas<DeviceContext> {
   }
 
   template <typename... ARGS>
-  void GEMM_ALLOC(ARGS... args) const {
-    Base()->template GEMM_ALLOC<T>(args...);
+  T* GEMM_ALLOC(ARGS... args) const {
+    return Base()->template GEMM_ALLOC<T>(args...);
   }
 
   template <typename... ARGS>
