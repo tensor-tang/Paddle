@@ -187,8 +187,32 @@ class GemmConvKernel : public framework::OpKernel<T> {
         // gemm
         Tensor out_slice = out_batch.Slice(g * out_step, (g + 1) * out_step);
         Tensor filter_slice = filter.Slice(g * out_step, (g + 1) * out_step);
-        blas.MatMul(filter_slice, false, col_matrix, false, T(1.0), &out_slice,
-                    T(0.0));
+        auto dim_a = filter_slice.dims();
+        auto dim_b = col_matrix.dims();
+        auto dim_out = out_slice.dims();
+
+        int M = dim_out[0];
+        int N = dim_out[1];
+        int K = dim_a[1];
+
+        int transA = CblasPacked;
+        int transB = CblasNoTrans;
+
+        blas.GEMM_ALLOC(CblasAMatrix, M, N, K);
+        T* packed_data = NULL;
+        blas.GEMM_PACK(CblasAMatrix, CblasNoTrans, M, N, K, T(1.0),
+                       filter_slice.data<T>(), K, packed_data);
+        // gemm
+        blas.GEMM_COMPUTE(transA, transB, M, N, K, filter_slice.data<T>(), K,
+                          col_matrix.data<T>(), N, T(0.0), out_slice.data<T>(),
+                          N);
+        blas.GEMM_FREE(packed_data);
+        //        blas.GEMM(transA, transB, M, N, K, T(1.0),
+        //        filter_slice.data<T>(), col_matrix.data<T>(),T(0.0),
+        //        out_slice.data<T>());
+
+        // blas.MatMul(filter_slice, false, col_matrix, false, T(1.0),
+        // &out_slice,T(0.0));
       }
     }
   }
