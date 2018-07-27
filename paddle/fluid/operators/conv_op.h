@@ -27,7 +27,7 @@ static inline double GetCurrentMs() {
   gettimeofday(&time, NULL);
   return 1e+3 * time.tv_sec + 1e-3 * time.tv_usec;
 }
-static double sa = 0.0;
+// static double sa = 0.0;
 namespace paddle {
 namespace operators {
 
@@ -181,13 +181,13 @@ class GemmConvKernel : public framework::OpKernel<T> {
           col_matrix.Resize(col_matrix_shape);
         } else if (data_dim == 2U) {
           // im2col
-          auto tt1 = GetCurrentMs();
+          // auto tt1 = GetCurrentMs();
           im2col(dev_ctx, in_slice, dilations, strides,
                  std::vector<int>{paddings[0], paddings[1], paddings[0],
                                   paddings[1]},
                  &col);
-          auto tt2 = GetCurrentMs();
-          LOG(INFO) << "im2col  time:" << tt2 - tt1;
+          // auto tt2 = GetCurrentMs();
+          // LOG(INFO) << "im2col  time:" << tt2 - tt1;
         } else if (data_dim == 3U) {
           // vol2col
           vol2col(dev_ctx, in_slice, dilations, strides, paddings, &col);
@@ -206,23 +206,23 @@ class GemmConvKernel : public framework::OpKernel<T> {
 
         // int transA = CblasPacked;
         int transB = CblasNoTrans;
-        auto t1 = GetCurrentMs();
+        // auto t1 = GetCurrentMs();
         T* packed_data = blas.GEMM_ALLOC(CblasAMatrix, M, N, K);
         blas.GEMM_PACK(CblasAMatrix, CblasNoTrans, M, N, K, T(1.0),
                        filter_slice.data<T>(), K, packed_data);
         // gemm
-        auto t2 = GetCurrentMs();
+        // auto t2 = GetCurrentMs();
         blas.GEMM_COMPUTE(CblasPacked, transB, M, N, K, packed_data, K,
                           col_matrix.data<T>(), N, T(0.0), out_slice.data<T>(),
                           N);
-        auto t3 = GetCurrentMs();
+        // auto t3 = GetCurrentMs();
         blas.GEMM_FREE(packed_data);
         //        blas.GEMM(transA, transB, M, N, K, T(1.0),
-        auto t4 = GetCurrentMs();
-        auto pack = ((t2 - t1) + (t4 - t3));
-        sa += pack;
-        LOG(INFO) << "gemm compute:" << t3 - t2 << ",saving time:" << pack
-                  << ",sa:" << sa;
+        // auto t4 = GetCurrentMs();
+        // auto pack = ((t2 - t1) + (t4 - t3));
+        // sa += pack;
+        // LOG(INFO) << "gemm compute:" << t3 - t2 << ",saving time:" << pack
+        //          << ",sa:" << sa;
         //        filter_slice.data<T>(), col_matrix.data<T>(),T(0.0),
         //        out_slice.data<T>());
 
