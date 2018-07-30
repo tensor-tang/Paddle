@@ -209,40 +209,68 @@ inline void im2col_sh1sw1dh1dw1ph1pw1(const framework::Tensor& im,
     dst_data_ic = dst_data_ic + col_block_ic;
   }
 
-  // TODO(TJ): use array like: size_t copy_size[kw]={sizeof(T) *
-  // (output_width-1)}
-  // length of copy_size is equal kw.
-  for (int oh = 0; oh < output_height; ++oh) {
+  // fill core
+  size_t copy_size_plw = sizeof(T) * (output_width - plw);
+  size_t copy_size_prw = sizeof(T) * (output_width - prw);
+  size_t copy_size_core = sizeof(T) * output_width;
+
+  // oh==0
+  const T* im_data_start = im_data;
+  for (int ic = 0; ic < im_channels; ++ic) {
+    const T* src_data = im_data_start + ic * im_size;
+    T* dst_data =
+        col_data + ic * col_block_ic + filter_width * col_matrix_width;
+    for (int kh = 1; kh < filter_height; ++kh) {
+      std::memcpy(dst_data + plw, src_data, copy_size_plw);
+      dst_data = dst_data + col_matrix_width;
+      for (int kw = plw; kw < filter_width - prw; ++kw) {
+        std::memcpy(dst_data, src_data + kw - plw, copy_size_core);
+        dst_data = dst_data + col_matrix_width;
+      }
+      std::memcpy(dst_data, src_data + filter_width - prw - plw, copy_size_prw);
+      dst_data = dst_data + col_matrix_width;
+      src_data = src_data + im_width;
+    }
+  }
+
+  // oh = 1 ~ (output_height-2)
+  for (int oh = 1; oh < output_height - 1; ++oh) {
     const T* im_data_start = im_data + (oh - plh > 0 ? oh - plh : 0) * im_width;
-    T* dst_data = col_data + oh * output_width;
+    // T* dst_data = col_data + oh * output_width;
     for (int ic = 0; ic < im_channels; ++ic) {
       const T* src_data = im_data_start + ic * im_size;
+      T* dst_data = col_data + ic * col_block_ic + oh * output_width;
       for (int kh = 0; kh < filter_height; ++kh) {
-        if ((oh < plh && kh < plh) || (oh > (output_height - prh - 1) &&
-                                       kh > (filter_height - prh - 1))) {
-          dst_data = dst_data + filter_width * col_matrix_width;
-          continue;
-        }
-        // TODO(TJ): reuse plw-kw outside this for
-        // try to unify
-        for (int kw = 0; kw < plw; ++kw) {
-          std::memcpy(dst_data + (plw - kw), src_data,
-                      sizeof(T) * (output_width - (plw - kw)));
-          dst_data = dst_data + col_matrix_width;
-        }
+        std::memcpy(dst_data + plw, src_data, copy_size_plw);
+        dst_data = dst_data + col_matrix_width;
         for (int kw = plw; kw < filter_width - prw; ++kw) {
-          std::memcpy(dst_data, src_data + (kw - plw),
-                      sizeof(T) * output_width);
+          std::memcpy(dst_data, src_data + kw - plw, copy_size_core);
           dst_data = dst_data + col_matrix_width;
         }
-        int i = 1;
-        for (int kw = filter_width - prw; kw < filter_width; ++kw, ++i) {
-          std::memcpy(dst_data, src_data + (kw - plw),
-                      sizeof(T) * (output_width - i));
-          dst_data = dst_data + col_matrix_width;
-        }
+        std::memcpy(dst_data, src_data + filter_width - prw - plw,
+                    copy_size_prw);
+        dst_data = dst_data + col_matrix_width;
         src_data = src_data + im_width;
       }
+    }
+  }
+
+  // oh==output_height-1
+  im_data_start = im_data + (output_height - 1 - plh) * im_width;
+  for (int ic = 0; ic < im_channels; ++ic) {
+    const T* src_data = im_data_start + ic * im_size;
+    T* dst_data =
+        col_data + ic * col_block_ic + (output_height - 1) * output_width;
+    for (int kh = 0; kh < filter_height - 1; ++kh) {
+      std::memcpy(dst_data + plw, src_data, copy_size_plw);
+      dst_data = dst_data + col_matrix_width;
+      for (int kw = plw; kw < filter_width - prw; ++kw) {
+        std::memcpy(dst_data, src_data + kw - plw, copy_size_core);
+        dst_data = dst_data + col_matrix_width;
+      }
+      std::memcpy(dst_data, src_data + filter_width - prw - plw, copy_size_prw);
+      dst_data = dst_data + col_matrix_width;
+      src_data = src_data + im_width;
     }
   }
 }
