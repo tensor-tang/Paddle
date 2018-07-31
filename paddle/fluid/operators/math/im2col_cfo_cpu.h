@@ -213,65 +213,72 @@ inline void im2col_sh1sw1dh1dw1ph1pw1(const framework::Tensor& im,
   size_t copy_size_plw = sizeof(T) * (output_width - plw);
   size_t copy_size_prw = sizeof(T) * (output_width - prw);
   size_t copy_size_core = sizeof(T) * output_width;
-
-  // oh==0
-  const T* im_data_start = im_data;
+  const int filter_width_plw_prw = filter_width - plw - prw;
+  // oh == 0
+  const T* im_data_ic = im_data;
+  dst_data_ic = col_data + filter_width * col_matrix_width;
   for (int ic = 0; ic < im_channels; ++ic) {
-    const T* src_data = im_data_start + ic * im_size;
-    T* dst_data =
-        col_data + ic * col_block_ic + filter_width * col_matrix_width;
+    const T* src_data = im_data_ic;
+    T* dst_data = dst_data_ic;
     for (int kh = 1; kh < filter_height; ++kh) {
       std::memcpy(dst_data + plw, src_data, copy_size_plw);
       dst_data = dst_data + col_matrix_width;
-      for (int kw = plw; kw < filter_width - prw; ++kw) {
-        std::memcpy(dst_data, src_data + kw - plw, copy_size_core);
+      for (int kw_plw = 0; kw_plw < filter_width_plw_prw; ++kw_plw) {
+        std::memcpy(dst_data, src_data + kw_plw, copy_size_core);
         dst_data = dst_data + col_matrix_width;
       }
-      std::memcpy(dst_data, src_data + filter_width - prw - plw, copy_size_prw);
+      std::memcpy(dst_data, src_data + filter_width_plw_prw, copy_size_prw);
       dst_data = dst_data + col_matrix_width;
       src_data = src_data + im_width;
     }
+    im_data_ic = im_data_ic + im_size;
+    dst_data_ic = dst_data_ic + col_block_ic;
   }
 
   // oh = 1 ~ (output_height-2)
-  for (int oh = 1; oh < output_height - 1; ++oh) {
-    const T* im_data_start = im_data + (oh - plh > 0 ? oh - plh : 0) * im_width;
-    // T* dst_data = col_data + oh * output_width;
+  const T* im_data_oh = im_data;
+  T* dst_data_oh = col_data + output_width;
+  for (int oh = plw; oh < output_height - prw; ++oh) {
+    const T* im_data_ic = im_data_oh;
+    T* dst_data = dst_data_oh;
     for (int ic = 0; ic < im_channels; ++ic) {
-      const T* src_data = im_data_start + ic * im_size;
-      T* dst_data = col_data + ic * col_block_ic + oh * output_width;
+      const T* src_data = im_data_ic;
       for (int kh = 0; kh < filter_height; ++kh) {
         std::memcpy(dst_data + plw, src_data, copy_size_plw);
         dst_data = dst_data + col_matrix_width;
-        for (int kw = plw; kw < filter_width - prw; ++kw) {
-          std::memcpy(dst_data, src_data + kw - plw, copy_size_core);
+        for (int kw_plw = 0; kw_plw < filter_width_plw_prw; ++kw_plw) {
+          std::memcpy(dst_data, src_data + kw_plw, copy_size_core);
           dst_data = dst_data + col_matrix_width;
         }
-        std::memcpy(dst_data, src_data + filter_width - prw - plw,
-                    copy_size_prw);
+        std::memcpy(dst_data, src_data + filter_width_plw_prw, copy_size_prw);
         dst_data = dst_data + col_matrix_width;
         src_data = src_data + im_width;
       }
+      im_data_ic = im_data_ic + im_size;
     }
+    im_data_oh = im_data_oh + im_width;
+    dst_data_oh = dst_data_oh + output_width;
   }
 
   // oh==output_height-1
-  im_data_start = im_data + (output_height - 1 - plh) * im_width;
+  im_data_ic = im_data + (output_height - 1 - plh) * im_width;
+  dst_data_ic = col_data + (output_height - 1) * output_width;
   for (int ic = 0; ic < im_channels; ++ic) {
-    const T* src_data = im_data_start + ic * im_size;
-    T* dst_data =
-        col_data + ic * col_block_ic + (output_height - 1) * output_width;
+    const T* src_data = im_data_ic;
+    T* dst_data = dst_data_ic;
     for (int kh = 0; kh < filter_height - 1; ++kh) {
       std::memcpy(dst_data + plw, src_data, copy_size_plw);
       dst_data = dst_data + col_matrix_width;
-      for (int kw = plw; kw < filter_width - prw; ++kw) {
-        std::memcpy(dst_data, src_data + kw - plw, copy_size_core);
+      for (int kw_plw = 0; kw_plw < filter_width_plw_prw; ++kw_plw) {
+        std::memcpy(dst_data, src_data + kw_plw, copy_size_core);
         dst_data = dst_data + col_matrix_width;
       }
-      std::memcpy(dst_data, src_data + filter_width - prw - plw, copy_size_prw);
+      std::memcpy(dst_data, src_data + filter_width_plw_prw, copy_size_prw);
       dst_data = dst_data + col_matrix_width;
       src_data = src_data + im_width;
     }
+    im_data_ic = im_data_ic + im_size;
+    dst_data_ic = dst_data_ic + col_block_ic;
   }
 }
 
