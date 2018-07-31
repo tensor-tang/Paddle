@@ -236,28 +236,34 @@ inline void im2col_sh1sw1dh1dw1ph1pw1(const framework::Tensor& im,
   }
 
   // oh = 1 ~ (output_height-2)
-  const T* im_data_oh = im_data;
-  T* dst_data_oh = col_data + output_width;
-  for (int oh = plw; oh < output_height - prw; ++oh) {
-    const T* im_data_ic = im_data_oh;
-    T* dst_data = dst_data_oh;
-    for (int ic = 0; ic < im_channels; ++ic) {
-      const T* src_data = im_data_ic;
-      for (int kh = 0; kh < filter_height; ++kh) {
-        std::memcpy(dst_data + plw, src_data, copy_size_plw);
-        dst_data = dst_data + col_matrix_width;
-        for (int kw_plw = 0; kw_plw < filter_width_plw_prw; ++kw_plw) {
-          std::memcpy(dst_data, src_data + kw_plw, copy_size_core);
-          dst_data = dst_data + col_matrix_width;
-        }
-        std::memcpy(dst_data, src_data + filter_width_plw_prw, copy_size_prw);
-        dst_data = dst_data + col_matrix_width;
+  const int dst_offset_end = output_width * (output_height - prw);
+  for (int ic = 0; ic < im_channels; ++ic) {
+    for (int kh = 0; kh < filter_height; ++kh) {
+      T* dst_data = col_data + ic * col_block_ic + kh * col_block_fh;
+      const T* src_data_kh = im_data + ic * im_size + kh * im_width;
+      const T* src_data = src_data_kh;
+      for (int dst_offset = output_width + plw; dst_offset < dst_offset_end;
+           dst_offset += output_width) {
+        std::memcpy(dst_data + dst_offset, src_data, copy_size_plw);
         src_data = src_data + im_width;
       }
-      im_data_ic = im_data_ic + im_size;
+      dst_data = dst_data + col_matrix_width;
+      for (int kw_plw = 0; kw_plw < filter_width_plw_prw; ++kw_plw) {
+        src_data = src_data_kh + kw_plw;
+        for (int dst_offset = output_width; dst_offset < dst_offset_end;
+             dst_offset += output_width) {
+          std::memcpy(dst_data + dst_offset, src_data, copy_size_core);
+          src_data = src_data + im_width;
+        }
+        dst_data = dst_data + col_matrix_width;
+      }
+      src_data = src_data_kh + filter_width - plw - prw;
+      for (int dst_offset = output_width; dst_offset < dst_offset_end;
+           dst_offset += output_width) {
+        std::memcpy(dst_data + dst_offset, src_data, copy_size_prw);
+        src_data = src_data + im_width;
+      }
     }
-    im_data_oh = im_data_oh + im_width;
-    dst_data_oh = dst_data_oh + output_width;
   }
 
   // oh==output_height-1
