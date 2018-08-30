@@ -18,6 +18,7 @@ limitations under the License. */
 #include "paddle/fluid/operators/math/cpu_vec.h"
 #include "paddle/fluid/operators/math/sequence2batch.h"
 #include "paddle/fluid/platform/cpu_info.h"
+#include "paddle/fluid/platform/profiler.h"
 DECLARE_int32(paddle_num_threads);
 
 namespace paddle {
@@ -259,9 +260,14 @@ class GRUCPUKernel : public framework::OpKernel<T> {
     math::LoDTensor2BatchFunctor<DeviceContext, T> to_batch;
     auto& dev_ctx = ctx.template device_context<DeviceContext>();
     auto blas = math::GetBlas<DeviceContext, T>(dev_ctx);
-    to_batch(dev_ctx, *x, batched_input, true, is_reverse);
 
+    auto pp = platform::DeviceContextPool::Instance().Get(ctx.GetPlace());
+    {
+      platform::RecordEvent record_event("gru_to_batch", pp);
+      to_batch(dev_ctx, *x, batched_input, true, is_reverse);
+    }
     if (bias) {
+      platform::RecordEvent record_event("gru_add_bias", pp);
       math::RowwiseAdd<DeviceContext, T> add_bias;
       add_bias(dev_ctx, *batched_input, *bias, batched_input);
     }
@@ -273,93 +279,101 @@ class GRUCPUKernel : public framework::OpKernel<T> {
 
     int tstart = 0;
     T* prev_hidden_data = NULL;
-    if (h0) {
-      // reorder h0
-      T* reordered_h0_data = reordered_h0->mutable_data<T>(ctx.GetPlace());
-      const T* h0_data = h0->data<T>();
-      prev_hidden_data = reordered_h0_data;
-      size_t sz = sizeof(T) * D;
-      for (int i = 0; i < max_bs; ++i) {
-        std::memcpy(reordered_h0_data, h0_data + seq_order[i] * D, sz);
-        reordered_h0_data += D;
+    {
+      platform::RecordEvent record_event("gru_compute", pp);
+
+      if (h0) {
+        // reorder h0
+        T* reordered_h0_data = reordered_h0->mutable_data<T>(ctx.GetPlace());
+        const T* h0_data = h0->data<T>();
+        prev_hidden_data = reordered_h0_data;
+        size_t sz = sizeof(T) * D;
+        for (int i = 0; i < max_bs; ++i) {
+          std::memcpy(reordered_h0_data, h0_data + seq_order[i] * D, sz);
+          reordered_h0_data += D;
+        }
+      } else {
+        // compute without h0
+        T* cur_in_data = batched_input_data;
+        T* cur_out_data = batched_out_data;
+        // W: {W_update, W_reset; W_state}
+        for (int i = 0; i < max_bs; ++i) {
+          // update gate
+          act_gate(D, cur_in_data, cur_in_data);
+          // state gate
+          act_state(D, cur_in_data + D2, cur_in_data + D2);
+          // out = a*b
+          blas.VMUL(D, cur_in_data, cur_in_data + D2, cur_out_data);
+          // add offset
+          cur_in_data += D3;
+          cur_out_data += D;
+        }
+        tstart = 1;
+        prev_hidden_data = batched_out_data;
       }
-    } else {
-      // compute without h0
-      T* cur_in_data = batched_input_data;
-      T* cur_out_data = batched_out_data;
-      // W: {W_update, W_reset; W_state}
-      for (int i = 0; i < max_bs; ++i) {
-        // update gate
-        act_gate(D, cur_in_data, cur_in_data);
-        // state gate
-        act_state(D, cur_in_data + D2, cur_in_data + D2);
-        // out = a*b
-        blas.VMUL(D, cur_in_data, cur_in_data + D2, cur_out_data);
-        // add offset
-        cur_in_data += D3;
-        cur_out_data += D;
+      // Then start from next
+      const T* wh_state_data = wh_data + D * D2;
+      const auto& batch_starts = batched_lod[0];
+      const int max_seq_len = batch_starts.size() - 1;
+      batched_input_data = batched_input_data + tstart * max_bs * D3;
+      batched_out_data = batched_out_data + tstart * max_bs * D;
+      for (int step = tstart; step < max_seq_len; ++step) {
+        const int cur_bs = batch_starts[step + 1] - batch_starts[step];
+        // gemm prev * (Wu + Wr)
+        blas.GEMM(CblasNoTrans, CblasNoTrans, cur_bs, D2, D, static_cast<T>(1),
+                  prev_hidden_data, D, wh_data, D2, static_cast<T>(1),
+                  batched_input_data, D3);
+
+        T* cur_batched_data = batched_input_data;
+        T* cur_prev_hidden_data = prev_hidden_data;
+        for (int i = 0; i < cur_bs; ++i) {
+          act_gate(D2, cur_batched_data, cur_batched_data);
+          // rt = rt*ht_1 inplace result
+          // TODO(TJ): try to save to cur out data
+          // maybe get benifits avoiding cache miss in next gemm
+          blas.VMUL(D, cur_prev_hidden_data, cur_batched_data + D,
+                    cur_batched_data + D);
+
+          cur_batched_data += D3;
+          cur_prev_hidden_data += D;
+        }
+
+        cur_batched_data = batched_input_data;
+        blas.GEMM(CblasNoTrans, CblasNoTrans, cur_bs, D, D, static_cast<T>(1),
+                  cur_batched_data + D, D3, wh_state_data, D, static_cast<T>(1),
+                  cur_batched_data + D2, D3);
+
+        T* cur_out_data = batched_out_data;
+        cur_prev_hidden_data = prev_hidden_data;
+        for (int i = 0; i < cur_bs; ++i) {
+          // ht~ = act_state(...)
+          act_state(D, cur_batched_data + D2, cur_batched_data + D2);
+          // ht~~ = zt*ht~ inplace result
+          blas.VMUL(D, cur_batched_data, cur_batched_data + D2,
+                    cur_batched_data + D2);
+          // zt = 1 - zt inplace result
+          bias_sub(D, static_cast<T>(1), cur_batched_data, cur_batched_data);
+          // zt = ht_1 * zt
+          blas.VMUL(D, cur_prev_hidden_data, cur_batched_data,
+                    cur_batched_data);
+          // out = zt + ht~~
+          blas.VADD(D, cur_batched_data, cur_batched_data + D2, cur_out_data);
+
+          cur_batched_data += D3;
+          cur_prev_hidden_data += D;
+          cur_out_data += D;
+        }
+        prev_hidden_data = batched_out_data;
+        batched_out_data = cur_out_data;
+        batched_input_data = cur_batched_data;
       }
-      tstart = 1;
-      prev_hidden_data = batched_out_data;
     }
-    // Then start from next
-    const T* wh_state_data = wh_data + D * D2;
-    const auto& batch_starts = batched_lod[0];
-    const int max_seq_len = batch_starts.size() - 1;
-    batched_input_data = batched_input_data + tstart * max_bs * D3;
-    batched_out_data = batched_out_data + tstart * max_bs * D;
-    for (int step = tstart; step < max_seq_len; ++step) {
-      const int cur_bs = batch_starts[step + 1] - batch_starts[step];
-      // gemm prev * (Wu + Wr)
-      blas.GEMM(CblasNoTrans, CblasNoTrans, cur_bs, D2, D, static_cast<T>(1),
-                prev_hidden_data, D, wh_data, D2, static_cast<T>(1),
-                batched_input_data, D3);
-
-      T* cur_batched_data = batched_input_data;
-      T* cur_prev_hidden_data = prev_hidden_data;
-      for (int i = 0; i < cur_bs; ++i) {
-        act_gate(D2, cur_batched_data, cur_batched_data);
-        // rt = rt*ht_1 inplace result
-        // TODO(TJ): try to save to cur out data
-        // maybe get benifits avoiding cache miss in next gemm
-        blas.VMUL(D, cur_prev_hidden_data, cur_batched_data + D,
-                  cur_batched_data + D);
-
-        cur_batched_data += D3;
-        cur_prev_hidden_data += D;
-      }
-
-      cur_batched_data = batched_input_data;
-      blas.GEMM(CblasNoTrans, CblasNoTrans, cur_bs, D, D, static_cast<T>(1),
-                cur_batched_data + D, D3, wh_state_data, D, static_cast<T>(1),
-                cur_batched_data + D2, D3);
-
-      T* cur_out_data = batched_out_data;
-      cur_prev_hidden_data = prev_hidden_data;
-      for (int i = 0; i < cur_bs; ++i) {
-        // ht~ = act_state(...)
-        act_state(D, cur_batched_data + D2, cur_batched_data + D2);
-        // ht~~ = zt*ht~ inplace result
-        blas.VMUL(D, cur_batched_data, cur_batched_data + D2,
-                  cur_batched_data + D2);
-        // zt = 1 - zt inplace result
-        bias_sub(D, static_cast<T>(1), cur_batched_data, cur_batched_data);
-        // zt = ht_1 * zt
-        blas.VMUL(D, cur_prev_hidden_data, cur_batched_data, cur_batched_data);
-        // out = zt + ht~~
-        blas.VADD(D, cur_batched_data, cur_batched_data + D2, cur_out_data);
-
-        cur_batched_data += D3;
-        cur_prev_hidden_data += D;
-        cur_out_data += D;
-      }
-      prev_hidden_data = batched_out_data;
-      batched_out_data = cur_out_data;
-      batched_input_data = cur_batched_data;
+    {
+      platform::RecordEvent record_event("gru_to_seq", pp);
+      math::Batch2LoDTensorFunctor<DeviceContext, T> to_seq;
+      batched_out->set_lod(batched_input->lod());
+      to_seq(dev_ctx, *batched_out, hidden_out);
     }
-    math::Batch2LoDTensorFunctor<DeviceContext, T> to_seq;
-    batched_out->set_lod(batched_input->lod());
-    to_seq(dev_ctx, *batched_out, hidden_out);
   }
 
   void Compute(const framework::ExecutionContext& ctx) const override {
