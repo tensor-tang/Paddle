@@ -51,6 +51,10 @@ class NativePaddlePredictor : public PaddlePredictor {
   bool GetFetch(const std::vector<framework::LoDTensor> &fetchs,
                 std::vector<PaddleTensor> *output_data);
 
+  template <typename T>
+  void GetFetchOne(const framework::LoDTensor &fetchs,
+                   PaddleTensor *output_data);
+
   NativeConfig config_;
   platform::Place place_;
   std::unique_ptr<framework::Executor> executor_;

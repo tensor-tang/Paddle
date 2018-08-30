@@ -77,6 +77,25 @@ inference_analysis_test(test_analyzer SRCS analyzer_tester.cc
         --infer_ditu_rnn_model=${DITU_INSTALL_DIR}/model
         --infer_ditu_rnn_data=${DITU_INSTALL_DIR}/data.txt)
 
+
+set(LAC_INSTALL_DIR "/home/tangjian/lac/upload" CACHE PATH "LAC model and data root." FORCE)
+set(LAC_MODEL ${LAC_INSTALL_DIR}/model)
+set(LAC_DATA ${LAC_INSTALL_DIR}/data)
+
+inference_analysis_test(test_analyzer_lac SRCS analyzer_tester_lac.cc
+        EXTRA_DEPS paddle_inference_api paddle_fluid_api ir_pass_manager analysis
+        analysis_predictor
+            # ir
+            fc_fuse_pass
+            graph_viz_pass
+            infer_clean_graph_pass
+            graph_pattern_detector
+        infer_clean_graph_pass
+        paddle_inference_api
+            pass
+        ARGS --infer_model=${LAC_MODEL}
+            --infer_data=${LAC_DATA}/data.txt)
+
 inference_analysis_test(test_data_flow_graph SRCS data_flow_graph_tester.cc)
 inference_analysis_test(test_data_flow_graph_to_fluid_pass SRCS data_flow_graph_to_fluid_pass_tester.cc EXTRA_DEPS paddle_inference_api)
 inference_analysis_test(test_fluid_to_ir_pass SRCS fluid_to_ir_pass_tester.cc EXTRA_DEPS paddle_fluid)
