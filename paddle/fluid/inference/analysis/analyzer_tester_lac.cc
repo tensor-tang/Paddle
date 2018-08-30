@@ -25,7 +25,7 @@
 DEFINE_string(infer_model, "", "model path for LAC");
 DEFINE_string(infer_data, "", "data file for LAC");
 DEFINE_int32(batch_size, 1, "batch size.");
-DEFINE_int32(buring, 0, "Burning before repeat.");
+DEFINE_int32(burning, 0, "Burning before repeat.");
 DEFINE_int32(repeat, 1, "Running the inference program repeat times.");
 DEFINE_bool(test_all_data, false, "Test the all dataset in data file.");
 
@@ -130,7 +130,36 @@ static void PrintTime(const double latency, const int bs, const int repeat) {
 }
 
 void BenchAllData(const std::string &model_path, const std::string &data_file,
-                  const int batch_size, const int repeat) {}
+                  const int batch_size, const int repeat) {
+  NativeConfig config;
+  config.model_dir = model_path;
+  config.use_gpu = false;
+  config.device = 0;
+  config.specify_input_name = true;
+
+  std::vector<PaddleTensor> input_slots, outputs_slots;
+  DataRecord data(data_file, batch_size);
+  auto predictor =
+      CreatePaddlePredictor<NativeConfig, PaddleEngineKind::kNative>(config);
+
+  GetOneBatch(&input_slots, &data, batch_size);
+  for (int i = 0; i < FLAGS_burning; i++) {
+    predictor->Run(input_slots, &outputs_slots);
+  }
+
+  Timer timer;
+  double sum = 0;
+  for (int i = 0; i < repeat; i++) {
+    for (size_t bid = 0; bid < data.batched_datas.size(); ++bid) {
+      GetOneBatch(&input_slots, &data, batch_size);
+
+      timer.tic();
+      predictor->Run(input_slots, &outputs_slots);
+      sum += timer.toc();
+    }
+  }
+  PrintTime(sum, batch_size, repeat);
+}
 
 const int64_t lac_ref_data[] = {24, 25, 25, 25, 38, 30, 31, 14, 15, 44, 24, 25,
                                 25, 25, 25, 25, 44, 24, 25, 25, 25, 36, 42, 43,
@@ -153,10 +182,14 @@ void TestLACPrediction(const std::string &model_path,
 
   std::vector<PaddleTensor> input_slots, outputs_slots;
   DataRecord data(data_file, batch_size);
-
   GetOneBatch(&input_slots, &data, batch_size);
   auto predictor =
       CreatePaddlePredictor<NativeConfig, PaddleEngineKind::kNative>(config);
+
+  for (int i = 0; i < FLAGS_burning; i++) {
+    predictor->Run(input_slots, &outputs_slots);
+  }
+
   Timer timer;
   timer.tic();
   for (int i = 0; i < repeat; i++) {
@@ -168,15 +201,14 @@ void TestLACPrediction(const std::string &model_path,
   auto &out = outputs_slots[0];
   size_t size = std::accumulate(out.shape.begin(), out.shape.end(), 1,
                                 [](int a, int b) { return a * b; });
-  PADDLE_ENFORCE_GT(size, 0);
-  size_t batch1_size = sizeof(lac_ref_data) / sizeof(int64_t);
-  EXPECT_GE(size, batch1_size);
 
+  size_t batch1_size = sizeof(lac_ref_data) / sizeof(int64_t);
+  PADDLE_ENFORCE_GT(size, 0);
+  EXPECT_GE(size, batch1_size);
   int64_t *pdata = static_cast<int64_t *>(out.data.data());
   for (size_t i = 0; i < batch1_size; ++i) {
     EXPECT_EQ(pdata[i], lac_ref_data[i]);
   }
-  std::cout << std::endl;
 }
 
 TEST(Analyzer_LAC, native) {
