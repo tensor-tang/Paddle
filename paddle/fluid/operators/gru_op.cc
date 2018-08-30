@@ -15,9 +15,9 @@ limitations under the License. */
 #include "paddle/fluid/operators/gru_op.h"
 #include <string>
 #include "paddle/fluid/operators/math/blas.h"
-#include "paddle/fluid/operators/math/detail/gru_cpu_kernel.h"
-#include "paddle/fluid/operators/math/detail/gru_kernel.h"
-
+#include "paddle/fluid/operators/math/cpu_vec.h"
+#include "paddle/fluid/operators/math/sequence2batch.h"
+#include "paddle/fluid/platform/cpu_info.h"
 DECLARE_int32(paddle_num_threads);
 
 namespace paddle {
@@ -67,7 +67,6 @@ class GRUOp : public framework::OperatorWithKernel {
                         "The shape of Bias must be [1, frame_size * 3].");
     }
     ctx->SetOutputDim("BatchGate", input_dims);
-    ctx->SetOutputDim("BatchResetHiddenPrev", {input_dims[0], frame_size});
     ctx->SetOutputDim("BatchHidden", {input_dims[0], frame_size});
     ctx->SetOutputDim("Hidden", {input_dims[0], frame_size});
     ctx->ShareLoD("Input", "Hidden");
@@ -219,152 +218,152 @@ class GRUGradOp : public framework::OperatorWithKernel {
 template <typename T>
 class GRUCPUKernel : public framework::OpKernel<T> {
  public:
-  void BatchCompute(const framework::ExecutionContext& context) const {
+  void BatchCompute(const framework::ExecutionContext& ctx) const {
     using DeviceContext = paddle::platform::CPUDeviceContext;
-    auto* input = context.Input<LoDTensor>("Input");
-    auto* h0 = context.Input<Tensor>("H0");
-    auto* weight = context.Input<Tensor>("Weight");
-    const T* weight_data = weight->data<T>();
-    auto* bias = context.Input<Tensor>("Bias");
-    auto* batch_gate = context.Output<LoDTensor>("BatchGate");
-    batch_gate->mutable_data<T>(context.GetPlace());
-    auto* batch_reset_hidden_prev =
-        context.Output<LoDTensor>("BatchResetHiddenPrev");
-    batch_reset_hidden_prev->mutable_data<T>(context.GetPlace());
-    auto* batch_hidden = context.Output<LoDTensor>("BatchHidden");
-    batch_hidden->mutable_data<T>(context.GetPlace());
-    auto* hidden = context.Output<LoDTensor>("Hidden");
-    hidden->mutable_data<T>(context.GetPlace());
+    auto* x = ctx.Input<LoDTensor>("Input");
+    auto* h0 = ctx.Input<Tensor>("H0");
+    auto* weight = ctx.Input<Tensor>("Weight");
+    auto* bias = ctx.Input<Tensor>("Bias");
+    auto* batched_input = ctx.Output<LoDTensor>("BatchGate");
+    auto* reordered_h0 = ctx.Output<LoDTensor>("BatchResetHiddenPrev");
+    auto* batched_out = ctx.Output<LoDTensor>("BatchHidden");
+    auto* hidden_out = ctx.Output<LoDTensor>("Hidden");
 
-    auto hidden_dims = hidden->dims();
+    std::function<void(const int, const T *, T *)> act_gate, act_state;
+    std::function<void(const int, const T, const T*, T*)> bias_sub;
+    auto& act_gate_str = ctx.Attr<std::string>("gate_activation");
+    auto& act_state_str = ctx.Attr<std::string>("activation");
+    if (platform::jit::MayIUse(platform::jit::avx)) {
+      math::VecActivations<T, platform::jit::avx> act_functor;
+      act_gate = act_functor(act_gate_str);
+      act_state = act_functor(act_state_str);
+      bias_sub = math::vec_bias_sub<T, platform::jit::avx>;
+    } else {
+      math::VecActivations<T, platform::jit::isa_any> act_functor;
+      act_gate = act_functor(act_gate_str);
+      act_state = act_functor(act_state_str);
+      bias_sub = math::vec_bias_sub<T, platform::jit::isa_any>;
+    }
 
-    bool is_reverse = context.Attr<bool>("is_reverse");
+    const T* wh_data = weight->data<T>();
+    T* batched_input_data = batched_input->mutable_data<T>(ctx.GetPlace());
+    T* batched_out_data = batched_out->mutable_data<T>(ctx.GetPlace());
+    hidden_out->mutable_data<T>(ctx.GetPlace());
+
+    auto w_dims = weight->dims();
+    const int D3 = w_dims[1];
+    const int D = w_dims[0];
+    const int D2 = D * 2;
+
+    bool is_reverse = ctx.Attr<bool>("is_reverse");
     math::LoDTensor2BatchFunctor<DeviceContext, T> to_batch;
-    auto& dev_ctx = context.template device_context<DeviceContext>();
-    to_batch(dev_ctx, *input, batch_gate, true, is_reverse);
+    auto& dev_ctx = ctx.template device_context<DeviceContext>();
+    auto blas = math::GetBlas<DeviceContext, T>(dev_ctx);
+    to_batch(dev_ctx, *x, batched_input, true, is_reverse);
 
     if (bias) {
       math::RowwiseAdd<DeviceContext, T> add_bias;
-      add_bias(dev_ctx, *batch_gate, *bias, batch_gate);
+      add_bias(dev_ctx, *batched_input, *bias, batched_input);
     }
 
-    int frame_size = hidden_dims[1];
-    math::GRUMetaValue<T> gru_value;
-    gru_value.gate_weight = const_cast<T*>(weight_data);
-    gru_value.state_weight =
-        const_cast<T*>(weight_data + 2 * frame_size * frame_size);
-    Tensor ordered_h0;
+    auto batched_lod = batched_input->lod();
+    const auto& seq_order = batched_lod[2];
+    const int max_bs = seq_order.size();
+    reordered_h0->Resize({max_bs, D});
 
-    framework::Vector<size_t> order(batch_gate->lod()[2]);
-
+    int tstart = 0;
+    T* prev_hidden_data = NULL;
     if (h0) {
-      // Since the batch computing for GRU reorders the input sequences
-      // according to their length. The initialized cell state also needs
-      // to reorder.
-      ReorderInitState<DeviceContext, T>(
-          context.template device_context<DeviceContext>(), *h0, order,
-          &ordered_h0, true);
-      gru_value.prev_out_value = ordered_h0.data<T>();
+      // reorder h0
+      T* reordered_h0_data = reordered_h0->mutable_data<T>(ctx.GetPlace());
+      const T* h0_data = h0->data<T>();
+      prev_hidden_data = reordered_h0_data;
+      size_t sz = sizeof(T) * D;
+      for (int i = 0; i < max_bs; ++i) {
+        std::memcpy(reordered_h0_data, h0_data + seq_order[i] * D, sz);
+        reordered_h0_data += D;
+      }
     } else {
-      gru_value.prev_out_value = nullptr;
+      // compute without h0
+      T* cur_in_data = batched_input_data;
+      T* cur_out_data = batched_out_data;
+      // W: {W_update, W_reset; W_state}
+      for (int i = 0; i < max_bs; ++i) {
+        // update gate
+        act_gate(D, cur_in_data, cur_in_data);
+        // state gate
+        act_state(D, cur_in_data + D2, cur_in_data + D2);
+        // out = a*b
+        blas.VMUL(D, cur_in_data, cur_in_data + D2, cur_out_data);
+        // add offset
+        cur_in_data += D3;
+        cur_out_data += D;
+      }
+      tstart = 1;
+      prev_hidden_data = batched_out_data;
     }
-    auto batch_starts = batch_gate->lod()[0];
-    size_t seq_len = batch_starts.size() - 1;
-    auto active_node = math::detail::GetActivationType(
-        context.Attr<std::string>("activation"));
-    auto active_gate = math::detail::GetActivationType(
-        context.Attr<std::string>("gate_activation"));
+    // Then start from next
+    const T* wh_state_data = wh_data + D * D2;
+    const auto& batch_starts = batched_lod[0];
+    const int max_seq_len = batch_starts.size() - 1;
+    batched_input_data = batched_input_data + tstart * max_bs * D3;
+    batched_out_data = batched_out_data + tstart * max_bs * D;
+    for (int step = tstart; step < max_seq_len; ++step) {
+      const int cur_bs = batch_starts[step + 1] - batch_starts[step];
+      // gemm prev * (Wu + Wr)
+      blas.GEMM(CblasNoTrans, CblasNoTrans, cur_bs, D2, D, static_cast<T>(1),
+                prev_hidden_data, D, wh_data, D2, static_cast<T>(1),
+                batched_input_data, D3);
 
-#ifdef PADDLE_WITH_MKLML
-    // use MKL packed to speedup GEMM
-    if (FLAGS_paddle_num_threads >= 4) {
-      auto blas = math::GetBlas<DeviceContext, T>(dev_ctx);
-      T* packed_gate = blas.GEMM_ALLOC(CblasBMatrix, 1 /*height of C*/,
-                                       frame_size * 2 /*width of weight*/,
-                                       frame_size /*height of height*/);
-      PADDLE_ENFORCE(packed_gate);
-      blas.GEMM_PACK(CblasBMatrix, CblasNoTrans, 1 /*cur bs?*/, frame_size * 2,
-                     frame_size, T(1.0), gru_value.gate_weight, frame_size * 2,
-                     packed_gate);
-      T* packed_state = blas.GEMM_ALLOC(CblasBMatrix, 1 /*height of C*/,
-                                        frame_size /*width of weight*/,
-                                        frame_size /*height of height*/);
-      PADDLE_ENFORCE(packed_state);
-      blas.GEMM_PACK(CblasBMatrix, CblasNoTrans, 1 /*cur bs?*/, frame_size,
-                     frame_size, T(1.0), gru_value.state_weight, frame_size,
-                     packed_state);
-      for (size_t n = 0; n < seq_len; n++) {
-        int bstart = static_cast<int>(batch_starts[n]);
-        int bend = static_cast<int>(batch_starts[n + 1]);
-        int cur_batch_size = bend - bstart;
+      T* cur_batched_data = batched_input_data;
+      T* cur_prev_hidden_data = prev_hidden_data;
+      for (int i = 0; i < cur_bs; ++i) {
+        act_gate(D2, cur_batched_data, cur_batched_data);
+        // rt = rt*ht_1 inplace result
+        // TODO(TJ): try to save to cur out data
+        // maybe get benifits avoiding cache miss in next gemm
+        blas.VMUL(D, cur_prev_hidden_data, cur_batched_data + D,
+                  cur_batched_data + D);
 
-        Tensor gate_t = batch_gate->Slice(bstart, bend);
-        Tensor reset_hidden_prev_t =
-            batch_reset_hidden_prev->Slice(bstart, bend);
-        Tensor hidden_t = batch_hidden->Slice(bstart, bend);
-        gru_value.output_value = hidden_t.data<T>();
-        gru_value.gate_value = gate_t.data<T>();
-        gru_value.reset_output_value = reset_hidden_prev_t.data<T>();
-
-        if (gru_value.prev_out_value) {
-          blas.GEMM_COMPUTE(
-              CblasNoTrans, CblasPacked, cur_batch_size, frame_size * 2,
-              frame_size, gru_value.prev_out_value, frame_size, packed_gate,
-              frame_size * 2, T(1), gru_value.gate_value, frame_size * 3);
-        }
-
-        math::detail::forward_reset_output(
-            math::detail::forward::gru_resetOutput<T>(), gru_value, frame_size,
-            cur_batch_size, active_gate);
-
-        if (gru_value.prev_out_value) {
-          blas.GEMM_COMPUTE(
-              CblasNoTrans, CblasPacked, cur_batch_size, frame_size, frame_size,
-              gru_value.reset_output_value, frame_size, packed_state,
-              frame_size, T(1), gru_value.gate_value + frame_size * 2,
-              frame_size * 3);
-        }
-
-        math::detail::forward_final_output(
-            math::detail::forward::gru_finalOutput<T>(), gru_value, frame_size,
-            cur_batch_size, active_node);
-
-        gru_value.prev_out_value = gru_value.output_value;
+        cur_batched_data += D3;
+        cur_prev_hidden_data += D;
       }
 
-      blas.GEMM_FREE(packed_gate);
-      blas.GEMM_FREE(packed_state);
-    } else {
-#endif
-      for (size_t n = 0; n < seq_len; n++) {
-        int bstart = static_cast<int>(batch_starts[n]);
-        int bend = static_cast<int>(batch_starts[n + 1]);
-        int cur_batch_size = bend - bstart;
+      cur_batched_data = batched_input_data;
+      blas.GEMM(CblasNoTrans, CblasNoTrans, cur_bs, D, D, static_cast<T>(1),
+                cur_batched_data + D, D3, wh_state_data, D, static_cast<T>(1),
+                cur_batched_data + D2, D3);
 
-        Tensor gate_t = batch_gate->Slice(bstart, bend);
-        Tensor reset_hidden_prev_t =
-            batch_reset_hidden_prev->Slice(bstart, bend);
-        Tensor hidden_t = batch_hidden->Slice(bstart, bend);
-        gru_value.output_value = hidden_t.data<T>();
-        gru_value.gate_value = gate_t.data<T>();
-        gru_value.reset_output_value = reset_hidden_prev_t.data<T>();
+      T* cur_out_data = batched_out_data;
+      cur_prev_hidden_data = prev_hidden_data;
+      for (int i = 0; i < cur_bs; ++i) {
+        // ht~ = act_state(...)
+        act_state(D, cur_batched_data + D2, cur_batched_data + D2);
+        // ht~~ = zt*ht~ inplace result
+        blas.VMUL(D, cur_batched_data, cur_batched_data + D2,
+                  cur_batched_data + D2);
+        // zt = 1 - zt inplace result
+        bias_sub(D, static_cast<T>(1), cur_batched_data, cur_batched_data);
+        // zt = ht_1 * zt
+        blas.VMUL(D, cur_prev_hidden_data, cur_batched_data, cur_batched_data);
+        // out = zt + ht~~
+        blas.VADD(D, cur_batched_data, cur_batched_data + D2, cur_out_data);
 
-        math::GRUUnitFunctor<DeviceContext, T>::compute(
-            dev_ctx, gru_value, frame_size, cur_batch_size, active_node,
-            active_gate);
-
-        gru_value.prev_out_value = gru_value.output_value;
+        cur_batched_data += D3;
+        cur_prev_hidden_data += D;
+        cur_out_data += D;
       }
-#ifdef PADDLE_WITH_MKLML
+      prev_hidden_data = batched_out_data;
+      batched_out_data = cur_out_data;
+      batched_input_data = cur_batched_data;
     }
-#endif
     math::Batch2LoDTensorFunctor<DeviceContext, T> to_seq;
-    batch_hidden->set_lod(batch_gate->lod());
-    to_seq(dev_ctx, *batch_hidden, hidden);
+    batched_out->set_lod(batched_input->lod());
+    to_seq(dev_ctx, *batched_out, hidden_out);
   }
 
-  void Compute(const framework::ExecutionContext& context) const override {
-    BatchCompute(context);
+  void Compute(const framework::ExecutionContext& ctx) const override {
+    BatchCompute(ctx);
   }
 };
 
