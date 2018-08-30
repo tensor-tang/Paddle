@@ -133,12 +133,7 @@ class TestGRUOp(OpTest):
         if self.with_h0:
             self.inputs['H0'] = h0
 
-        self.outputs = {
-            'Hidden': (hidden, self.lod),
-            'BatchGate': batch_gate,
-            'BatchResetHiddenPrev': batch_reset_hidden_prev,
-            'BatchHidden': batch_hidden,
-        }
+        self.outputs = {'Hidden': (hidden, self.lod)}
 
         self.attrs = {
             'activation': self.act_state,
@@ -149,24 +144,15 @@ class TestGRUOp(OpTest):
     def test_check_output(self):
         self.check_output(atol=1e-8)
 
-    def test_check_grad(self):
-        self.check_grad(['Input', 'H0', 'Weight', 'Bias'], ['Hidden'])
-
 
 class TestGRUOpNoInitial(TestGRUOp):
     def set_confs(self):
         self.with_h0 = False
 
-    def test_check_grad(self):
-        self.check_grad(['Input', 'Weight', 'Bias'], ['Hidden'])
-
 
 class TestGRUOpNoBias(TestGRUOp):
     def set_confs(self):
         self.with_bias = False
-
-    def test_check_grad(self):
-        self.check_grad(['Input', 'H0', 'Weight'], ['Hidden'])
 
 
 class TestGRUOpReverse(TestGRUOp):
