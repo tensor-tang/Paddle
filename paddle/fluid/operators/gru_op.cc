@@ -319,10 +319,13 @@ class GRUCPUKernel : public framework::OpKernel<T> {
       batched_out_data = batched_out_data + tstart * max_bs * D;
       for (int step = tstart; step < max_seq_len; ++step) {
         const int cur_bs = batch_starts[step + 1] - batch_starts[step];
-        // gemm prev * (Wu + Wr)
-        blas.GEMM(CblasNoTrans, CblasNoTrans, cur_bs, D2, D, static_cast<T>(1),
-                  prev_hidden_data, D, wh_data, D2, static_cast<T>(1),
-                  batched_input_data, D3);
+        {
+          platform::RecordEvent record_event("gru_compute_gemm1", pp);
+          // gemm prev * (Wu + Wr)
+          blas.GEMM(CblasNoTrans, CblasNoTrans, cur_bs, D2, D,
+                    static_cast<T>(1), prev_hidden_data, D, wh_data, D2,
+                    static_cast<T>(1), batched_input_data, D3);
+        }
 
         T* cur_batched_data = batched_input_data;
         T* cur_prev_hidden_data = prev_hidden_data;
@@ -340,14 +343,22 @@ class GRUCPUKernel : public framework::OpKernel<T> {
 
         cur_batched_data = batched_input_data;
         cur_out_data = batched_out_data;
-        blas.GEMM(CblasNoTrans, CblasNoTrans, cur_bs, D, D, static_cast<T>(1),
-                  cur_out_data, D, wh_state_data, D, static_cast<T>(1),
-                  cur_batched_data + D2, D3);
+        {
+          platform::RecordEvent record_event("gru_compute_gemm2", pp);
+          blas.GEMM(CblasNoTrans, CblasNoTrans, cur_bs, D, D, static_cast<T>(1),
+                    cur_out_data, D, wh_state_data, D, static_cast<T>(1),
+                    cur_batched_data + D2, D3);
+        }
 
         cur_prev_hidden_data = prev_hidden_data;
         for (int i = 0; i < cur_bs; ++i) {
           // ht~ = act_state(...)
           act_state(D, cur_batched_data + D2, cur_batched_data + D2);
+          // st = cur_batched_data + D2
+          // zt = cur_batched_data
+          // ht_1 = cur_prev_hidden_data
+          // GRUActPart2.compute(); // act type should be confirmed before call
+          // it
           // ht~~ = zt*ht~ inplace result
           blas.VMUL(D, cur_batched_data, cur_batched_data + D2,
                     cur_batched_data + D2);
