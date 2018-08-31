@@ -279,6 +279,23 @@ class GRUCPUKernel : public framework::OpKernel<T> {
       math::RowwiseAdd<DeviceContext, T> add_bias;
       add_bias(dev_ctx, *x, *bias, xx);
     }
+    T* packed_gate = NULL;
+    T* packed_state = NULL;
+    {
+      platform::RecordEvent record_event("gru_seq_mklalloc", pp);
+      packed_gate =
+          blas.GEMM_ALLOC(CblasBMatrix, 1 /*height of C*/,
+                          D2 /*width of weight*/, D /*height of height*/);
+      PADDLE_ENFORCE(packed_gate);
+      blas.GEMM_PACK(CblasBMatrix, CblasNoTrans, 1 /*cur bs?*/, D2, D,
+                     static_cast<T>(1), wh_data, D2, packed_gate);
+      packed_state =
+          blas.GEMM_ALLOC(CblasBMatrix, 1 /*height of C*/,
+                          D /*width of weight*/, D /*height of height*/);
+      PADDLE_ENFORCE(packed_state);
+      blas.GEMM_PACK(CblasBMatrix, CblasNoTrans, 1 /*cur bs?*/, D, D,
+                     static_cast<T>(1), wh_state_data, D, packed_state);
+    }
     {
       platform::RecordEvent record_event("gru_seq_compute", pp);
 
@@ -317,17 +334,27 @@ class GRUCPUKernel : public framework::OpKernel<T> {
         }
         for (int step = tstart; step < seq_len; ++step) {
           // gemm prev * (Wu + Wr)
-          blas.GEMM(CblasNoTrans, CblasNoTrans, 1, D2, D, static_cast<T>(1),
-                    prev_hidden_data, D, wh_data, D2, static_cast<T>(1),
-                    xx_data, D3);
+          //   blas.GEMM(CblasNoTrans, CblasNoTrans, 1, D2, D,
+          //   static_cast<T>(1),
+          //             prev_hidden_data, D, wh_data, D2, static_cast<T>(1),
+          //             xx_data, D3);
+          blas.GEMM_COMPUTE(CblasNoTrans, CblasPacked, 1, D2, D,
+                            prev_hidden_data, D, packed_gate, D2,
+                            static_cast<T>(1), xx_data, D3);
+
           act_gate(D2, xx_data, xx_data);
           // rt = rt*ht_1 inplace result
           blas.VMUL(D, prev_hidden_data, xx_data + D, hidden_out_data);
 
           // gemm rt * Ws
-          blas.GEMM(CblasNoTrans, CblasNoTrans, 1, D, D, static_cast<T>(1),
-                    hidden_out_data, D, wh_state_data, D, static_cast<T>(1),
-                    xx_data + D2, D3);
+          //   blas.GEMM(CblasNoTrans, CblasNoTrans, 1, D, D, static_cast<T>(1),
+          //             hidden_out_data, D, wh_state_data, D,
+          //             static_cast<T>(1),
+          //             xx_data + D2, D3);
+
+          blas.GEMM_COMPUTE(CblasNoTrans, CblasPacked, 1, D, D, hidden_out_data,
+                            D, packed_state, D, static_cast<T>(1), xx_data + D2,
+                            D3);
           act_state(D, xx_data + D2, xx_data + D2);
           // out = zt*ht~ + (1-zt)*ht_1
           cross(D, xx_data, xx_data + D2, prev_hidden_data, hidden_out_data);
@@ -336,6 +363,11 @@ class GRUCPUKernel : public framework::OpKernel<T> {
           move_step();
         }
       }
+    }
+    {
+      platform::RecordEvent record_event("gru_seq_mklfree", pp);
+      blas.GEMM_FREE(packed_gate);
+      blas.GEMM_FREE(packed_state);
     }
   }
   void BatchCompute(const framework::ExecutionContext& ctx) const {
@@ -365,15 +397,16 @@ class GRUCPUKernel : public framework::OpKernel<T> {
       cross = math::vec_cross<T, platform::jit::isa_any>;
     }
 
-    const T* wh_data = weight->data<T>();
-    T* batched_input_data = batched_input->mutable_data<T>(ctx.GetPlace());
-    T* batched_out_data = batched_out->mutable_data<T>(ctx.GetPlace());
-    hidden_out->mutable_data<T>(ctx.GetPlace());
-
     auto w_dims = weight->dims();
     const int D3 = w_dims[1];
     const int D = w_dims[0];
     const int D2 = D * 2;
+
+    const T* wh_data = weight->data<T>();
+    const T* wh_state_data = wh_data + D * D2;
+    T* batched_input_data = batched_input->mutable_data<T>(ctx.GetPlace());
+    T* batched_out_data = batched_out->mutable_data<T>(ctx.GetPlace());
+    hidden_out->mutable_data<T>(ctx.GetPlace());
 
     bool is_reverse = ctx.Attr<bool>("is_reverse");
     math::LoDTensor2BatchFunctor<DeviceContext, T> to_batch;
@@ -396,6 +429,23 @@ class GRUCPUKernel : public framework::OpKernel<T> {
     const int max_bs = seq_order.size();
     reordered_h0->Resize({max_bs, D});
 
+    T* packed_gate = NULL;
+    T* packed_state = NULL;
+    {
+      platform::RecordEvent record_event("gru_mklalloc", pp);
+      packed_gate =
+          blas.GEMM_ALLOC(CblasBMatrix, 1 /*height of C*/,
+                          D2 /*width of weight*/, D /*height of height*/);
+      PADDLE_ENFORCE(packed_gate);
+      blas.GEMM_PACK(CblasBMatrix, CblasNoTrans, 1 /*cur bs?*/, D2, D,
+                     static_cast<T>(1), wh_data, D2, packed_gate);
+      packed_state =
+          blas.GEMM_ALLOC(CblasBMatrix, 1 /*height of C*/,
+                          D /*width of weight*/, D /*height of height*/);
+      PADDLE_ENFORCE(packed_state);
+      blas.GEMM_PACK(CblasBMatrix, CblasNoTrans, 1 /*cur bs?*/, D, D,
+                     static_cast<T>(1), wh_state_data, D, packed_state);
+    }
     int tstart = 0;
     T* prev_hidden_data = NULL;
     {
@@ -431,7 +481,6 @@ class GRUCPUKernel : public framework::OpKernel<T> {
         prev_hidden_data = batched_out_data;
       }
       // Then start from next
-      const T* wh_state_data = wh_data + D * D2;
       const auto& batch_starts = batched_lod[0];
       const int max_seq_len = batch_starts.size() - 1;
       batched_input_data = batched_input_data + tstart * max_bs * D3;
@@ -441,9 +490,12 @@ class GRUCPUKernel : public framework::OpKernel<T> {
         {
           platform::RecordEvent record_event("gru_compute_gemm1", pp);
           // gemm prev * (Wu + Wr)
-          blas.GEMM(CblasNoTrans, CblasNoTrans, cur_bs, D2, D,
-                    static_cast<T>(1), prev_hidden_data, D, wh_data, D2,
-                    static_cast<T>(1), batched_input_data, D3);
+          //   blas.GEMM(CblasNoTrans, CblasNoTrans, cur_bs, D2, D,
+          //             static_cast<T>(1), prev_hidden_data, D, wh_data, D2,
+          //             static_cast<T>(1), batched_input_data, D3);
+          blas.GEMM_COMPUTE(CblasNoTrans, CblasPacked, cur_bs, D2, D,
+                            prev_hidden_data, D, packed_gate, D2,
+                            static_cast<T>(1), batched_input_data, D3);
         }
 
         T* cur_batched_data = batched_input_data;
@@ -464,9 +516,14 @@ class GRUCPUKernel : public framework::OpKernel<T> {
         cur_out_data = batched_out_data;
         {
           platform::RecordEvent record_event("gru_compute_gemm2", pp);
-          blas.GEMM(CblasNoTrans, CblasNoTrans, cur_bs, D, D, static_cast<T>(1),
-                    cur_out_data, D, wh_state_data, D, static_cast<T>(1),
-                    cur_batched_data + D2, D3);
+          //   blas.GEMM(CblasNoTrans, CblasNoTrans, cur_bs, D, D,
+          //   static_cast<T>(1),
+          //             cur_out_data, D, wh_state_data, D, static_cast<T>(1),
+          //             cur_batched_data + D2, D3);
+
+          blas.GEMM_COMPUTE(CblasNoTrans, CblasPacked, cur_bs, D, D,
+                            cur_out_data, D, packed_state, D, static_cast<T>(1),
+                            cur_batched_data + D2, D3);
         }
 
         cur_prev_hidden_data = prev_hidden_data;
@@ -485,6 +542,11 @@ class GRUCPUKernel : public framework::OpKernel<T> {
         batched_out_data = cur_out_data;
         batched_input_data = cur_batched_data;
       }
+    }
+    {
+      platform::RecordEvent record_event("gru_mklfree", pp);
+      blas.GEMM_FREE(packed_gate);
+      blas.GEMM_FREE(packed_state);
     }
     {
       platform::RecordEvent record_event("gru_to_seq", pp);
