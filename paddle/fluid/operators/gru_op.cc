@@ -20,6 +20,7 @@ limitations under the License. */
 #include "paddle/fluid/platform/cpu_info.h"
 #include "paddle/fluid/platform/profiler.h"
 DECLARE_int32(paddle_num_threads);
+DECLARE_bool(gru_use_seq);
 
 namespace paddle {
 namespace operators {
@@ -219,6 +220,121 @@ class GRUGradOp : public framework::OperatorWithKernel {
 template <typename T>
 class GRUCPUKernel : public framework::OpKernel<T> {
  public:
+  void Compute(const framework::ExecutionContext& ctx) const override {
+    if (FLAGS_gru_use_seq) {
+      SeqCompute(ctx);
+    } else {
+      BatchCompute(ctx);
+    }
+  }
+#define INIT_VEC_FUNC                                                     \
+  std::function<void(const int, const T *, T *)> act_gate, act_state;     \
+  std::function<void(const int, const T*, const T*, const T*, T*)> cross; \
+  auto& act_gate_str = ctx.Attr<std::string>("gate_activation");          \
+  auto& act_state_str = ctx.Attr<std::string>("activation");              \
+  if (platform::jit::MayIUse(platform::jit::avx)) {                       \
+    math::VecActivations<T, platform::jit::avx> act_functor;              \
+    act_gate = act_functor(act_gate_str);                                 \
+    act_state = act_functor(act_state_str);                               \
+    cross = math::vec_cross<T, platform::jit::avx>;                       \
+  } else {                                                                \
+    math::VecActivations<T, platform::jit::isa_any> act_functor;          \
+    act_gate = act_functor(act_gate_str);                                 \
+    act_state = act_functor(act_state_str);                               \
+    cross = math::vec_cross<T, platform::jit::isa_any>;                   \
+  }
+
+  void SeqCompute(const framework::ExecutionContext& ctx) const {
+    using DeviceContext = paddle::platform::CPUDeviceContext;
+    auto* x = ctx.Input<LoDTensor>("Input");
+    auto* h0 = ctx.Input<Tensor>("H0");
+    auto* wh = ctx.Input<Tensor>("Weight");
+    auto* bias = ctx.Input<Tensor>("Bias");
+
+    auto* xx = ctx.Output<LoDTensor>("BatchGate");  // just use batch gate
+    auto* hidden_out = ctx.Output<LoDTensor>("Hidden");
+    bool is_reverse = ctx.Attr<bool>("is_reverse");
+    INIT_VEC_FUNC
+
+    auto x_lod = x->lod();
+    auto x_dims = x->dims();    // T x 3D
+    auto wh_dims = wh->dims();  // D x 3D
+    const int N = x_lod[0].size() - 1;
+    const int total_T = x_dims[0];
+    const int D3 = wh_dims[1];
+    const int D = wh_dims[0];
+    const int D2 = D * 2;
+
+    const T* h0_data = h0 ? h0->data<T>() : NULL;
+    const T* wh_data = wh->data<T>();
+    const T* wh_state_data = wh_data + D * D2;
+    T* xx_data = xx->mutable_data<T>(ctx.GetPlace());
+    T* hidden_out_data = hidden_out->mutable_data<T>(ctx.GetPlace());
+
+    auto pp = platform::DeviceContextPool::Instance().Get(ctx.GetPlace());
+    auto& dev_ctx = ctx.template device_context<DeviceContext>();
+    auto blas = math::GetBlas<DeviceContext, T>(dev_ctx);
+    if (bias) {
+      platform::RecordEvent record_event("gru_add_bias", pp);
+      math::RowwiseAdd<DeviceContext, T> add_bias;
+      add_bias(dev_ctx, *x, *bias, xx);
+    }
+
+    int xx_offset = D3;
+    int gate_offset = D;
+    if (is_reverse) {
+      const int offset = (total_T - 1) * D;
+      xx_data = xx_data + offset * 3;
+      hidden_out_data = hidden_out_data + offset;
+      xx_offset = -D3;
+      gate_offset = -D;
+    }
+    auto move_step = [&]() {
+      xx_data = xx_data + xx_offset;
+      hidden_out_data = hidden_out_data + gate_offset;
+    };
+    for (int i = 0; i < N; ++i) {
+      int bid = is_reverse ? N - 1 - i : i;
+      int seq_len = x_lod[0][bid + 1] - x_lod[0][bid];
+      const T* prev_hidden_data = NULL;
+      int tstart = 0;
+      if (h0_data) {
+        prev_hidden_data = h0_data + bid * D;
+      } else {
+        // W: {W_update, W_reset; W_state}
+        // update gate
+        act_gate(D, xx_data, xx_data);
+        // state gate
+        act_state(D, xx_data + D2, xx_data + D2);
+        // out = a*b
+        blas.VMUL(D, xx_data, xx_data + D2, hidden_out_data);
+        // save prev
+        prev_hidden_data = hidden_out_data;
+        tstart = 1;
+        move_step();
+      }
+      for (int step = tstart; step < seq_len; ++step) {
+        // gemm prev * (Wu + Wr)
+        blas.GEMM(CblasNoTrans, CblasNoTrans, 1, D2, D, static_cast<T>(1),
+                  prev_hidden_data, D, wh_data, D2, static_cast<T>(1), xx_data,
+                  D3);
+        act_gate(D2, xx_data, xx_data);
+        // rt = rt*ht_1 inplace result
+        blas.VMUL(D, prev_hidden_data, xx_data + D, hidden_out_data);
+
+        // gemm rt * Ws
+        blas.GEMM(CblasNoTrans, CblasNoTrans, 1, D, D, static_cast<T>(1),
+                  hidden_out_data, D, wh_state_data, D, static_cast<T>(1),
+                  xx_data + D2, D3);
+        act_state(D, xx_data + D2, xx_data + D2);
+        // out = zt*ht~ + (1-zt)*ht_1
+        cross(D, xx_data, xx_data + D2, prev_hidden_data, hidden_out_data);
+        // save prev
+        prev_hidden_data = hidden_out_data;
+        move_step();
+      }
+    }
+  }
   void BatchCompute(const framework::ExecutionContext& ctx) const {
     using DeviceContext = paddle::platform::CPUDeviceContext;
     auto* x = ctx.Input<LoDTensor>("Input");
@@ -373,10 +489,6 @@ class GRUCPUKernel : public framework::OpKernel<T> {
       batched_out->set_lod(batched_input->lod());
       to_seq(dev_ctx, *batched_out, hidden_out);
     }
-  }
-
-  void Compute(const framework::ExecutionContext& ctx) const override {
-    BatchCompute(ctx);
   }
 };
 
