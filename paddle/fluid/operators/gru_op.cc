@@ -231,19 +231,19 @@ class GRUCPUKernel : public framework::OpKernel<T> {
     auto* hidden_out = ctx.Output<LoDTensor>("Hidden");
 
     std::function<void(const int, const T *, T *)> act_gate, act_state;
-    std::function<void(const int, const T, const T*, T*)> bias_sub;
+    std::function<void(const int, const T*, const T*, const T*, T*)> cross;
     auto& act_gate_str = ctx.Attr<std::string>("gate_activation");
     auto& act_state_str = ctx.Attr<std::string>("activation");
     if (platform::jit::MayIUse(platform::jit::avx)) {
       math::VecActivations<T, platform::jit::avx> act_functor;
       act_gate = act_functor(act_gate_str);
       act_state = act_functor(act_state_str);
-      bias_sub = math::vec_bias_sub<T, platform::jit::avx>;
+      cross = math::vec_cross<T, platform::jit::avx>;
     } else {
       math::VecActivations<T, platform::jit::isa_any> act_functor;
       act_gate = act_functor(act_gate_str);
       act_state = act_functor(act_state_str);
-      bias_sub = math::vec_bias_sub<T, platform::jit::isa_any>;
+      cross = math::vec_cross<T, platform::jit::isa_any>;
     }
 
     const T* wh_data = weight->data<T>();
@@ -354,21 +354,9 @@ class GRUCPUKernel : public framework::OpKernel<T> {
         for (int i = 0; i < cur_bs; ++i) {
           // ht~ = act_state(...)
           act_state(D, cur_batched_data + D2, cur_batched_data + D2);
-          // st = cur_batched_data + D2
-          // zt = cur_batched_data
-          // ht_1 = cur_prev_hidden_data
-          // GRUActPart2.compute(); // act type should be confirmed before call
-          // it
-          // ht~~ = zt*ht~ inplace result
-          blas.VMUL(D, cur_batched_data, cur_batched_data + D2,
-                    cur_batched_data + D2);
-          // zt = 1 - zt inplace result
-          bias_sub(D, static_cast<T>(1), cur_batched_data, cur_batched_data);
-          // zt = ht_1 * zt
-          blas.VMUL(D, cur_prev_hidden_data, cur_batched_data,
-                    cur_batched_data);
-          // out = zt + ht~~
-          blas.VADD(D, cur_batched_data, cur_batched_data + D2, cur_out_data);
+          // out = zt*ht~ + (1-zt)*ht_1
+          cross(D, cur_batched_data, cur_batched_data + D2,
+                cur_prev_hidden_data, cur_out_data);
 
           cur_batched_data += D3;
           cur_prev_hidden_data += D;
