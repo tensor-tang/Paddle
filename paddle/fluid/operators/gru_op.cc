@@ -279,59 +279,62 @@ class GRUCPUKernel : public framework::OpKernel<T> {
       math::RowwiseAdd<DeviceContext, T> add_bias;
       add_bias(dev_ctx, *x, *bias, xx);
     }
+    {
+      platform::RecordEvent record_event("gru_seq_compute", pp);
 
-    int xx_offset = D3;
-    int gate_offset = D;
-    if (is_reverse) {
-      const int offset = (total_T - 1) * D;
-      xx_data = xx_data + offset * 3;
-      hidden_out_data = hidden_out_data + offset;
-      xx_offset = -D3;
-      gate_offset = -D;
-    }
-    auto move_step = [&]() {
-      xx_data = xx_data + xx_offset;
-      hidden_out_data = hidden_out_data + gate_offset;
-    };
-    for (int i = 0; i < N; ++i) {
-      int bid = is_reverse ? N - 1 - i : i;
-      int seq_len = x_lod[0][bid + 1] - x_lod[0][bid];
-      const T* prev_hidden_data = NULL;
-      int tstart = 0;
-      if (h0_data) {
-        prev_hidden_data = h0_data + bid * D;
-      } else {
-        // W: {W_update, W_reset; W_state}
-        // update gate
-        act_gate(D, xx_data, xx_data);
-        // state gate
-        act_state(D, xx_data + D2, xx_data + D2);
-        // out = a*b
-        blas.VMUL(D, xx_data, xx_data + D2, hidden_out_data);
-        // save prev
-        prev_hidden_data = hidden_out_data;
-        tstart = 1;
-        move_step();
+      int xx_offset = D3;
+      int gate_offset = D;
+      if (is_reverse) {
+        const int offset = (total_T - 1) * D;
+        xx_data = xx_data + offset * 3;
+        hidden_out_data = hidden_out_data + offset;
+        xx_offset = -D3;
+        gate_offset = -D;
       }
-      for (int step = tstart; step < seq_len; ++step) {
-        // gemm prev * (Wu + Wr)
-        blas.GEMM(CblasNoTrans, CblasNoTrans, 1, D2, D, static_cast<T>(1),
-                  prev_hidden_data, D, wh_data, D2, static_cast<T>(1), xx_data,
-                  D3);
-        act_gate(D2, xx_data, xx_data);
-        // rt = rt*ht_1 inplace result
-        blas.VMUL(D, prev_hidden_data, xx_data + D, hidden_out_data);
+      auto move_step = [&]() {
+        xx_data = xx_data + xx_offset;
+        hidden_out_data = hidden_out_data + gate_offset;
+      };
+      for (int i = 0; i < N; ++i) {
+        int bid = is_reverse ? N - 1 - i : i;
+        int seq_len = x_lod[0][bid + 1] - x_lod[0][bid];
+        const T* prev_hidden_data = NULL;
+        int tstart = 0;
+        if (h0_data) {
+          prev_hidden_data = h0_data + bid * D;
+        } else {
+          // W: {W_update, W_reset; W_state}
+          // update gate
+          act_gate(D, xx_data, xx_data);
+          // state gate
+          act_state(D, xx_data + D2, xx_data + D2);
+          // out = a*b
+          blas.VMUL(D, xx_data, xx_data + D2, hidden_out_data);
+          // save prev
+          prev_hidden_data = hidden_out_data;
+          tstart = 1;
+          move_step();
+        }
+        for (int step = tstart; step < seq_len; ++step) {
+          // gemm prev * (Wu + Wr)
+          blas.GEMM(CblasNoTrans, CblasNoTrans, 1, D2, D, static_cast<T>(1),
+                    prev_hidden_data, D, wh_data, D2, static_cast<T>(1),
+                    xx_data, D3);
+          act_gate(D2, xx_data, xx_data);
+          // rt = rt*ht_1 inplace result
+          blas.VMUL(D, prev_hidden_data, xx_data + D, hidden_out_data);
 
-        // gemm rt * Ws
-        blas.GEMM(CblasNoTrans, CblasNoTrans, 1, D, D, static_cast<T>(1),
-                  hidden_out_data, D, wh_state_data, D, static_cast<T>(1),
-                  xx_data + D2, D3);
-        act_state(D, xx_data + D2, xx_data + D2);
-        // out = zt*ht~ + (1-zt)*ht_1
-        cross(D, xx_data, xx_data + D2, prev_hidden_data, hidden_out_data);
-        // save prev
-        prev_hidden_data = hidden_out_data;
-        move_step();
+          // gemm rt * Ws
+          blas.GEMM(CblasNoTrans, CblasNoTrans, 1, D, D, static_cast<T>(1),
+                    hidden_out_data, D, wh_state_data, D, static_cast<T>(1),
+                    xx_data + D2, D3);
+          act_state(D, xx_data + D2, xx_data + D2);
+          // out = zt*ht~ + (1-zt)*ht_1
+          cross(D, xx_data, xx_data + D2, prev_hidden_data, hidden_out_data);
+          // save prev
+          prev_hidden_data = hidden_out_data;
+          move_step();
+        }
       }
     }
   }
