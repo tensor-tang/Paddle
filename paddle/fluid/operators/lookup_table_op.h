@@ -44,6 +44,12 @@ class LookupTableKernel : public framework::OpKernel<T> {
     int64_t *ids = const_cast<int64_t *>(ids_t->data<int64_t>());
     int64_t ids_numel = ids_t->numel();
 
+    LOG(INFO) << "lookupinput-------size:" << ids_numel;
+    for (int i = 0; i < ids_numel; ++i) {
+      std::cout << ids[i] << ",";
+    }
+    std::cout << std::endl;
+
     if (table_var->IsType<LoDTensor>()) {
       auto *table_t = context.Input<LoDTensor>("W");
       int64_t row_number = table_t->dims()[0];
@@ -80,6 +86,13 @@ class LookupTableKernel : public framework::OpKernel<T> {
         }
       }
     }
+
+    auto *odata = output_t->mutable_data<T>(context.GetPlace());
+    LOG(INFO) << "lookupoutput-------size:" << output_t->numel();
+    for (int i = 0; i < output_t->numel(); ++i) {
+      std::cout << odata[i] << ",";
+    }
+    std::cout << std::endl;
   }
 };
 

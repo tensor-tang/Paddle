@@ -361,6 +361,25 @@ class GRUCPUKernel : public framework::OpKernel<T> {
     math::Batch2LoDTensorFunctor<DeviceContext, T> to_seq;
     batch_hidden->set_lod(batch_gate->lod());
     to_seq(dev_ctx, *batch_hidden, hidden);
+
+    const T* idata = input->data<T>();
+    auto idims = input->dims();
+    LOG(INFO) << "gruinput-------";
+    for (int i = 0; i < idims[0]; ++i) {
+      for (int j = 0; j < idims[1]; ++j) {
+        std::cout << idata[i * idims[1] + j] << ",";
+      }
+      std::cout << std::endl;
+    }
+
+    T* hdata = hidden->mutable_data<T>(context.GetPlace());
+    LOG(INFO) << "gruoutput-------";
+    for (int i = 0; i < hidden_dims[0]; ++i) {
+      for (int j = 0; j < hidden_dims[1]; ++j) {
+        std::cout << hdata[i * hidden_dims[1] + j] << ",";
+      }
+      std::cout << std::endl;
+    }
   }
 
   void Compute(const framework::ExecutionContext& context) const override {

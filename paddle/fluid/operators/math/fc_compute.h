@@ -26,7 +26,39 @@ template <typename DeviceContext, typename T>
 inline void FCCompute(const BlasT<DeviceContext, T>& blas, const int M,
                       const int N, const int K, const T* X, const T* W, T* Y,
                       const T* B = NULL, bool relu = false) {
+  LOG(INFO) << "fccomputeinput-------:" << M << "," << K;
+  for (int i = 0; i < M; ++i) {
+    for (int j = 0; j < K; ++j) {
+      std::cout << X[i * K + j] << ",";
+    }
+    std::cout << std::endl;
+  }
+
+  LOG(INFO) << "fccomputeweight-------:" << K << "," << N;
+  for (int i = 0; i < K; ++i) {
+    for (int j = 0; j < 10; ++j) {
+      std::cout << W[i * N + j] << ",";
+    }
+    std::cout << std::endl;
+  }
+
+  LOG(INFO) << "fccomputeoutput_nobias_beforecompute-------:" << M << "," << N;
+  for (int i = 0; i < M; ++i) {
+    for (int j = 0; j < 10; ++j) {
+      std::cout << Y[i * N + j] << ",";
+    }
+    std::cout << std::endl;
+  }
   blas.MatMul(M, N, K, X, W, Y);
+
+  LOG(INFO) << "fcoutput_nobias-aftercompute-------:" << M << "," << N;
+  for (int i = 0; i < M; ++i) {
+    for (int j = 0; j < 10; ++j) {
+      std::cout << Y[i * N + j] << ",";
+    }
+    std::cout << std::endl;
+  }
+
   if (B == NULL) {
     return;
   }

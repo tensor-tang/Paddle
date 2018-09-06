@@ -78,6 +78,38 @@ class ElementwiseAddKernel : public framework::OpKernel<T> {
     } else {
       default_elementwise_add<DeviceContext, T>(ctx, x, y, z);
     }
+
+    auto idims = x->dims();
+    auto bdims = y->dims();
+    auto odims = z->dims();
+    const T* idata = x->data<T>();
+    const T* bdata = y->data<T>();
+    T* odata = z->mutable_data<T>(ctx.GetPlace());
+
+    LOG(INFO) << "addinput-------shape size:" << idims.size()
+              << ", size:" << idims[0] << "," << idims[1];
+    for (int i = 0; i < idims[0]; ++i) {
+      for (int j = 0; j < 10; ++j) {
+        std::cout << idata[i * idims[1] + j] << ",";
+      }
+    }
+    std::cout << std::endl;
+
+    LOG(INFO) << "addbias-------shape size:" << bdims.size()
+              << ", size:" << bdims[0];
+    for (int i = 0; i < 10; ++i) {
+      std::cout << bdata[i] << ",";
+    }
+    std::cout << std::endl;
+
+    LOG(INFO) << "addoutput-------shape size:" << odims.size()
+              << ", size:" << odims[0] << "," << odims[1];
+    for (int i = 0; i < odims[0]; ++i) {
+      for (int j = 0; j < 10; ++j) {
+        std::cout << odata[i * odims[1] + j] << ",";
+      }
+    }
+    std::cout << std::endl;
   }
 };
 

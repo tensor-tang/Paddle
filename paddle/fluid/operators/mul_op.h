@@ -53,6 +53,36 @@ class MulKernel : public framework::OpKernel<T> {
     if (z_dim.size() != 2) {
       z->Resize(z_dim);
     }
+
+    auto idims = x_matrix.dims();
+    const T* idata = x_matrix.data<T>();
+    LOG(INFO) << "mulinput-------size:" << idims[0] << "," << idims[1];
+    for (int i = 0; i < idims[0]; ++i) {
+      for (int j = 0; j < 10; ++j) {
+        std::cout << idata[i * idims[1] + j] << ",";
+      }
+      std::cout << std::endl;
+    }
+
+    auto wdims = y_matrix.dims();
+    const T* wdata = y_matrix.data<T>();
+    LOG(INFO) << "mulweight-------size:" << wdims[0] << "," << wdims[1];
+    for (int i = 0; i < wdims[0]; ++i) {
+      for (int j = 0; j < 10; ++j) {
+        std::cout << wdata[i * wdims[1] + j] << ",";
+      }
+      std::cout << std::endl;
+    }
+
+    auto odims = z->dims();
+    const T* odata = z->data<T>();
+    LOG(INFO) << "muloutput-------size:" << odims[0] << "," << odims[1];
+    for (int i = 0; i < odims[0]; ++i) {
+      for (int j = 0; j < 10; ++j) {
+        std::cout << odata[i * odims[1] + j] << ",";
+      }
+      std::cout << std::endl;
+    }
   }
 };
 

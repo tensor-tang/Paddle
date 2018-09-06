@@ -179,6 +179,7 @@ void TestLACPrediction(const std::string &model_path,
     cfg.specify_input_name = true;
     cfg.enable_ir_optim = true;
     cfg.ir_passes.push_back("fc_gru_fuse_pass");
+    // cfg.ir_passes.push_back("fc_fuse_pass");
     predictor =
         CreatePaddlePredictor<AnalysisConfig, PaddleEngineKind::kAnalysis>(cfg);
   } else {
@@ -253,10 +254,10 @@ void TestLACPrediction(const std::string &model_path,
       }
     }
     LOG(INFO) << "has num ops: " << num_ops;
-    ASSERT_TRUE(fuse_statis.count("fc_fuse"));
+    // ASSERT_TRUE(fuse_statis.count("fc_fuse"));
     // ASSERT_TRUE(fuse_statis.count("fc_gru_fuse"));
     LOG(INFO) << "fc fuse num:" << fuse_statis.at("fc_fuse");
-    LOG(INFO) << "fc gru fuse num:" << fuse_statis.at("fc_gru_fuse");
+    // LOG(INFO) << "fc gru fuse num:" << fuse_statis.at("fc_gru_fuse");
   }
 }
 
