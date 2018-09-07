@@ -554,7 +554,6 @@ PDNode* patterns::FC(PDPattern* pattern, const std::string& name_scope,
                  ->assert_is_op_output("mul", "Out");
     mul_op->LinksFrom({mul_weight_var, x}).LinksTo({fc_out});
   }
-
   return fc_out;
 }
 
@@ -600,6 +599,10 @@ PDNode* patterns::GRU(PDPattern* pattern, const std::string& name_scope,
   NEW_NODE(gru, BatchGate, output);
   NEW_NODE(gru, BatchResetHiddenPrev, output);
   NEW_NODE(gru, BatchHidden, output);
+
+  BatchGate->AsIntermediate();
+  BatchResetHiddenPrev->AsIntermediate();
+  BatchHidden->AsIntermediate();
 
   gru_op->LinksFrom({x, Weight, Bias});
   gru_op->LinksTo({Hidden, BatchGate, BatchResetHiddenPrev, BatchHidden});
