@@ -255,6 +255,33 @@ class GRUCPUKernel : public framework::OpKernel<T> {
         const_cast<T*>(weight_data + 2 * frame_size * frame_size);
     Tensor ordered_h0;
 
+    const T* idata = input->data<T>();
+    auto idims = input->dims();
+    LOG(INFO) << "gruinput-------:" << idims[0] << "," << idims[1];
+    for (int i = 0; i < 1; ++i) {
+      for (int j = 0; j < 10; ++j) {
+        std::cout << idata[i * idims[1] + j] << ",";
+      }
+      std::cout << std::endl;
+    }
+    int D = frame_size;
+    int D3 = D * 3;
+    LOG(INFO) << "gruweight-------:" << D << "," << D3;
+    for (int i = 0; i < 1; ++i) {
+      for (int j = 0; j < 10; ++j) {
+        std::cout << weight_data[i * D3 + j] << ",";
+      }
+      std::cout << std::endl;
+    }
+    if (bias) {
+      LOG(INFO) << "grubias-------:" << D3;
+      const T* bdata = bias->data<T>();
+      for (int j = 0; j < 10; ++j) {
+        std::cout << bdata[j] << ",";
+      }
+      std::cout << std::endl;
+    }
+
     framework::Vector<size_t> order(batch_gate->lod()[2]);
 
     if (h0) {
@@ -362,20 +389,10 @@ class GRUCPUKernel : public framework::OpKernel<T> {
     batch_hidden->set_lod(batch_gate->lod());
     to_seq(dev_ctx, *batch_hidden, hidden);
 
-    const T* idata = input->data<T>();
-    auto idims = input->dims();
-    LOG(INFO) << "gruinput-------";
-    for (int i = 0; i < idims[0]; ++i) {
-      for (int j = 0; j < idims[1]; ++j) {
-        std::cout << idata[i * idims[1] + j] << ",";
-      }
-      std::cout << std::endl;
-    }
-
     T* hdata = hidden->mutable_data<T>(context.GetPlace());
-    LOG(INFO) << "gruoutput-------";
-    for (int i = 0; i < hidden_dims[0]; ++i) {
-      for (int j = 0; j < hidden_dims[1]; ++j) {
+    LOG(INFO) << "gruoutput-------:" << hidden_dims[0] << "," << hidden_dims[1];
+    for (int i = 0; i < 1; ++i) {
+      for (int j = 0; j < 10; ++j) {
         std::cout << hdata[i * hidden_dims[1] + j] << ",";
       }
       std::cout << std::endl;

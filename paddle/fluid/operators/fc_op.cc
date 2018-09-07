@@ -136,15 +136,15 @@ class FCOpKernel : public framework::OpKernel<T> {
     const T* w_data = w->data<T>();
     T* output_data = output->mutable_data<T>(ctx.GetPlace());
     LOG(INFO) << "fcinput-------:" << in_dims[0] << "," << in_dims[1];
-    for (int i = 0; i < in_dims[0]; ++i) {
-      for (int j = 0; j < in_dims[1]; ++j) {
+    for (int i = 0; i < 1; ++i) {
+      for (int j = 0; j < 10; ++j) {
         std::cout << input_data[i * in_dims[1] + j] << ",";
       }
       std::cout << std::endl;
     }
 
     LOG(INFO) << "fcweight-------:" << w_dims[0] << "," << w_dims[1];
-    for (int i = 0; i < w_dims[0]; ++i) {
+    for (int i = 0; i < 1; ++i) {
       for (int j = 0; j < 10; ++j) {
         std::cout << w_data[i * w_dims[1] + j] << ",";
       }
@@ -169,7 +169,7 @@ class FCOpKernel : public framework::OpKernel<T> {
 
     auto odims = output->dims();
     LOG(INFO) << "fcoutput-------:" << odims[0] << "," << odims[1];
-    for (int i = 0; i < odims[0]; ++i) {
+    for (int i = 0; i < 1; ++i) {
       for (int j = 0; j < 10; ++j) {
         std::cout << output_data[i * odims[1] + j] << ",";
       }

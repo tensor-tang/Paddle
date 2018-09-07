@@ -230,6 +230,36 @@ class FusionGRUKernel : public framework::OpKernel<T> {
     math::FCCompute<DeviceContext, T>(blas, total_T, D3, M, x_data, wx_data,
                                       xx_data,
                                       bias ? bias->data<T>() : nullptr);
+    LOG(INFO) << "fusiongruinput-------:" << total_T << "," << M;
+    for (int i = 0; i < 1; ++i) {
+      for (int j = 0; j < 10; ++j) {
+        std::cout << x_data[i * M + j] << ",";
+      }
+      std::cout << std::endl;
+    }
+    LOG(INFO) << "fusiongruweightX-------:" << M << "," << D3;
+    for (int i = 0; i < 1; ++i) {
+      for (int j = 0; j < 10; ++j) {
+        std::cout << wx_data[i * D3 + j] << ",";
+      }
+      std::cout << std::endl;
+    }
+
+    LOG(INFO) << "fusiongruweightH-------:" << D << "," << D3;
+    for (int i = 0; i < 1; ++i) {
+      for (int j = 0; j < 10; ++j) {
+        std::cout << wh_data[i * D3 + j] << ",";
+      }
+      std::cout << std::endl;
+    }
+    if (bias) {
+      LOG(INFO) << "fusiongrubias-------:" << D3;
+      const T* bdata = bias->data<T>();
+      for (int j = 0; j < 10; ++j) {
+        std::cout << bdata[j] << ",";
+      }
+      std::cout << std::endl;
+    }
 
     int xx_offset = D3;
     int gate_offset = D;

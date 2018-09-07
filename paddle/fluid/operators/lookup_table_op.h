@@ -89,7 +89,7 @@ class LookupTableKernel : public framework::OpKernel<T> {
 
     auto *odata = output_t->mutable_data<T>(context.GetPlace());
     LOG(INFO) << "lookupoutput-------size:" << output_t->numel();
-    for (int i = 0; i < output_t->numel(); ++i) {
+    for (int i = 0; i < 10; ++i) {
       std::cout << odata[i] << ",";
     }
     std::cout << std::endl;
