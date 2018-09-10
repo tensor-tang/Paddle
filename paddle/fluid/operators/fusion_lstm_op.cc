@@ -19,71 +19,78 @@ limitations under the License. */
 #include "paddle/fluid/operators/math/fc_compute.h"
 #include "paddle/fluid/operators/math/sequence2batch.h"
 #include "paddle/fluid/platform/cpu_info.h"
+#include "paddle/fluid/platform/profiler.h"
 
 namespace paddle {
 namespace operators {
 
 void FusionLSTMOp::InferShape(framework::InferShapeContext* ctx) const {
-  PADDLE_ENFORCE(ctx->HasInput("X"), "Input(X) of LSTM should not be null.");
-  PADDLE_ENFORCE(ctx->HasInput("WeightX"),
-                 "Input(WeightX) of LSTM should not be null.");
-  PADDLE_ENFORCE(ctx->HasInput("WeightH"),
-                 "Input(WeightH) of LSTM should not be null.");
-  PADDLE_ENFORCE(ctx->HasInput("Bias"),
-                 "Input(Bias) of LSTM should not be null.");
-
-  PADDLE_ENFORCE(ctx->HasOutput("XX"),
-                 "Output(XX) of LSTM should not be null.");
-  PADDLE_ENFORCE(ctx->HasOutput("Hidden"),
-                 "Output(Hidden) of LSTM should not be null.");
-  PADDLE_ENFORCE(ctx->HasOutput("Cell"),
-                 "Output(Cell) of LSTM should not be null.");
-
+  auto pp = platform::DeviceContextPool::Instance().Get(platform::CPUPlace());
+  platform::RecordEvent record_event("lstm_infershape", pp);
   auto x_dims = ctx->GetInputDim("X");
-  PADDLE_ENFORCE_EQ(x_dims.size(), 2, "Input(X)'s rank must be 2.");
-
-  if (ctx->HasInput("H0")) {
-    PADDLE_ENFORCE(ctx->HasInput("C0"),
-                   "Input(Cell) and Input(Hidden) of LSTM should not "
-                   "be null at the same time.");
-    auto h_dims = ctx->GetInputDim("H0");
-    auto c_dims = ctx->GetInputDim("C0");
-    PADDLE_ENFORCE(h_dims == c_dims,
-                   "The dimension of Input(H0) and Input(C0) "
-                   "should be the same.");
-  }
-
   auto wx_dims = ctx->GetInputDim("WeightX");
-  PADDLE_ENFORCE_EQ(wx_dims.size(), 2,
-                    "The rank of Input(WeightX) should be 2.");
-  PADDLE_ENFORCE_EQ(wx_dims[0], x_dims[1],
-                    "The first dimension of Input(WeightX) "
-                    "should be %d.",
-                    x_dims[1]);
-
   int frame_size = wx_dims[1] / 4;
-  auto wh_dims = ctx->GetInputDim("WeightH");
-  PADDLE_ENFORCE_EQ(wh_dims.size(), 2,
-                    "The rank of Input(WeightH) should be 2.");
-  PADDLE_ENFORCE_EQ(wh_dims[0], frame_size,
-                    "The first dimension of Input(WeightH) "
-                    "should be %d.",
-                    frame_size);
-  PADDLE_ENFORCE_EQ(wh_dims[1], 4 * frame_size,
-                    "The second dimension of Input(WeightH) "
-                    "should be 4 * %d.",
-                    frame_size);
+  {
+    platform::RecordEvent record_event("lstm_infershape_enforce", pp);
+    PADDLE_ENFORCE(ctx->HasInput("X"), "Input(X) of LSTM should not be null.");
+    PADDLE_ENFORCE(ctx->HasInput("WeightX"),
+                   "Input(WeightX) of LSTM should not be null.");
+    PADDLE_ENFORCE(ctx->HasInput("WeightH"),
+                   "Input(WeightH) of LSTM should not be null.");
+    PADDLE_ENFORCE(ctx->HasInput("Bias"),
+                   "Input(Bias) of LSTM should not be null.");
 
-  auto b_dims = ctx->GetInputDim("Bias");
-  PADDLE_ENFORCE_EQ(b_dims.size(), 2, "The rank of Input(Bias) should be 2.");
-  PADDLE_ENFORCE_EQ(b_dims[0], 1,
-                    "The first dimension of Input(Bias) should be 1.");
-  PADDLE_ENFORCE_EQ(
-      b_dims[1], (ctx->Attrs().Get<bool>("use_peepholes") ? 7 : 4) * frame_size,
-      "The second dimension of Input(Bias) should be "
-      "7 * %d if enable peepholes connection or"
-      "4 * %d if disable peepholes",
-      frame_size, frame_size);
+    PADDLE_ENFORCE(ctx->HasOutput("XX"),
+                   "Output(XX) of LSTM should not be null.");
+    PADDLE_ENFORCE(ctx->HasOutput("Hidden"),
+                   "Output(Hidden) of LSTM should not be null.");
+    PADDLE_ENFORCE(ctx->HasOutput("Cell"),
+                   "Output(Cell) of LSTM should not be null.");
+
+    PADDLE_ENFORCE_EQ(x_dims.size(), 2, "Input(X)'s rank must be 2.");
+
+    if (ctx->HasInput("H0")) {
+      PADDLE_ENFORCE(ctx->HasInput("C0"),
+                     "Input(Cell) and Input(Hidden) of LSTM should not "
+                     "be null at the same time.");
+      auto h_dims = ctx->GetInputDim("H0");
+      auto c_dims = ctx->GetInputDim("C0");
+      PADDLE_ENFORCE(h_dims == c_dims,
+                     "The dimension of Input(H0) and Input(C0) "
+                     "should be the same.");
+    }
+
+    PADDLE_ENFORCE_EQ(wx_dims.size(), 2,
+                      "The rank of Input(WeightX) should be 2.");
+    PADDLE_ENFORCE_EQ(wx_dims[0], x_dims[1],
+                      "The first dimension of Input(WeightX) "
+                      "should be %d.",
+                      x_dims[1]);
+
+    auto wh_dims = ctx->GetInputDim("WeightH");
+    PADDLE_ENFORCE_EQ(wh_dims.size(), 2,
+                      "The rank of Input(WeightH) should be 2.");
+    PADDLE_ENFORCE_EQ(wh_dims[0], frame_size,
+                      "The first dimension of Input(WeightH) "
+                      "should be %d.",
+                      frame_size);
+    PADDLE_ENFORCE_EQ(wh_dims[1], 4 * frame_size,
+                      "The second dimension of Input(WeightH) "
+                      "should be 4 * %d.",
+                      frame_size);
+
+    auto b_dims = ctx->GetInputDim("Bias");
+    PADDLE_ENFORCE_EQ(b_dims.size(), 2, "The rank of Input(Bias) should be 2.");
+    PADDLE_ENFORCE_EQ(b_dims[0], 1,
+                      "The first dimension of Input(Bias) should be 1.");
+    PADDLE_ENFORCE_EQ(
+        b_dims[1],
+        (ctx->Attrs().Get<bool>("use_peepholes") ? 7 : 4) * frame_size,
+        "The second dimension of Input(Bias) should be "
+        "7 * %d if enable peepholes connection or"
+        "4 * %d if disable peepholes",
+        frame_size, frame_size);
+  }
 
   framework::DDim out_dims({x_dims[0], frame_size});
   ctx->SetOutputDim("Hidden", out_dims);
@@ -328,7 +335,7 @@ class FuisonLSTMKernel : public framework::OpKernel<T> {
     INIT_BASE_SIZES
     INIT_VEC_FUNC
     INIT_BASE_INPUT_DATAS
-
+    auto pp = platform::DeviceContextPool::Instance().Get(ctx.GetPlace());
     auto x_lod = x->lod();
     const int total_T = x_dims[0];
     const int N = x_lod[0].size() - 1;
@@ -338,19 +345,24 @@ class FuisonLSTMKernel : public framework::OpKernel<T> {
     T* h_out_data = hidden_out->mutable_data<T>(place);
     T* c_out_data = cell_out->mutable_data<T>(place);
     auto blas = math::GetBlas<DeviceContext, T>(ctx);
-    math::FCCompute<DeviceContext, T>(blas, total_T, D4, M, x_data, wx_data,
-                                      xx_data, bias->data<T>());
-
-    int xx_offset = D4;
-    int gate_offset = D;
-    if (is_reverse) {
-      const int offset = (total_T - 1) * D;
-      xx_data = xx_data + offset * 4;
-      h_out_data = h_out_data + offset;
-      c_out_data = c_out_data + offset;
-      xx_offset = -D4;
-      gate_offset = -D;
+    {
+      platform::RecordEvent record_event("lstm_seq_fc", pp);
+      math::FCCompute<DeviceContext, T>(blas, total_T, D4, M, x_data, wx_data,
+                                        xx_data, bias->data<T>());
     }
+
+    {
+      platform::RecordEvent record_event("lstm_seq_compute_total", pp);
+      int xx_offset = D4;
+      int gate_offset = D;
+      if (is_reverse) {
+        const int offset = (total_T - 1) * D;
+        xx_data = xx_data + offset * 4;
+        h_out_data = h_out_data + offset;
+        c_out_data = c_out_data + offset;
+        xx_offset = -D4;
+        gate_offset = -D;
+      }
 
 #define MOVE_ONE_STEP                    \
   prev_h_data = h_out_data;              \
@@ -388,22 +400,29 @@ class FuisonLSTMKernel : public framework::OpKernel<T> {
     tstart = 1;                                           \
   }
 
-    if (use_peepholes) {
-      for (int i = 0; i < N; ++i) {
-        PROCESS_H0C0_PEEPHOLE
-        for (int step = tstart; step < seq_len; ++step) {
-          GEMM_WH_ADDON(1, prev_h_data, xx_data);
-          COMPUTE_CtHt_PEEPHOLE(xx_data, prev_c_data, c_out_data, h_out_data);
-          MOVE_ONE_STEP;
+      if (use_peepholes) {
+        for (int i = 0; i < N; ++i) {
+          PROCESS_H0C0_PEEPHOLE
+          for (int step = tstart; step < seq_len; ++step) {
+            GEMM_WH_ADDON(1, prev_h_data, xx_data);
+            COMPUTE_CtHt_PEEPHOLE(xx_data, prev_c_data, c_out_data, h_out_data);
+            MOVE_ONE_STEP;
+          }
         }
-      }
-    } else {
-      for (int i = 0; i < N; ++i) {
-        PROCESS_H0C0
-        for (int step = tstart; step < seq_len; ++step) {
-          GEMM_WH_ADDON(1, prev_h_data, xx_data);
-          COMPUTE_CtHt(xx_data, prev_c_data, c_out_data, h_out_data);
-          MOVE_ONE_STEP;
+      } else {
+        for (int i = 0; i < N; ++i) {
+          PROCESS_H0C0
+          for (int step = tstart; step < seq_len; ++step) {
+            {
+              platform::RecordEvent record_event("lstm_seq_compute_gemm", pp);
+              GEMM_WH_ADDON(1, prev_h_data, xx_data);
+            }
+            {
+              platform::RecordEvent record_event("lstm_seq_compute_act", pp);
+              COMPUTE_CtHt(xx_data, prev_c_data, c_out_data, h_out_data);
+            }
+            MOVE_ONE_STEP;
+          }
         }
       }
     }
@@ -424,6 +443,8 @@ class FuisonLSTMKernel : public framework::OpKernel<T> {
     INIT_VEC_FUNC
     INIT_BASE_INPUT_DATAS
 
+    auto pp = platform::DeviceContextPool::Instance().Get(ctx.GetPlace());
+
     auto* reordered_h0 = ctx.Output<Tensor>("ReorderedH0");
     auto* reordered_c0 = ctx.Output<Tensor>("ReorderedC0");
     auto* batched_input = ctx.Output<LoDTensor>("BatchedInput");
@@ -440,68 +461,82 @@ class FuisonLSTMKernel : public framework::OpKernel<T> {
     auto& dev_ctx = ctx.template device_context<DeviceContext>();
     auto blas = math::GetBlas<DeviceContext, T>(dev_ctx);
     if (M > D4) {
-      math::FCCompute<DeviceContext, T>(blas, x_dims[0], D4, M, x_data, wx_data,
-                                        xx_data, bias->data<T>());
-      to_batch(dev_ctx, *xx, batched_input, true, is_reverse);
+      {
+        platform::RecordEvent record_event("lstm_batch_fc1", pp);
+        math::FCCompute<DeviceContext, T>(blas, x_dims[0], D4, M, x_data,
+                                          wx_data, xx_data, bias->data<T>());
+      }
+      {
+        platform::RecordEvent record_event("lstm_batch_tobatch2", pp);
+        to_batch(dev_ctx, *xx, batched_input, true, is_reverse);
+      }
     } else {
-      to_batch(dev_ctx, *x, xx, true, is_reverse);
-      batched_input->set_lod(xx->lod());
-      math::FCCompute<DeviceContext, T>(blas, x_dims[0], D4, M, xx_data,
-                                        wx_data, batched_input_data,
-                                        bias->data<T>());
+      {
+        platform::RecordEvent record_event("lstm_batch_tobatch1", pp);
+        to_batch(dev_ctx, *x, xx, true, is_reverse);
+        batched_input->set_lod(xx->lod());
+      }
+      {
+        platform::RecordEvent record_event("lstm_batch_fc2", pp);
+        math::FCCompute<DeviceContext, T>(blas, x_dims[0], D4, M, xx_data,
+                                          wx_data, batched_input_data,
+                                          bias->data<T>());
+      }
     }
 
     auto batched_lod = batched_input->lod();
-    const auto& seq_order = batched_lod[2];
-    const int max_bs = seq_order.size();
-    reordered_h0->Resize({max_bs, D});
-    reordered_c0->Resize({max_bs, D});
+    {
+      platform::RecordEvent record_event("lstm_batch_compute_total", pp);
+      const auto& seq_order = batched_lod[2];
+      const int max_bs = seq_order.size();
+      reordered_h0->Resize({max_bs, D});
+      reordered_c0->Resize({max_bs, D});
 
-    int tstart = 0;
-    T* prev_h_data = nullptr;
-    T* prev_c_data = nullptr;
-    if (h0) {
-      // reorder h0, c0
-      T* reordered_h0_data = reordered_h0->mutable_data<T>(place);
-      T* reordered_c0_data = reordered_c0->mutable_data<T>(place);
-      const T* h0_data = h0->data<T>();
-      const T* c0_data = c0->data<T>();
-      prev_h_data = reordered_h0_data;
-      prev_c_data = reordered_c0_data;
-      size_t sz = sizeof(T) * D;
-      for (int i = 0; i < max_bs; ++i) {
-        std::memcpy(reordered_h0_data, h0_data + seq_order[i] * D, sz);
-        std::memcpy(reordered_c0_data, c0_data + seq_order[i] * D, sz);
-        reordered_h0_data += D;
-        reordered_c0_data += D;
-      }
-    } else {
-      // compute without h0, c0
-      T* cur_in_data = batched_input_data;
-      T* cur_h_out_data = batched_h_out_data;
-      T* cur_c_out_data = batched_c_out_data;
-      for (int i = 0; i < max_bs; ++i) {
-        GET_Ct_NOH0C0(cur_in_data, cur_c_out_data);
-        if (use_peepholes) {
-          blas.VMUL(D, wc_data + D2, cur_c_out_data, cur_in_data + D);
-          blas.VADD(D, cur_in_data + D, cur_in_data + D3, cur_in_data + D3);
+      int tstart = 0;
+      T* prev_h_data = nullptr;
+      T* prev_c_data = nullptr;
+      if (h0) {
+        // reorder h0, c0
+        T* reordered_h0_data = reordered_h0->mutable_data<T>(place);
+        T* reordered_c0_data = reordered_c0->mutable_data<T>(place);
+        const T* h0_data = h0->data<T>();
+        const T* c0_data = c0->data<T>();
+        prev_h_data = reordered_h0_data;
+        prev_c_data = reordered_c0_data;
+        size_t sz = sizeof(T) * D;
+        for (int i = 0; i < max_bs; ++i) {
+          std::memcpy(reordered_h0_data, h0_data + seq_order[i] * D, sz);
+          std::memcpy(reordered_c0_data, c0_data + seq_order[i] * D, sz);
+          reordered_h0_data += D;
+          reordered_c0_data += D;
         }
-        act_gate(D, cur_in_data + D3, cur_in_data + D3);
-        GET_Ht(cur_c_out_data, cur_in_data, cur_h_out_data);
-        cur_in_data += D4;
-        cur_c_out_data += D;
-        cur_h_out_data += D;
+      } else {
+        // compute without h0, c0
+        T* cur_in_data = batched_input_data;
+        T* cur_h_out_data = batched_h_out_data;
+        T* cur_c_out_data = batched_c_out_data;
+        for (int i = 0; i < max_bs; ++i) {
+          GET_Ct_NOH0C0(cur_in_data, cur_c_out_data);
+          if (use_peepholes) {
+            blas.VMUL(D, wc_data + D2, cur_c_out_data, cur_in_data + D);
+            blas.VADD(D, cur_in_data + D, cur_in_data + D3, cur_in_data + D3);
+          }
+          act_gate(D, cur_in_data + D3, cur_in_data + D3);
+          GET_Ht(cur_c_out_data, cur_in_data, cur_h_out_data);
+          cur_in_data += D4;
+          cur_c_out_data += D;
+          cur_h_out_data += D;
+        }
+        tstart = 1;
+        prev_h_data = batched_h_out_data;
+        prev_c_data = batched_c_out_data;
       }
-      tstart = 1;
-      prev_h_data = batched_h_out_data;
-      prev_c_data = batched_c_out_data;
-    }
-    const auto& batch_starts = batched_lod[0];
-    const int max_seq_len = batch_starts.size() - 1;
-    const int offset = tstart * max_bs * D;
-    batched_input_data = batched_input_data + offset * 4;
-    batched_h_out_data = batched_h_out_data + offset;
-    batched_c_out_data = batched_c_out_data + offset;
+      const auto& batch_starts = batched_lod[0];
+      const int max_seq_len = batch_starts.size() - 1;
+      const int offset = tstart * max_bs * D;
+      batched_input_data = batched_input_data + offset * 4;
+      batched_h_out_data = batched_h_out_data + offset;
+      batched_c_out_data = batched_c_out_data + offset;
 
 #define DEFINE_CUR                        \
   T* cur_in_data = batched_input_data;    \
@@ -522,29 +557,34 @@ class FuisonLSTMKernel : public framework::OpKernel<T> {
   batched_h_out_data = cur_h_out_data; \
   batched_input_data = cur_in_data
 
-    if (use_peepholes) {
-      for (int step = tstart; step < max_seq_len; ++step) {
-        const int cur_bs = batch_starts[step + 1] - batch_starts[step];
-        GEMM_WH_ADDON(cur_bs, prev_h_data, batched_input_data);
-        DEFINE_CUR;
-        for (int i = 0; i < cur_bs; ++i) {
-          COMPUTE_CtHt_PEEPHOLE(cur_in_data, cur_prev_c_data, cur_c_out_data,
-                                cur_h_out_data);
-          MOVE_ONE_BATCH;
+      if (use_peepholes) {
+        for (int step = tstart; step < max_seq_len; ++step) {
+          const int cur_bs = batch_starts[step + 1] - batch_starts[step];
+          GEMM_WH_ADDON(cur_bs, prev_h_data, batched_input_data);
+          DEFINE_CUR;
+          for (int i = 0; i < cur_bs; ++i) {
+            COMPUTE_CtHt_PEEPHOLE(cur_in_data, cur_prev_c_data, cur_c_out_data,
+                                  cur_h_out_data);
+            MOVE_ONE_BATCH;
+          }
+          MOVE_ONE_STEP;
         }
-        MOVE_ONE_STEP;
-      }
-    } else {
-      for (int step = tstart; step < max_seq_len; ++step) {
-        const int cur_bs = batch_starts[step + 1] - batch_starts[step];
-        GEMM_WH_ADDON(cur_bs, prev_h_data, batched_input_data);
-        DEFINE_CUR;
-        for (int i = 0; i < cur_bs; ++i) {
-          COMPUTE_CtHt(cur_in_data, cur_prev_c_data, cur_c_out_data,
-                       cur_h_out_data);
-          MOVE_ONE_BATCH;
+      } else {
+        for (int step = tstart; step < max_seq_len; ++step) {
+          const int cur_bs = batch_starts[step + 1] - batch_starts[step];
+          {
+            platform::RecordEvent record_event("lstm_batch_compute_gemm", pp);
+            GEMM_WH_ADDON(cur_bs, prev_h_data, batched_input_data);
+          }
+          DEFINE_CUR;
+          for (int i = 0; i < cur_bs; ++i) {
+            platform::RecordEvent record_event("lstm_batch_compute_acts", pp);
+            COMPUTE_CtHt(cur_in_data, cur_prev_c_data, cur_c_out_data,
+                         cur_h_out_data);
+            MOVE_ONE_BATCH;
+          }
+          MOVE_ONE_STEP;
         }
-        MOVE_ONE_STEP;
       }
     }
 #undef MOVE_ONE_STEP
