@@ -27,76 +27,79 @@ namespace operators {
 void FusionLSTMOp::InferShape(framework::InferShapeContext* ctx) const {
   auto pp = platform::DeviceContextPool::Instance().Get(platform::CPUPlace());
   platform::RecordEvent record_event("lstm_infershape", pp);
+
+  platform::RecordEvent record_event1("lstm_infershape_has", pp);
+  bool hasx = ctx->HasInput("X");
+  bool haswx = ctx->HasInput("WeightX");
+  bool haswh = ctx->HasInput("WeightH");
+  bool hasb = ctx->HasInput("Bias");
+  bool hasxx = ctx->HasOutput("XX");
+  bool hash = ctx->HasOutput("Hidden");
+  bool hasc = ctx->HasOutput("Cell");
+  bool hash0 = ctx->HasInput("H0");
+  bool hasc0 = ctx->HasInput("C0");
+
+  platform::RecordEvent record_event2("lstm_infershape_getdim", pp);
   auto x_dims = ctx->GetInputDim("X");
   auto wx_dims = ctx->GetInputDim("WeightX");
+  auto wh_dims = ctx->GetInputDim("WeightH");
+  auto b_dims = ctx->GetInputDim("Bias");
   int frame_size = wx_dims[1] / 4;
-  {
-    platform::RecordEvent record_event("lstm_infershape_enforce", pp);
-    PADDLE_ENFORCE(ctx->HasInput("X"), "Input(X) of LSTM should not be null.");
-    PADDLE_ENFORCE(ctx->HasInput("WeightX"),
-                   "Input(WeightX) of LSTM should not be null.");
-    PADDLE_ENFORCE(ctx->HasInput("WeightH"),
-                   "Input(WeightH) of LSTM should not be null.");
-    PADDLE_ENFORCE(ctx->HasInput("Bias"),
-                   "Input(Bias) of LSTM should not be null.");
 
-    PADDLE_ENFORCE(ctx->HasOutput("XX"),
-                   "Output(XX) of LSTM should not be null.");
-    PADDLE_ENFORCE(ctx->HasOutput("Hidden"),
-                   "Output(Hidden) of LSTM should not be null.");
-    PADDLE_ENFORCE(ctx->HasOutput("Cell"),
-                   "Output(Cell) of LSTM should not be null.");
+  platform::RecordEvent record_event3("lstm_infershape_enforce", pp);
+  PADDLE_ENFORCE(hasx, "Input(X) of LSTM should not be null.");
+  PADDLE_ENFORCE(haswx, "Input(WeightX) of LSTM should not be null.");
+  PADDLE_ENFORCE(haswh, "Input(WeightH) of LSTM should not be null.");
+  PADDLE_ENFORCE(hasb, "Input(Bias) of LSTM should not be null.");
+  PADDLE_ENFORCE(hasxx, "Output(XX) of LSTM should not be null.");
+  PADDLE_ENFORCE(hash, "Output(Hidden) of LSTM should not be null.");
+  PADDLE_ENFORCE(hasc, "Output(Cell) of LSTM should not be null.");
 
-    PADDLE_ENFORCE_EQ(x_dims.size(), 2, "Input(X)'s rank must be 2.");
+  PADDLE_ENFORCE_EQ(x_dims.size(), 2, "Input(X)'s rank must be 2.");
 
-    if (ctx->HasInput("H0")) {
-      PADDLE_ENFORCE(ctx->HasInput("C0"),
-                     "Input(Cell) and Input(Hidden) of LSTM should not "
-                     "be null at the same time.");
-      auto h_dims = ctx->GetInputDim("H0");
-      auto c_dims = ctx->GetInputDim("C0");
-      PADDLE_ENFORCE(h_dims == c_dims,
-                     "The dimension of Input(H0) and Input(C0) "
-                     "should be the same.");
-    }
-
-    PADDLE_ENFORCE_EQ(wx_dims.size(), 2,
-                      "The rank of Input(WeightX) should be 2.");
-    PADDLE_ENFORCE_EQ(wx_dims[0], x_dims[1],
-                      "The first dimension of Input(WeightX) "
-                      "should be %d.",
-                      x_dims[1]);
-
-    auto wh_dims = ctx->GetInputDim("WeightH");
-    PADDLE_ENFORCE_EQ(wh_dims.size(), 2,
-                      "The rank of Input(WeightH) should be 2.");
-    PADDLE_ENFORCE_EQ(wh_dims[0], frame_size,
-                      "The first dimension of Input(WeightH) "
-                      "should be %d.",
-                      frame_size);
-    PADDLE_ENFORCE_EQ(wh_dims[1], 4 * frame_size,
-                      "The second dimension of Input(WeightH) "
-                      "should be 4 * %d.",
-                      frame_size);
-
-    auto b_dims = ctx->GetInputDim("Bias");
-    PADDLE_ENFORCE_EQ(b_dims.size(), 2, "The rank of Input(Bias) should be 2.");
-    PADDLE_ENFORCE_EQ(b_dims[0], 1,
-                      "The first dimension of Input(Bias) should be 1.");
-    PADDLE_ENFORCE_EQ(
-        b_dims[1],
-        (ctx->Attrs().Get<bool>("use_peepholes") ? 7 : 4) * frame_size,
-        "The second dimension of Input(Bias) should be "
-        "7 * %d if enable peepholes connection or"
-        "4 * %d if disable peepholes",
-        frame_size, frame_size);
+  if (hash0) {
+    auto h_dims = ctx->GetInputDim("H0");
+    auto c_dims = ctx->GetInputDim("C0");
+    PADDLE_ENFORCE(hasc0,
+                   "Input(Cell) and Input(Hidden) of LSTM should not "
+                   "be null at the same time.");
+    PADDLE_ENFORCE(h_dims == c_dims,
+                   "The dimension of Input(H0) and Input(C0) "
+                   "should be the same.");
   }
 
+  PADDLE_ENFORCE_EQ(wx_dims.size(), 2,
+                    "The rank of Input(WeightX) should be 2.");
+  PADDLE_ENFORCE_EQ(wx_dims[0], x_dims[1],
+                    "The first dimension of Input(WeightX) "
+                    "should be %d.",
+                    x_dims[1]);
+
+  PADDLE_ENFORCE_EQ(wh_dims.size(), 2,
+                    "The rank of Input(WeightH) should be 2.");
+  PADDLE_ENFORCE_EQ(wh_dims[0], frame_size,
+                    "The first dimension of Input(WeightH) "
+                    "should be %d.",
+                    frame_size);
+  PADDLE_ENFORCE_EQ(wh_dims[1], 4 * frame_size,
+                    "The second dimension of Input(WeightH) "
+                    "should be 4 * %d.",
+                    frame_size);
+
+  PADDLE_ENFORCE_EQ(b_dims.size(), 2, "The rank of Input(Bias) should be 2.");
+  PADDLE_ENFORCE_EQ(b_dims[0], 1,
+                    "The first dimension of Input(Bias) should be 1.");
+  PADDLE_ENFORCE_EQ(
+      b_dims[1], (ctx->Attrs().Get<bool>("use_peepholes") ? 7 : 4) * frame_size,
+      "The second dimension of Input(Bias) should be "
+      "7 * %d if enable peepholes connection or"
+      "4 * %d if disable peepholes",
+      frame_size, frame_size);
+
+  platform::RecordEvent record_event4("lstm_infershape_setdim", pp);
   framework::DDim out_dims({x_dims[0], frame_size});
   ctx->SetOutputDim("Hidden", out_dims);
   ctx->SetOutputDim("Cell", out_dims);
-  ctx->ShareLoD("X", "Hidden");
-  ctx->ShareLoD("X", "Cell");
   int xx_width;
   if (ctx->Attrs().Get<bool>("use_seq")) {
     xx_width = wx_dims[1];
@@ -117,7 +120,13 @@ void FusionLSTMOp::InferShape(framework::InferShapeContext* ctx) const {
     ctx->SetOutputDim("BatchedCell", out_dims);
   }
   ctx->SetOutputDim("XX", {x_dims[0], xx_width});
-  ctx->ShareLoD("X", "XX");
+
+  {
+    platform::RecordEvent record_event("lstm_infershape_sharelod", pp);
+    ctx->ShareLoD("X", "Hidden");
+    ctx->ShareLoD("X", "Cell");
+    ctx->ShareLoD("X", "XX");
+  }
 }
 
 framework::OpKernelType FusionLSTMOp::GetExpectedKernelType(
