@@ -34,38 +34,98 @@ class SequenceConvKernel : public framework::OpKernel<T> {
 
     out->mutable_data<T>(context.GetPlace());
 
-    int context_start = context.Attr<int>("contextStart");
-    int context_length = context.Attr<int>("contextLength");
-    int context_stride = context.Attr<int>("contextStride");
+    int context_start = context.Attr<int>("contextStart");    // -1, -2
+    int context_length = context.Attr<int>("contextLength");  // 4
+    int context_stride = context.Attr<int>("contextStride");  // 1
     bool padding_trainable = context.Attr<bool>("paddingTrainable");
 
     PADDLE_ENFORCE_EQ(in->lod().size(), 1UL,
                       "Only support one level sequence now.");
 
-    const Tensor* padding_data = nullptr;
-    if (padding_trainable) {
-      padding_data = context.Input<Tensor>("PaddingData");
-    }
+    PADDLE_ENFORCE(!padding_trainable, "no.");
+    PADDLE_ENFORCE_EQ(context_stride, 1);
+    // const Tensor* padding_data = nullptr;
+    // if (padding_trainable) {
+    //   padding_data = context.Input<Tensor>("PaddingData");
+    // }
 
     int up_pad = std::max(0, -context_start);
     int down_pad = std::max(0, context_start + context_length - 1);
     int sequence_width = static_cast<int>(in->dims()[1]);
-
     framework::DDim col_shape = {in->dims()[0],
                                  context_length * sequence_width};
     Tensor col;
-    col.mutable_data<T>(col_shape, context.GetPlace());
-    // Because if padding_trainable is false, padding data should be zeros.
-    math::SetConstant<DeviceContext, T> set_zero;
     auto& dev_ctx = context.template device_context<DeviceContext>();
     auto blas = math::GetBlas<DeviceContext, T>(dev_ctx);
-    set_zero(dev_ctx, &col, static_cast<T>(0));
-    math::ContextProjectFunctor<DeviceContext, T> seq_project_functor;
 
-    seq_project_functor(dev_ctx, *in, *padding_data, padding_trainable,
-                        context_start, context_length, context_stride, up_pad,
-                        down_pad, &col);
+    auto in_lod = in->lod();
+    PADDLE_ENFORCE_EQ(in_lod.size(), 1UL);
+    T* col_data = col.mutable_data<T>(col_shape, context.GetPlace());
+    const T* in_data = in->data<T>();
+    for (int i = 0; i < static_cast<int>(in_lod[0].size()) - 1; ++i) {
+      int st = in_lod[0][i];
+      int ed = in_lod[0][i + 1];
+      size_t src_stride = sequence_width;
+      size_t src_stride_sz = sequence_width * sizeof(T);
+      size_t dst_stride = context_length * sequence_width;
+      size_t dst_stride_sz = dst_stride * sizeof(T);
 
+      const T* src_data = in_data + st * src_stride;
+      T* dst_data = col_data + st * dst_stride;
+      size_t zero_sz = up_pad * src_stride * sizeof(T);
+      int seq_len = ed - st;
+      if (seq_len > up_pad + down_pad) {
+        // fill up pad
+        for (int j = 0; j < up_pad; ++j) {
+          std::memset(dst_data, 0, zero_sz);
+          // blas.VCOPY((dst_stride_sz-zero_sz)/sizeof(T), src_data,
+          // dst_data+zero_sz/sizeof(T));
+          std::memcpy(dst_data + zero_sz / sizeof(T), src_data,
+                      dst_stride_sz - zero_sz);
+          dst_data += dst_stride;
+          zero_sz -= src_stride_sz;
+        }
+        // fill data
+        for (int j = st + up_pad; j < ed - down_pad; ++j) {
+          // blas.VCOPY(dst_stride_sz/ sizeof(T), src_data, dst_data);
+          std::memcpy(dst_data, src_data, dst_stride_sz);
+          dst_data += dst_stride;
+          src_data += src_stride;
+        }
+        // fill down pad
+        zero_sz = src_stride_sz;
+        src_data -= src_stride;
+        for (int j = 0; j < down_pad; ++j) {
+          std::memcpy(dst_data, src_data, dst_stride_sz - zero_sz);
+          dst_data += dst_stride;
+          std::memset(dst_data - zero_sz / sizeof(T), 0, zero_sz);
+          zero_sz += src_stride_sz;
+          src_data -= src_stride;
+        }
+      } else {
+        PADDLE_ENFORCE_GE(context_length, up_pad + down_pad + 1);
+        std::memset(dst_data, 0, seq_len * dst_stride_sz);
+        size_t seq_len_size = seq_len * src_stride_sz;
+        for (int j = 0; j < std::min(up_pad, seq_len); ++j) {
+          size_t copy_size = std::min(seq_len_size, dst_stride_sz - zero_sz);
+          // vcopy?
+          std::memcpy(dst_data + zero_sz / sizeof(T), src_data, copy_size);
+          dst_data += dst_stride;
+          zero_sz -= src_stride_sz;
+        }
+        zero_sz = down_pad * sequence_width * sizeof(T);
+        dst_data = col_data + (ed - 1) * dst_stride;
+        src_data = in_data + (ed - up_pad - 1) * src_stride;
+        for (int j = 0; j < std::min(0, seq_len - up_pad); ++j) {
+          size_t copy_size = std::min(seq_len_size, dst_stride_sz - zero_sz);
+          // vcopy?
+          std::memcpy(dst_data, src_data, copy_size);
+          dst_data -= dst_stride;
+          src_data += src_stride;
+          zero_sz -= src_stride_sz;
+        }
+      }
+    }
     blas.MatMul(col, filter, out);
   }
 };
