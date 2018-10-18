@@ -65,64 +65,66 @@ class SequenceConvKernel : public framework::OpKernel<T> {
     for (int i = 0; i < static_cast<int>(in_lod[0].size()) - 1; ++i) {
       int st = in_lod[0][i];
       int ed = in_lod[0][i + 1];
-      size_t src_stride = sequence_width;
-      size_t src_stride_sz = sequence_width * sizeof(T);
-      size_t dst_stride = context_length * sequence_width;
-      size_t dst_stride_sz = dst_stride * sizeof(T);
+      int src_mat_w = sequence_width;
+      int src_mat_w_sz = src_mat_w * sizeof(T);
+      int dst_mat_w = context_length * src_mat_w;
+      int dst_mat_w_sz = dst_mat_w * sizeof(T);
 
-      const T* src_data = in_data + st * src_stride;
-      T* dst_data = col_data + st * dst_stride;
-      size_t zero_sz = up_pad * src_stride * sizeof(T);
+      const T* src_data = in_data + st * src_mat_w;
+      T* dst_data = col_data + st * dst_mat_w;
       int seq_len = ed - st;
       if (seq_len > up_pad + down_pad) {
-        // fill up pad
+        // zero all up_pad
+        std::memset(dst_data, 0, up_pad * dst_mat_w_sz);
+        // fill up_pad data
+        dst_data = dst_data + up_pad * src_mat_w;
+        int copy_size = dst_mat_w_sz - up_pad * src_mat_w_sz;
         for (int j = 0; j < up_pad; ++j) {
-          std::memset(dst_data, 0, zero_sz);
-          // blas.VCOPY((dst_stride_sz-zero_sz)/sizeof(T), src_data,
+          // blas.VCOPY((dst_mat_w_sz-zero_sz)/sizeof(T), src_data,
           // dst_data+zero_sz/sizeof(T));
-          std::memcpy(dst_data + zero_sz / sizeof(T), src_data,
-                      dst_stride_sz - zero_sz);
-          dst_data += dst_stride;
-          zero_sz -= src_stride_sz;
+          std::memcpy(dst_data, src_data, copy_size);
+          dst_data += (dst_mat_w - src_mat_w);
+          copy_size += src_mat_w_sz;
         }
         // fill data
-        for (int j = st + up_pad; j < ed - down_pad; ++j) {
-          // blas.VCOPY(dst_stride_sz/ sizeof(T), src_data, dst_data);
-          std::memcpy(dst_data, src_data, dst_stride_sz);
-          dst_data += dst_stride;
-          src_data += src_stride;
+        for (int j = 0; j < seq_len - up_pad - down_pad; ++j) {
+          // blas.VCOPY(dst_mat_w_sz/ sizeof(T), src_data, dst_data);
+          std::memcpy(dst_data, src_data, copy_size);
+          dst_data += dst_mat_w;
+          src_data += src_mat_w;
         }
-        // fill down pad
-        zero_sz = src_stride_sz;
-        src_data -= src_stride;
+        // zero all down_pad
+        std::memset(dst_data, 0, down_pad * dst_mat_w_sz);
+        // fill down_pad data
+        copy_size -= src_mat_w_sz;
         for (int j = 0; j < down_pad; ++j) {
-          std::memcpy(dst_data, src_data, dst_stride_sz - zero_sz);
-          dst_data += dst_stride;
-          std::memset(dst_data - zero_sz / sizeof(T), 0, zero_sz);
-          zero_sz += src_stride_sz;
-          src_data -= src_stride;
+          std::memcpy(dst_data, src_data, copy_size);
+          dst_data += dst_mat_w;
+          src_data += src_mat_w;
+          copy_size -= src_mat_w_sz;
         }
       } else {
         PADDLE_ENFORCE_GE(context_length, up_pad + down_pad + 1);
-        std::memset(dst_data, 0, seq_len * dst_stride_sz);
-        size_t seq_len_size = seq_len * src_stride_sz;
+        std::memset(dst_data, 0, seq_len * dst_mat_w_sz);
+        int zero_sz = up_pad * src_mat_w * sizeof(T);
+        int seq_len_size = seq_len * src_mat_w_sz;
         for (int j = 0; j < std::min(up_pad, seq_len); ++j) {
-          size_t copy_size = std::min(seq_len_size, dst_stride_sz - zero_sz);
+          int copy_size = std::min(seq_len_size, dst_mat_w_sz - zero_sz);
           // vcopy?
           std::memcpy(dst_data + zero_sz / sizeof(T), src_data, copy_size);
-          dst_data += dst_stride;
-          zero_sz -= src_stride_sz;
+          dst_data += dst_mat_w;
+          zero_sz -= src_mat_w_sz;
         }
         zero_sz = down_pad * sequence_width * sizeof(T);
-        dst_data = col_data + (ed - 1) * dst_stride;
-        src_data = in_data + (ed - up_pad - 1) * src_stride;
+        dst_data = col_data + (ed - 1) * dst_mat_w;
+        src_data = in_data + (ed - up_pad - 1) * src_mat_w;
         for (int j = 0; j < std::min(0, seq_len - up_pad); ++j) {
-          size_t copy_size = std::min(seq_len_size, dst_stride_sz - zero_sz);
+          int copy_size = std::min(seq_len_size, dst_mat_w_sz - zero_sz);
           // vcopy?
           std::memcpy(dst_data, src_data, copy_size);
-          dst_data -= dst_stride;
-          src_data += src_stride;
-          zero_sz -= src_stride_sz;
+          dst_data -= dst_mat_w;
+          src_data += src_mat_w;
+          zero_sz -= src_mat_w_sz;
         }
       }
     }
