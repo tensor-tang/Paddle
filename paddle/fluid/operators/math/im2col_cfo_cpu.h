@@ -115,7 +115,8 @@ inline void im2col_sh1sw1dh1dw1ph1pw1(const framework::Tensor& im,
   int filter_width = col->dims()[2];
   int output_height = col->dims()[3];
   int output_width = col->dims()[4];
-
+  // printf("%d,%d,%d,%d,%d, %d,%d\n", im_channels, im_height, im_width,
+  // filter_height,filter_width, output_height, output_width);
   constexpr int plh = 1;
   constexpr int prh = 1;
   constexpr int plw = 1;

@@ -36,8 +36,9 @@ class Im2ColFunctor<paddle::operators::math::ColFormat::kCFO,
     PADDLE_ENFORCE(im.dims().size() == 3);
     PADDLE_ENFORCE(col->dims().size() == 5);
 
-    if (stride[0] == 1 && stride[1] == 1 && dilation[0] == 1 &&
-        dilation[1] == 1) {
+    if (stride[0] == 1 && stride[1] == 1 && dilation[0] == 1 && dilation[1] == 1
+        //&& im.dims()[1] > 16 && im.dims()[2]>16
+        ) {
       if (padding[0] == 0 && padding[1] == 0) {
         im2col_sh1sw1dh1dw1ph0pw0<T>(im, col);
         return;

@@ -21,6 +21,7 @@ limitations under the License. */
 #include "paddle/fluid/operators/math/depthwise_conv.h"
 #include "paddle/fluid/operators/math/im2col.h"
 #include "paddle/fluid/operators/math/vol2col.h"
+#include "paddle/fluid/platform/profiler.h"
 
 namespace paddle {
 namespace operators {
@@ -92,6 +93,8 @@ template <typename DeviceContext, typename T>
 class GemmConvKernel : public framework::OpKernel<T> {
  public:
   void Compute(const framework::ExecutionContext& context) const override {
+    auto pp = platform::DeviceContextPool::Instance().Get(platform::CPUPlace());
+
     const Tensor* input = context.Input<Tensor>("Input");
     // The filter will be reshaped in the calculations,
     // so here use an assignment operation,
@@ -104,7 +107,8 @@ class GemmConvKernel : public framework::OpKernel<T> {
     std::vector<int> strides = context.Attr<std::vector<int>>("strides");
     std::vector<int> paddings = context.Attr<std::vector<int>>("paddings");
     std::vector<int> dilations = context.Attr<std::vector<int>>("dilations");
-
+    // LOG(INFO) <<strides[0]
+    // <<","<<strides[1]<<","<<paddings[0]<<","<<paddings[1]<<","<<groups ;
     const int batch_size = static_cast<int>(input->dims()[0]);
 
     // filter_shape_vec: {k_o, k_i, k_h, k_w} or {k_o, k_i, k_d, k_h, k_w}
@@ -175,6 +179,7 @@ class GemmConvKernel : public framework::OpKernel<T> {
           col_matrix.Resize(col_matrix_shape);
         } else if (data_dim == 2U) {
           // im2col
+          platform::RecordEvent record_event("conv_im2col", pp);
           im2col(dev_ctx, in_slice, dilations, strides,
                  std::vector<int>{paddings[0], paddings[1], paddings[0],
                                   paddings[1]},
@@ -184,13 +189,24 @@ class GemmConvKernel : public framework::OpKernel<T> {
           vol2col(dev_ctx, in_slice, dilations, strides, paddings, &col);
         }
 
-        // gemm
-        Tensor out_slice = out_batch.Slice(g * out_step, (g + 1) * out_step);
-        Tensor filter_slice = filter.Slice(g * out_step, (g + 1) * out_step);
-        blas.MatMul(filter_slice, false, col_matrix, false, T(1.0), &out_slice,
-                    T(0.0));
+        {
+          platform::RecordEvent record_event("conv_gemm", pp);
+          // gemm
+          Tensor out_slice = out_batch.Slice(g * out_step, (g + 1) * out_step);
+          Tensor filter_slice = filter.Slice(g * out_step, (g + 1) * out_step);
+          blas.MatMul(filter_slice, false, col_matrix, false, T(1.0),
+                      &out_slice, T(0.0));
+        }
       }
     }
+
+    // auto idims = input->dims();
+    // auto fdims = filter.dims();
+    // auto odims = output->dims();
+
+    //  LOG(INFO) << "c:"<< idims[1] << ",h:" << idims[2] <<",w"<<idims[3];
+    //  LOG(INFO) << "fh:" << fdims[0] <<",fw"<<fdims[1];
+    //  LOG(INFO) << "c:"<< odims[1] << ",h:" << odims[2] <<",w"<<odims[3];
   }
 };
 
