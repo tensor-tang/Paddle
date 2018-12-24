@@ -146,26 +146,82 @@ void SetFakeImageInput(std::vector<std::vector<PaddleTensor>> *inputs,
     os << "}\n";
   }
   LOG(INFO) << os.str();
+  std::vector<std::string> names = {
+      "slot10000_embed", "slot10001_embed", "slot10004_embed",
+      "slot10005_embed", "slot10008_embed", "slot10009_embed",
+      "slot10012_embed", "slot10013_embed", "slot10108_embed",
+      "slot13324_embed", "slot13325_embed", "slot13326_embed",
+      "slot13327_embed", "slot13328_embed", "slot13329_embed",
+      "slot13330_embed", "slot13331_embed", "slot15501_embed",
+      "slot15502_embed", "slot15503_embed", "slot15504_embed",
+      "slot15505_embed", "slot15506_embed", "slot15507_embed",
+      "slot15508_embed", "slot15516_embed", "slot15519_embed",
+      "slot15523_embed", "slot15531_embed", "slot15533_embed",
+      "slot15548_embed", "slot15564_embed", "slot15565_embed",
+      "slot15566_embed", "slot15570_embed", "slot15571_embed",
+      "slot15572_embed", "slot15573_embed", "slot15574_embed",
+      "slot15575_embed", "slot15576_embed", "slot15577_embed",
+      "slot15579_embed", "slot15581_embed", "slot15582_embed",
+      "slot15583_embed", "slot15584_embed", "slot5016_embed",
+      "slot5021_embed",  "slot6002_embed",  "slot6003_embed",
+      "slot6004_embed",  "slot6005_embed",  "slot6006_embed",
+      "slot6007_embed",  "slot6008_embed",  "slot6009_embed",
+      "slot6011_embed",  "slot6014_embed",  "slot6015_embed",
+      "slot6023_embed",  "slot6024_embed",  "slot6025_embed",
+      "slot6027_embed",  "slot6029_embed",  "slot6031_embed",
+      "slot6034_embed",  "slot6035_embed",  "slot6036_embed",
+      "slot6037_embed",  "slot6039_embed",  "slot6048_embed",
+      "slot6050_embed",  "slot6058_embed",  "slot6059_embed",
+      "slot6060_embed",  "slot6066_embed",  "slot6067_embed",
+      "slot6068_embed",  "slot6069_embed",  "slot6070_embed",
+      "slot6071_embed",  "slot6072_embed",  "slot6073_embed",
+      "slot6182_embed",  "slot6183_embed",  "slot6184_embed",
+      "slot6185_embed",  "slot6186_embed",  "slot6188_embed",
+      "slot6189_embed",  "slot6190_embed",  "slot6201_embed",
+      "slot6202_embed",  "slot6203_embed",  "slot6247_embed",
+      "slot6248_embed",  "slot6250_embed",  "slot6251_embed",
+      "slot6807_embed",  "slot6808_embed",  "slot6809_embed",
+      "slot6810_embed",  "slot6811_embed",  "slot6812_embed",
+      "slot6813_embed",  "slot6814_embed",  "slot6815_embed",
+      "slot6816_embed",  "slot6817_embed",  "slot6818_embed",
+      "slot6819_embed",  "slot6820_embed",  "slot6822_embed",
+      "slot6823_embed",  "slot6826_embed",  "slot7002_embed",
+      "slot7003_embed",  "slot7004_embed",  "slot7005_embed",
+      "slot7006_embed",  "slot7008_embed",  "slot7009_embed",
+      "slot7010_embed",  "slot7011_embed",  "slot7013_embed",
+      "slot7014_embed",  "slot7015_embed",  "slot7016_embed",
+      "slot7017_embed",  "slot7019_embed",  "slot7100_embed",
+      "slot7506_embed",  "slot7507_embed",  "slot7514_embed",
+      "slot7515_embed",  "slot7516_embed"};
+  PADDLE_ENFORCE_EQ(names.size(), feed_target_shapes.size());
+  std::vector<PaddleTensor> input_slots(feed_target_shapes.size());
 
-  int dim1 = feed_target_shapes[0][1];
-  int dim2 = feed_target_shapes[0][2];
-  int dim3 = feed_target_shapes[0][3];
+  for (size_t i = 0; i < feed_target_shapes.size(); ++i) {
+    const auto &feed_shape = feed_target_shapes[i];
+    // PaddleTensor input ;
+    auto &input = input_slots[i];
+    std::vector<int> shape({FLAGS_batch_size});
+    for (size_t s = 1; s < feed_shape.size(); ++s) {
+      shape.push_back(static_cast<int>(feed_shape[s]));
+    }
+    input.name = names[i];
+    input.shape = shape;
+    input.dtype = PaddleDType::FLOAT32;
+    size_t len = std::accumulate(shape.begin(), shape.end(), 1,
+                                 [](int a, int b) { return a * b; });
+    input.data.Resize(len * sizeof(float));
+    input.lod.assign({{0, 1}});
+    PADDLE_ENFORCE_EQ(len, 11);
+    float *input_data = static_cast<float *>(input.data.data());
+    // fill input data, for profile easily, do not use random data here.
+    for (size_t j = 0; j < len; ++j) {
+      *(input_data + j) = static_cast<float>(j) / len;
+    }
 
-  PaddleTensor input;
-  std::vector<int> shape({FLAGS_batch_size, dim1, dim2, dim3});
-  input.shape = shape;
-  input.dtype = PaddleDType::FLOAT32;
-
-  // fill input data, for profile easily, do not use random data here.
-  size_t size = FLAGS_batch_size * dim1 * dim2 * dim3;
-  input.data.Resize(size * sizeof(float));
-  float *input_data = static_cast<float *>(input.data.data());
-  for (size_t i = 0; i < size; i++) {
-    *(input_data + i) = static_cast<float>(i) / size;
+    // std::vector<PaddleTensor> input_slots;
+    // input_slots.assign({input});
+    //  (*inputs).emplace_back(input_slots);
   }
-
-  std::vector<PaddleTensor> input_slots;
-  input_slots.assign({input});
   (*inputs).emplace_back(input_slots);
 }
 
