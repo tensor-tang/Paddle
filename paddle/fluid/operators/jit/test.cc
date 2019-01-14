@@ -231,21 +231,22 @@ struct TestFuncWithRefer<jit::SeqPoolTuples<T>, std::vector<T>,
 
 template <typename T>
 struct TestFuncWithRefer<jit::MatMulTuples<T>, std::vector<T>, std::vector<T>,
-                         std::vector<T>, int, int, int> {
+                         std::vector<T>> {
   void operator()(const typename jit::MatMulTuples<T>::func_type tgt,
                   const std::vector<T>& a, const std::vector<T>& b,
-                  const std::vector<T>& cref, int m, int n, int k) {
+                  const std::vector<T>& cref,
+                  const typename jit::MatMulTuples<T>::attr_type& attr) {
     EXPECT_TRUE(tgt != nullptr);
-    EXPECT_EQ(a.size(), static_cast<size_t>(m * k));
-    EXPECT_EQ(b.size(), static_cast<size_t>(k * n));
-    EXPECT_EQ(cref.size(), static_cast<size_t>(m * n));
+    EXPECT_EQ(a.size(), static_cast<size_t>(attr.m * attr.k));
+    EXPECT_EQ(b.size(), static_cast<size_t>(attr.k * attr.n));
+    EXPECT_EQ(cref.size(), static_cast<size_t>(attr.m * attr.n));
     std::vector<T> c(cref.size());
     const T* a_data = a.data();
     const T* b_data = b.data();
     const T* cref_data = cref.data();
     T* c_data = c.data();
-    tgt(a_data, b_data, c_data, m, n, k);
-    ExpectEQ<T>(c_data, cref_data, m * n);
+    tgt(a_data, b_data, c_data, &attr);
+    ExpectEQ<T>(c_data, cref_data, attr.m * attr.n);
   }
 };
 
@@ -492,9 +493,10 @@ void TestMatMulKernel() {
         const T* a_data = a.data();
         const T* b_data = b.data();
         T* c_data = c.data();
-        ref(a_data, b_data, c_data, m, n, k);
+        const jit::matmul_attr_t attr{m, n, k};
+        ref(a_data, b_data, c_data, &attr);
         TestAllImpls<KT, jit::MatMulTuples<T>, PlaceType, std::vector<T>,
-                     std::vector<T>, std::vector<T>>(k, a, b, c, m, n, k);
+                     std::vector<T>, std::vector<T>>(attr, a, b, c, attr);
       }
     }
   }
