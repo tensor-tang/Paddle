@@ -16,6 +16,7 @@
 
 #include <stdlib.h>  // for malloc and free
 #include <string>
+#include <vector>
 #include "glog/logging.h"
 #include "paddle/fluid/operators/jit/gen/jitcode.h"
 #include "paddle/fluid/platform/enforce.h"
@@ -54,8 +55,54 @@ class MatMulJitCode : public JitCode {
   virtual ~MatMulJitCode() { free(wgt_); }
 
  protected:
-  template <typename JMM>
-  void pool_height(int w_offset, int block, int max_num_regs) {}
+  void prepare_wgt(const std::vector<int>& groups) {
+    const int block_len = sizeof(float) * block_;
+    size_t wgt_offset = 0;
+    int n_offset = 0;
+    bool careful_save = aligned_n_ != n_;
+    int rest = n_ % block_;
+    for (size_t g = 0; g < groups.size(); ++g) {
+      for (int k = 0; k < k_; ++k) {
+        size_t x_offset = sizeof(float) * (k * n_ + n_offset * block_);
+        for (int i = 0; i < groups[g]; ++i) {
+          // TODO(TJ): try load more one time
+          if (careful_save && g == groups.size() - 1 && i == groups[g] - 1) {
+            int rest_tmp = rest;
+            size_t x_offset_tmp = x_offset + i * block_len;
+            size_t wgt_offset_tmp = wgt_offset;
+            int block_tmp = 8;
+            while (rest_tmp > 0) {
+              if (rest_tmp >= 8) {
+                block_tmp = 8;
+                vmovups(ymm_t(0), ptr[param_y + x_offset_tmp]);
+                vmovups(ptr[reg_ptr_wgt + wgt_offset_tmp], ymm_t(0));
+              } else if (rest_tmp >= 4) {
+                block_tmp = 4;
+                vmovups(xmm_t(0), ptr[param_y + x_offset_tmp]);
+                vmovups(ptr[reg_ptr_wgt + wgt_offset_tmp], xmm_t(0));
+              } else if (rest_tmp >= 2) {
+                block_tmp = 2;
+                vmovq(xmm_t(0), ptr[param_y + x_offset_tmp]);
+                vmovq(ptr[reg_ptr_wgt + wgt_offset_tmp], xmm_t(0));
+              } else {
+                block_tmp = 1;
+                vmovss(xmm_t(0), ptr[param_y + x_offset_tmp]);
+                vmovss(ptr[reg_ptr_wgt + wgt_offset_tmp], xmm_t(0));
+              }
+              x_offset_tmp += block_tmp * sizeof(float);
+              wgt_offset_tmp += block_tmp * sizeof(float);
+              rest_tmp -= block_tmp;
+            }
+          } else {
+            vmovups(zmm_t(0), ptr[param_y + x_offset + i * block_len]);
+            vmovups(ptr[reg_ptr_wgt + wgt_offset], zmm_t(0));
+          }
+          wgt_offset += block_len;
+        }
+      }
+      n_offset += groups[g];
+    }
+  }
 
  private:
   int m_, n_, k_;

@@ -33,10 +33,14 @@ void MatMulJitCode::genCode() {
   if (rest_num_regs != 0) {
     groups.push_back(rest_num_regs);
   }
+  PADDLE_ENFORCE_GT(groups.front(), 0);
 
   mov(reg_ptr_wgt, reinterpret_cast<size_t>(wgt_));
   const int block_len = sizeof(float) * block_;
   bool careful_save = aligned_n_ != n_;
+
+  prepare_wgt(groups);
+
   size_t wgt_offset = 0;
   size_t z_offset = 0;
   for (size_t g = 0; g < groups.size(); ++g) {
@@ -57,7 +61,7 @@ void MatMulJitCode::genCode() {
       // last one, save
       if (k == k_ - 1) {
         for (int i = 0; i < groups[g]; ++i) {
-          // rest only save should be careful or use xmm
+          // only rest save should be careful
           if (careful_save && g == groups.size() - 1 && i == groups[g] - 1) {
             break;
           }
@@ -70,21 +74,28 @@ void MatMulJitCode::genCode() {
   }
 
   // if (careful_save) {
-  //   int i = groups.back();
-  //   int rest = n_ %block_;
-  //   if ()
+  //   int reg_idx = groups.back() -1;
+  //   int rest = n_ % block_;
+  //   int shift_num = 0;
+  //   z_offset = (n_ - (n_%block_)) * sizeof(float);
+  //   while (rest >0){
+  //     int inner_block = block_/2;
+  //     if (rest >= 8) {
+  //         vmovups(ptr[param_z + z_offset], ymm_t(reg_idx));
+
+  //         rest -= 8;
+
+  //     } else if (rest >= 4) {
+
+  //     } else if (rest >=2) {
+
+  //     } else {
+
+  //     }
+
+  //   }
   // }
 
-  // const int group_len = max_num_regs * block_ * sizeof(float);
-  // for (int g = 0; g < num_groups; ++g) {
-  //   pool_height<zmm_t>(g * group_len, block_, max_num_regs);
-  // }
-  // if (rest_num_regs > 0) {
-  //   pool_height<zmm_t>(num_groups * group_len, block_, rest_num_regs);
-  // }
-  // // part of rest_w * height
-  // const int rest = w_ % block_;
-  // pool_height_of_rest_width(rest, (w_ - rest) * sizeof(float), max_num_regs);
   postCode();
 }
 
