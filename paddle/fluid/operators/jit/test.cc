@@ -482,24 +482,25 @@ void TestSeqPoolKernel() {
 template <paddle::operators::jit::KernelType KT, typename T, typename PlaceType>
 void TestMatMulKernel() {
   VLOG(10) << "===== Test JITKernel " << jit::to_string(KT);
-  for (int m : {1, 2, 3, 4}) {
-    for (int n : {1, 2, 3, 4}) {
-      for (int k : TestSizes()) {
-        auto ref = jit::GetRefer<KT, jit::MatMulTuples<T>>();
-        EXPECT_TRUE(ref != nullptr);
-        std::vector<T> a(m * k), b(k * n), c(m * n);
-        RandomVec<T>(m * k, a.data(), -0.2f, 0.2f);
-        RandomVec<T>(k * n, b.data(), -0.2f, 0.2f);
-        const T* a_data = a.data();
-        const T* b_data = b.data();
-        T* c_data = c.data();
-        const jit::matmul_attr_t attr{m, n, k};
-        ref(a_data, b_data, c_data, &attr);
-        TestAllImpls<KT, jit::MatMulTuples<T>, PlaceType, std::vector<T>,
-                     std::vector<T>, std::vector<T>>(attr, a, b, c, attr);
-      }
-    }
-  }
+  // for (int m : {1, 2, 3, 4}) {
+  //   for (int n : {1, 2, 3, 4}) {
+  //     for (int k : TestSizes()) {
+  int m = 1, n = 258, k = 258;
+  auto ref = jit::GetRefer<KT, jit::MatMulTuples<T>>();
+  EXPECT_TRUE(ref != nullptr);
+  std::vector<T> a(m * k), b(k * n), c(m * n);
+  RandomVec<T>(m * k, a.data(), -2.f, 2.f);
+  RandomVec<T>(k * n, b.data(), -2.f, 2.f);
+  const T* a_data = a.data();
+  const T* b_data = b.data();
+  T* c_data = c.data();
+  const jit::matmul_attr_t attr{m, n, k};
+  ref(a_data, b_data, c_data, &attr);
+  TestAllImpls<KT, jit::MatMulTuples<T>, PlaceType, std::vector<T>,
+               std::vector<T>, std::vector<T>>(attr, a, b, c, attr);
+  //     }
+  //   }
+  // }
 }
 
 template <paddle::operators::jit::KernelType KT, typename T, typename PlaceType>

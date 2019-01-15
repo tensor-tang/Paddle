@@ -35,17 +35,18 @@ void MatMulJitCode::genCode() {
   }
   PADDLE_ENFORCE_GT(groups.front(), 0);
 
-  mov(reg_ptr_wgt, reinterpret_cast<size_t>(wgt_));
+  //  mov(reg_ptr_wgt, reinterpret_cast<size_t>(wgt_));
   const int block_len = sizeof(float) * block_;
   bool careful_save = aligned_n_ != n_;
 
-  prepare_wgt(groups);
+  // prepare_wgt(groups);
 
-  size_t wgt_offset = 0;
   size_t z_offset = 0;
+  int n_offset = 0;
   for (size_t g = 0; g < groups.size(); ++g) {
     size_t x_offset = 0;
     for (int k = 0; k < k_; ++k) {
+      size_t y_offset = sizeof(float) * (k * n_ + n_offset * block_);
       vbroadcastss(zmm_t(15), ptr[param_x + x_offset]);
       // clean
       if (k == 0) {
@@ -54,9 +55,12 @@ void MatMulJitCode::genCode() {
         }
       }
       for (int i = 0; i < groups[g]; ++i) {
-        vmovups(zmm_t(14), ptr[reg_ptr_wgt + wgt_offset]);
+        if (careful_save && g == groups.size() - 1 && i == groups[g] - 1) {
+          continue;
+        }
+        vmovups(zmm_t(14), ptr[param_y + y_offset + i * block_len]);
         vfmadd231ps(zmm_t(i), zmm_t(14), zmm_t(15));
-        wgt_offset += block_len;
+        // wgt_offset += block_len;
       }
       // last one, save
       if (k == k_ - 1) {
@@ -71,6 +75,7 @@ void MatMulJitCode::genCode() {
       x_offset += sizeof(float);
     }
     z_offset += block_len * groups[g];
+    n_offset += groups[g];
   }
 
   // if (careful_save) {
