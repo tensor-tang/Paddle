@@ -27,8 +27,8 @@ namespace mkl {
 template <>
 void MatMul<float>(const float* a, const float* b, float* c, int m, int n,
                    int k) {
-  platform::dynload::cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, m,
-                                 n, k, 1.f, a, k, b, n, 0.f, c, n);
+  platform::dynload::cblas_sgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, n,
+                                 m, k, 1.f, b, n, a, k, 0.f, c, n);
 }
 
 template <>
