@@ -62,7 +62,9 @@ namespace jit = paddle::operators::jit;
 
 template <typename KernelTuples, typename... Args>
 struct TestFuncWithRefer {
-  void operator()(const typename KernelTuples::func_type tgt, Args... args) {}
+  void operator()(const typename KernelTuples::func_type tgt, Args... args) {
+    LOG(FATAL) << "Should specify this function.";
+  }
 };
 
 template <typename T>
@@ -140,7 +142,8 @@ struct TestFuncWithRefer<jit::XYNTuples<T>, std::vector<T>, std::vector<T>> {
 
 template <typename T>
 struct TestFuncWithRefer<jit::LSTMTuples<T>, std::vector<T>, std::vector<T>,
-                         std::vector<T>, std::vector<T>, std::vector<T>> {
+                         std::vector<T>, std::vector<T>, std::vector<T>,
+                         typename jit::LSTMTuples<T>::attr_type> {
   void operator()(const typename jit::LSTMTuples<T>::func_type tgt,
                   const std::vector<T>& xsrc, const std::vector<T>& wp,
                   const std::vector<T>& ct_1, const std::vector<T>& ct_ref,
@@ -185,7 +188,8 @@ struct TestFuncWithRefer<jit::LSTMTuples<T>, std::vector<T>, std::vector<T>,
 
 template <typename T>
 struct TestFuncWithRefer<jit::GRUTuples<T>, std::vector<T>, std::vector<T>,
-                         std::vector<T>> {
+                         std::vector<T>,
+                         typename jit::GRUTuples<T>::attr_type> {
   void operator()(const typename jit::GRUTuples<T>::func_type tgt,
                   const std::vector<T>& xsrc, const std::vector<T>& ht_1,
                   const std::vector<T>& ht_ref,
@@ -212,8 +216,8 @@ struct TestFuncWithRefer<jit::GRUTuples<T>, std::vector<T>, std::vector<T>,
 };
 
 template <typename T>
-struct TestFuncWithRefer<jit::SeqPoolTuples<T>, std::vector<T>,
-                         std::vector<T>> {
+struct TestFuncWithRefer<jit::SeqPoolTuples<T>, std::vector<T>, std::vector<T>,
+                         typename jit::SeqPoolTuples<T>::attr_type> {
   void operator()(const typename jit::SeqPoolTuples<T>::func_type tgt,
                   const std::vector<T>& x, const std::vector<T>& yref,
                   const typename jit::SeqPoolTuples<T>::attr_type& attr) {
@@ -487,8 +491,8 @@ void TestMatMulKernel() {
         auto ref = jit::GetRefer<KT, jit::MatMulTuples<T>>();
         EXPECT_TRUE(ref != nullptr);
         std::vector<T> a(m * k), b(k * n), c(m * n);
-        RandomVec<T>(m * k, a.data(), -0.2f, 0.2f);
-        RandomVec<T>(k * n, b.data(), -0.2f, 0.2f);
+        RandomVec<T>(m * k, a.data(), -2.f, 2.f);
+        RandomVec<T>(k * n, b.data(), -2.f, 2.f);
         const T* a_data = a.data();
         const T* b_data = b.data();
         T* c_data = c.data();

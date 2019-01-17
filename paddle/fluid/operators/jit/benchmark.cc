@@ -27,6 +27,8 @@ DEFINE_int32(burning, 10, "Burning times.");
 DEFINE_int32(repeat, 3000, "Repeat times.");
 DEFINE_int32(max_size, 1000, "The Max size would be tested.");
 
+static double acc = 1e-5;
+
 template <typename T>
 void RandomVec(const int n, T* a, const T lower = static_cast<T>(-20.f),
                const T upper = static_cast<T>(20.f), unsigned int seed = 100) {
