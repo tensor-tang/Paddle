@@ -22,10 +22,10 @@ namespace inference {
 namespace analysis {
 
 // diff: similarity_norm.tmp_0, for speed: fc_4.tmp_1
-static const char out_var_name[] = "fc_4.tmp_1";  // "reduce_sum_0.tmp_0";
+static const char out_var_name[] = "fc_5.tmp_1";  // "reduce_sum_0.tmp_0";
 
 // for diff: 154, for speed 111
-constexpr int num_slots = 111;
+constexpr int num_slots = 73;
 
 struct OneSlotInBatch {
   std::string name;
