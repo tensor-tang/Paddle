@@ -2874,7 +2874,7 @@ def batch_norm(input,
         attr=helper.bias_attr, shape=param_shape, dtype=dtype, is_bias=True)
     # setting stop_gradient=True to reduce computation
     if use_global_stats and helper.bias_attr.learning_rate == 0.:
-        scale.stop_gradient = True
+        bias.stop_gradient = True
 
     mean = helper.create_parameter(
         attr=ParamAttr(
@@ -5146,9 +5146,9 @@ def nce(input,
         littles = []
         for i in range(custom_dist_len):
             normal_prob = custom_dist[i] * custom_dist_len
-            if normal_prob - 1.0 > 1e-4:
+            if normal_prob - 1.0 > 0:
                 bigs.append((i, normal_prob))
-            elif 1.0 - normal_prob > 1e-4:
+            elif 1.0 - normal_prob > 0:
                 littles.append((i, normal_prob))
             else:
                 alias_probs_[i] = normal_prob
@@ -5164,9 +5164,9 @@ def nce(input,
             alias_probs_[little[0]] = little[1]
             alias_[little[0]] = big_idx
             big_left = big[1] + little[1] - 1
-            if big_left - 1.0 > 1e-4:
+            if big_left - 1.0 > 0:
                 bigs.append((big_idx, big_left))
-            elif 1.0 - big_left > 1e-4:
+            elif 1.0 - big_left > 0:
                 littles.append((big_idx, big_left))
             else:
                 alias_probs_[big_idx] = big_left
@@ -5856,7 +5856,8 @@ def autoincreased_step_counter(counter_name=None, begin=1, step=1):
             type='increment',
             inputs={'X': [counter]},
             outputs={'Out': [counter]},
-            attrs={'step': float(step)})
+            attrs={'step': float(step)},
+            stop_gradient=True)
         counter.stop_gradient = True
 
     return counter
@@ -9475,7 +9476,7 @@ def teacher_student_sigmoid_loss(input,
                                 by the previous operator.
         label (Variable|list):  the ground truth which is a 2-D tensor with
                                 shape [N x 1], where N is the batch size.
-        soft_max_up_bound  (float):  if input > soft_max_up_bound, will be bound 
+        soft_max_up_bound  (float):  if input > soft_max_up_bound, will be bound
         soft_max_lower_bound (float): if input < soft_max_lower_bound, will be bound
 
     Returns:
