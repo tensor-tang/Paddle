@@ -44,6 +44,9 @@ TEST(test, main) {
   std::vector<PaddleTensor> outputs;
 
   // burin
+    if (FLAGS_profile) {
+      paddle::platform::ResetProfiler();
+    }
   ASSERT_TRUE(predictor->Run(inputs, &outputs));
   inference::Timer timer;
   timer.tic();
