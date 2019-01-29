@@ -303,9 +303,9 @@ void BenchSeqPoolKernel() {
 
 template <jit::KernelType KT, typename T, typename PlaceType>
 void BenchMatMulKernel() {
-  for (int m : {1, 2, 3, 4}) {
-    for (int n : TestSizes()) {
-      for (int k : TestSizes()) {
+  for (int m : {100}) {
+    for (int n : {8, 1}) {
+      for (int k : {210, 8}) {
         Tensor a, b, c;
         a.Resize({m * k});
         b.Resize({k * n});

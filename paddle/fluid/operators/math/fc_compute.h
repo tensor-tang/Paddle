@@ -16,6 +16,7 @@ limitations under the License. */
 
 #include "paddle/fluid/operators/jit/kernels.h"
 #include "paddle/fluid/operators/math/blas.h"
+#include "paddle/fluid/platform/profiler.h"
 
 namespace paddle {
 namespace operators {
@@ -25,6 +26,8 @@ template <typename DeviceContext, typename T>
 inline void FCCompute(const BlasT<DeviceContext, T>& blas, const int M,
                       const int N, const int K, const T* X, const T* W, T* Y,
                       const T* B = NULL, bool relu = false) {
+auto pp = platform::DeviceContextPool::Instance().Get(platform::CPUPlace());
+ platform::RecordEvent record_event("fc_compute", pp);
   blas.MatMul(M, N, K, X, W, Y);
   if (B == NULL) {
     return;
