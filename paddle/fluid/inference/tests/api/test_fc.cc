@@ -43,10 +43,12 @@ TEST(test, main) {
 
   std::vector<PaddleTensor> outputs;
 
+  // burin
+  ASSERT_TRUE(predictor->Run(inputs, &outputs));
   inference::Timer timer;
   timer.tic();
-  for (int i = 0; i < 1000; i++) {
-    ASSERT_TRUE(predictor->Run(inputs, &outputs));
+  for (int i = 0; i < FLAGS_repeat; i++) {
+    predictor->Run(inputs, &outputs);
   }
-  LOG(INFO) << "latency " << timer.toc() / 1000;
+  LOG(INFO) << "latency " << timer.toc() / FLAGS_repeat * 1000 << " us";
 }
