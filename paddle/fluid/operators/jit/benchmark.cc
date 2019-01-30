@@ -90,6 +90,8 @@ std::vector<int> TestSizes() {
   return s;
 }
 
+
+
 template <typename KernelTuples, typename... Args>
 struct BenchFunc {
   // return this function avg time
@@ -119,11 +121,13 @@ void BenchAllImpls(const typename KernelTuples::attr_type& attr, Args... args) {
   if (!refer) {
     LOG(FATAL) << "Refer can not be empty!";
   }
+  LOG(INFO) <<"test refer:";
   infos.push_back(std::make_pair("Refer", benchmark(refer, args...)));
 
   // test jitcode
   auto jitcode = jit::GetJitCode<KT, KernelTuples, PlaceType>(attr);
   if (jitcode) {
+  LOG(INFO) <<"test jitcode:";
     infos.push_back(std::make_pair("JitCode", benchmark(jitcode, args...)));
   }
   // test all impls in more
@@ -136,6 +140,8 @@ void BenchAllImpls(const typename KernelTuples::attr_type& attr, Args... args) {
       auto i = dynamic_cast<const jit::KernelMore<KernelTuples>*>(impl.get());
       if (i && i->UseMe(attr)) {
         auto more = i->GetFunc();
+
+  LOG(INFO) <<"test "<<i->ImplType();
         infos.push_back(
             std::make_pair(i->ImplType(), benchmark(more, args...)));
       }
@@ -146,6 +152,7 @@ void BenchAllImpls(const typename KernelTuples::attr_type& attr, Args... args) {
   if (!tgt) {
     LOG(FATAL) << "Target can not be empty!";
   }
+  LOG(INFO) <<"test target:";
   infos.push_back(std::make_pair("Target", benchmark(tgt, args...)));
 
   // print
@@ -159,9 +166,33 @@ void BenchAllImpls(const typename KernelTuples::attr_type& attr, Args... args) {
 
 using Tensor = paddle::framework::Tensor;
 
+inline double testerf() {
+  const int n =100;
+    std::vector<float> x(n);
+    std::vector<float> y(n);
+    float* x_data = x.data();
+    float*y_data = y.data();
+    RandomVec<float>(n, x_data, -1.f, 1.f);
+   auto start = paddle::platform::PosixInNsec() * 1e-3;
+    for (int i = 0; i < FLAGS_repeat; ++i) {
+      for (int k=0;k<n;k++){
+        y_data[k]=std::erf(x_data[k]);
+      }
+    }
+   auto end = paddle::platform::PosixInNsec() * 1e-3;
+    return static_cast<double>(end - start) / FLAGS_repeat;
+}
+
+template <typename T>
+void VAdd(const T* x, const T* y, T* z, int n) {
+  for (int i = 0; i < n; ++i) {
+    z[i] = x[i] + y[i];
+  }
+}
+
 template <jit::KernelType KT, typename T, typename PlaceType>
 void BenchXYZNKernel() {
-  for (int d : TestSizes()) {
+  for (int d : { 7068, 1024}) {
     Tensor x, y, z;
     x.Resize({d});
     y.Resize({d});
@@ -171,11 +202,40 @@ void BenchXYZNKernel() {
     T* z_data = z.mutable_data<T>(PlaceType());
     RandomVec<T>(d, x_data);
     RandomVec<T>(d, y_data);
-    BenchAllImpls<KT, jit::XYZNTuples<T>, PlaceType>(d, x.data<T>(),
-                                                     y.data<T>(), z_data, d);
-    // test inplace
-    BenchAllImpls<KT, jit::XYZNTuples<T>, PlaceType>(d, x.data<T>(), z_data,
-                                                     z_data, d);
+
+LOG(INFO) <<"-----------d: " <<d;
+    VAdd<float>(x_data, y_data, z_data, d);
+    LOG(INFO)<< "erf after refer no inplace: "<<testerf();
+    VAdd<float>(x_data, y_data, y_data, d);
+    LOG(INFO)<< "erf after refer with inplace: "<<testerf();
+    VAdd<float>(x_data, y_data, y_data, d);
+
+    LOG(INFO)<< "erf after refer with inplace: "<<testerf();
+//------------------------------------------------------------------//
+    Tensor x1, y1, z1;
+    x1.Resize({d});
+    y1.Resize({d});
+    z1.Resize({d});
+
+    T* x1_data = x1.mutable_data<T>(PlaceType());
+    T* y1_data = y1.mutable_data<T>(PlaceType());
+    T* z1_data = z1.mutable_data<T>(PlaceType());
+    RandomVec<T>(d, x1_data);
+    RandomVec<T>(d, y1_data);
+
+    VAdd<float>(x1_data, y1_data, z1_data, d);
+    LOG(INFO)<< "erf after refer no inplace: "<<testerf();
+    VAdd<float>(x1_data, y1_data, y1_data, d);
+    LOG(INFO)<< "erf after refer with inplace: "<<testerf();
+    VAdd<float>(x1_data, y1_data, y1_data, d);
+
+    LOG(INFO)<< "erf after refer with inplace: "<<testerf();
+    // BenchAllImpls<KT, jit::XYZNTuples<T>, PlaceType>(d, x.data<T>(),
+    //                                                  y.data<T>(), z_data, d);
+    // // test inplace
+    // LOG(INFO)<<"test inplace";
+    // BenchAllImpls<KT, jit::XYZNTuples<T>, PlaceType>(d, x.data<T>(), y_data,
+    //                                                  y_data, d);
   }
 }
 

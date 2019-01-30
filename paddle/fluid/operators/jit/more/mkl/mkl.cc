@@ -136,7 +136,7 @@ bool VMulKernel<float>::UseMe(const int& d) const {
 
 template <>
 bool VAddKernel<float>::UseMe(const int& d) const {
-  return platform::MayIUse(platform::avx) && d > 512;
+  return false; //platform::MayIUse(platform::avx) && d > 512;
 }
 
 template <>
