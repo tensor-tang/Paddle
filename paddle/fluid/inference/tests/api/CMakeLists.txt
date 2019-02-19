@@ -54,6 +54,7 @@ else()
     message(WARNING "These tests has been disabled in OSX or WITH_MKL=OFF before being fixed: \n test_analyzer_seq_pool1")
 endif()
 
+inference_analysis_test(fc SRCS test_fc.cc EXTRA_DEPS ${INFERENCE_EXTRA_DEPS})
 
 # RNN2
 set(RNN2_INSTALL_DIR "${INFERENCE_DEMO_INSTALL_DIR}/rnn2")
