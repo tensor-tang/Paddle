@@ -1,4 +1,3 @@
-#include "paddle/fluid/framework/naive_executor.h"
 #include "paddle/fluid/inference/api/paddle_inference_api.h"
 #include "paddle/fluid/inference/tests/api/tester_helper.h"
 #include "time.h"
@@ -22,7 +21,7 @@ TEST(test, naive) {
   input.shape.assign({FLAGS_batch_size, 210});
   input.data.Resize(FLAGS_batch_size * 210 * sizeof(float));
   auto* data = static_cast<float*>(input.data.data());
-  for (int i = 0; i < 210; i++) {
+  for (int i = 0; i < 210 * FLAGS_batch_size; i++) {
     data[i] = rand() / RAND_MAX;
   }
 
@@ -58,7 +57,7 @@ TEST(test, analysis) {
   input.shape.assign({FLAGS_batch_size, 210});
   input.data.Resize(FLAGS_batch_size * 210 * sizeof(float));
   auto* data = static_cast<float*>(input.data.data());
-  for (int i = 0; i < 210; i++) {
+  for (int i = 0; i < 210 * FLAGS_batch_size; i++) {
     data[i] = rand() / RAND_MAX;
   }
 
@@ -79,33 +78,33 @@ TEST(test, analysis) {
   LOG(INFO) << "Run latency " << timer.toc() / FLAGS_repeat;
 }
 
-// TEST(test, zero) {
-//   AnalysisConfig config;
-//   config.SetModel(FLAGS_model);
-//   config.SwitchIrOptim(false);
-//   config.SwitchIrDebug(false);
-//   config.SwitchUseFeedFetchOps(false);
+TEST(test, zero) {
+  AnalysisConfig config;
+  config.SetModel(FLAGS_model);
+  config.SwitchIrOptim(false);
+  config.SwitchIrDebug(false);
+  config.SwitchUseFeedFetchOps(false);
 
-//   auto predictor = CreatePaddlePredictor(config);
+  auto predictor = CreatePaddlePredictor(config);
 
-//   LOG(INFO) << "batch_size " << FLAGS_batch_size;
-//   // prepare input data
-//   auto input_tensor = predictor->GetInputTensor("x");
-//   input_tensor->Reshape({FLAGS_batch_size, 210});
-//   auto* input_data = input_tensor->mutable_data<float>(PaddlePlace::kCPU);
-//   for (int i = 0; i < 210; i++) {
-//     input_data[i] = rand() / RAND_MAX;
-//   }
+  LOG(INFO) << "batch_size " << FLAGS_batch_size;
+  // prepare input data
+  auto input_tensor = predictor->GetInputTensor("x");
+  input_tensor->Reshape({FLAGS_batch_size, 210});
+  auto* input_data = input_tensor->mutable_data<float>(PaddlePlace::kCPU);
+  for (int i = 0; i < 210 * FLAGS_batch_size; i++) {
+    input_data[i] = rand() / RAND_MAX;
+  }
 
-//   // zerocopy run
+  // zerocopy run
 
-//   inference::Timer timer;
-//   timer.tic();
-//   for (int i = 0; i < FLAGS_repeat; i++) {
-//     predictor->ZeroCopyRun();
-//   }
-//   LOG(INFO) << "zero-copy run " << timer.toc() / FLAGS_repeat;
+  inference::Timer timer;
+  timer.tic();
+  for (int i = 0; i < FLAGS_repeat; i++) {
+    predictor->ZeroCopyRun();
+  }
+  LOG(INFO) << "zero-copy run " << timer.toc() / FLAGS_repeat;
 
-//   // get output
-//   // ...
-// }
+  // get output
+  // ...
+}
