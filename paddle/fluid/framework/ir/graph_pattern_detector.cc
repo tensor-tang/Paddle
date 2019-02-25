@@ -859,6 +859,108 @@ PDNode *patterns::FC::operator()(paddle::framework::ir::PDNode *x,
   }
 }
 
+PDNode *patterns::FusedHash::operator()(paddle::framework::ir::PDNode *x) {
+ // Create shared nodes.
+    x->assert_is_op_output("feed", "Out");
+    
+    auto *seq_ent1 = pattern->NewNode(seq_ent1_repr())
+                            ->assert_is_op("sequence_enumerate");
+    
+    int pad_value = 0;
+
+    auto *seq_ent2 = pattern->NewNode(seq_ent2_repr())
+                            ->assert_is_op("sequence_enumerate")
+                            ->assert_op_attr("pad_value", pad_value);
+
+    auto *seq_ent3 = pattern->NewNode(seq_ent3_repr())
+                            ->assert_is_op("sequence_enumerate")
+                            ->assert_op_attr("pad_value", pad_value);
+
+    auto *seq_pool1 = pattern->NewNode(fused_emb_seq_pool_repr())
+                             ->assert_is_op("fused_embedding_seq_pool")
+                             ->assert_op_attr<std::string>("pooltype", "SUM");
+
+    auto *seq_pool2 = pattern->NewNode(fused_emb_seq_pool2_repr())
+                             ->assert_is_op("fused_embedding_seq_pool")
+                             ->assert_op_attr<std::string>("pooltype", "SUM");
+
+    auto *seq_pool3 = pattern->NewNode(fused_emb_seq_pool3_repr())
+                             ->assert_is_op("fused_embedding_seq_pool")
+                             ->assert_op_attr<std::string>("pooltype", "SUM");
+
+    auto *seq_pool4 = pattern->NewNode(fused_emb_seq_pool4_repr())
+                             ->assert_is_op("fused_embedding_seq_pool")
+                             ->assert_op_attr<std::string>("pooltype", "SUM");
+
+    auto *hash1 = pattern->NewNode(hash1_repr())->assert_is_op("hash");
+    auto *hash2 = pattern->NewNode(hash2_repr())->assert_is_op("hash");
+    auto *hash3 = pattern->NewNode(hash3_repr())->assert_is_op("hash");
+
+
+    auto *fh_emb1_var = pattern->NewNode(embwithvsum_repr())
+                        ->AsInput()
+                        ->assert_is_persistable_var()
+                        ->assert_is_op_input("fused_emb_seq_pool", "W");
+  
+    auto *fh_emb2_var = pattern->NewNode(pyramidhash_emb_repr())
+                        ->AsInput()
+                        ->assert_is_persistable_var()
+                        ->assert_is_op_input("fused_emb_seq_pool", "W");
+
+
+    auto *seq_ent1_out_var =
+        pattern->NewNode(seq_ent1_out_repr())->assert_is_op_output("sequence_enumerate");
+    auto *seq_ent2_out_var =
+        pattern->NewNode(seq_ent2_out_repr())->assert_is_op_output("sequence_enumerate");
+    auto *seq_ent3_out_var =
+        pattern->NewNode(seq_ent3_out_repr())->assert_is_op_output("sequence_enumerate");
+    auto *hash1_out_var =
+        pattern->NewNode(hash1_out_repr())->assert_is_op_output("hash");
+    auto *hash2_out_var =
+        pattern->NewNode(hash2_out_repr())->assert_is_op_output("hash");
+    auto *hash3_out_var =
+        pattern->NewNode(hash3_out_repr())->assert_is_op_output("hash");
+
+    auto *seq_pool1_out = pattern->NewNode(Out1_repr())
+                                 ->AsOutput()
+                                 ->assert_is_op_output("fused_embedding_seq_pool");
+    auto *seq_pool2_out = pattern->NewNode(Out2_repr())
+                                 ->AsOutput() 
+                                 ->assert_is_op_output("fused_embedding_seq_pool");
+    auto *seq_pool3_out =  pattern->NewNode(Out3_repr())
+                                  ->AsOutput()
+                                  ->assert_is_op_output("fused_embedding_seq_pool");
+    auto *seq_pool4_out = pattern->NewNode(Out4_repr())
+                                 ->AsOutput()
+                                 ->assert_is_op_output("fused_embedding_seq_pool");
+
+
+    seq_ent1_out_var->AsIntermediate()->assert_is_op_input("hash");
+    seq_ent2_out_var->AsIntermediate()->assert_is_op_input("hash");
+    seq_ent3_out_var->AsIntermediate()->assert_is_op_input("hash");
+    hash1_out_var->AsIntermediate()->assert_is_op_input("fused_embedding_seq_pool");
+    hash2_out_var->AsIntermediate()->assert_is_op_input("fused_embedding_seq_pool");
+    hash3_out_var->AsIntermediate()->assert_is_op_input("fused_embedding_seq_pool");
+    
+    seq_ent1->LinksFrom({x}).LinksTo({seq_ent1_out_var});
+    seq_ent2->LinksFrom({x}).LinksTo({seq_ent2_out_var});
+    seq_ent3->LinksFrom({x}).LinksTo({seq_ent3_out_var});
+    seq_pool4->LinksFrom({x,fh_emb1_var}).LinksTo({seq_pool4_out});
+   
+    hash1->LinksFrom({seq_ent1_out_var}).LinksTo({hash1_out_var});
+    hash2->LinksFrom({seq_ent2_out_var}).LinksTo({hash2_out_var});
+    hash3->LinksFrom({seq_ent3_out_var}).LinksTo({hash3_out_var});
+ 
+    seq_pool1->LinksFrom({hash1_out_var,fh_emb2_var}).LinksTo({seq_pool1_out});
+    seq_pool2->LinksFrom({hash2_out_var,fh_emb2_var}).LinksTo({seq_pool2_out});
+    seq_pool3->LinksFrom({hash3_out_var,fh_emb2_var}).LinksTo({seq_pool3_out});
+
+    return seq_pool1_out;
+}
+
+
+
+
 PDNode *patterns::Embedding::operator()(PDNode *x) {
   x->assert_is_op_input("lookup_table", "Ids");
   auto *lookup_table_op =

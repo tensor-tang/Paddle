@@ -490,6 +490,47 @@ struct FC : public PatternBase {
   PATTERN_DECL_NODE(Out);
 };
 
+// Fused Hash
+// op: sequence_enumerate + hash + fused_embedding_seq_pool
+
+
+struct FusedHash : public PatternBase {
+  FusedHash(PDPattern* pattern, const std::string& name_scope)
+      : PatternBase(pattern, name_scope, "fused_hash") {}
+
+  PDNode* operator()(PDNode* x);
+
+  // declare operator node's name
+     PATTERN_DECL_NODE(fused_hash);
+     PATTERN_DECL_NODE(seq_ent1);
+     PATTERN_DECL_NODE(seq_ent2);
+     PATTERN_DECL_NODE(seq_ent3);
+
+     PATTERN_DECL_NODE(hash1);
+     PATTERN_DECL_NODE(hash2);
+     PATTERN_DECL_NODE(hash3);
+
+     PATTERN_DECL_NODE(fused_emb_seq_pool);
+     PATTERN_DECL_NODE(fused_emb_seq_pool2);
+     PATTERN_DECL_NODE(fused_emb_seq_pool3);
+     PATTERN_DECL_NODE(fused_emb_seq_pool4);
+
+  // declare variable node's name
+     PATTERN_DECL_NODE(seq_ent1_out);
+     PATTERN_DECL_NODE(seq_ent2_out);
+     PATTERN_DECL_NODE(seq_ent3_out);
+     PATTERN_DECL_NODE(hash1_out);
+     PATTERN_DECL_NODE(hash2_out);
+     PATTERN_DECL_NODE(hash3_out);
+     PATTERN_DECL_NODE(embwithvsum);  
+     PATTERN_DECL_NODE(pyramidhash_emb);
+     PATTERN_DECL_NODE(Out1);
+     PATTERN_DECL_NODE(Out2);
+     PATTERN_DECL_NODE(Out3);
+     PATTERN_DECL_NODE(Out4);
+};
+ 
+
 // Embedding
 struct Embedding : public PatternBase {
   Embedding(PDPattern* pattern, const std::string& name_scope)

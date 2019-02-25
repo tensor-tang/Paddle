@@ -107,6 +107,8 @@ void SetConfig(AnalysisConfig *cfg) {
   cfg->DisableGpu();
   cfg->SwitchSpecifyInputNames();
   cfg->SwitchIrOptim();
+  cfg->pass_builder()->TurnOnDebug();
+
 }
 
 void SetInput(std::vector<std::vector<PaddleTensor>> *inputs) {
