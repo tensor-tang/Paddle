@@ -107,7 +107,6 @@ void SetConfig(AnalysisConfig *cfg) {
   cfg->DisableGpu();
   cfg->SwitchSpecifyInputNames();
   cfg->SwitchIrOptim();
-  cfg->pass_builder()->TurnOnDebug();
 
 }
 
