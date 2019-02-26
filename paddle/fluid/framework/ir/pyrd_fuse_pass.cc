@@ -71,13 +71,13 @@ std::unique_ptr<ir::Graph> FusePyrdPass::ApplyImpl(
     //mod_by.push_back(boost::get<int>(hash3->Op()->GetAttr("mod_by")));
 
 
-    desc.SetInput("Input", std::vector<std::string>({fp_x_in}));
-    desc.SetInput("W1", std::vector<std::string>({fp_emb1_in}));
-    desc.SetInput("W2", std::vector<std::string>({fp_emb2_in}));
-    desc.SetOutput("Out1", std::vector<std::string>({fp_out1}));
-    desc.SetOutput("Out2", std::vector<std::string>({fp_out2}));
-    desc.SetOutput("Out3", std::vector<std::string>({fp_out3}));
-    desc.SetOutput("Out4", std::vector<std::string>({fp_out4}));
+    desc.SetInput("X", std::vector<std::string>({fp_x_in}));
+    desc.SetInput("W0", std::vector<std::string>({fp_emb1_in}));
+    desc.SetInput("W1", std::vector<std::string>({fp_emb2_in}));
+    desc.SetOutput("Out0", std::vector<std::string>({fp_out1}));
+    desc.SetOutput("Out1", std::vector<std::string>({fp_out2}));
+    desc.SetOutput("Out2", std::vector<std::string>({fp_out3}));
+    desc.SetOutput("Out3", std::vector<std::string>({fp_out4}));
 
     std::vector<int> win_size;
     std::vector<int> mod_by;
@@ -99,7 +99,6 @@ std::unique_ptr<ir::Graph> FusePyrdPass::ApplyImpl(
     desc.SetAttr("mod_by", mod_by);
     desc.SetAttr("win_size", win_size);
     desc.SetAttr("pad_value", fused_hash1->Op()->GetAttr("pad_value"));
-    desc.SetAttr("combiner", "SUM");
     
     desc.SetType("fuse_pyrd");
     auto fp_node = g->CreateOpNode(&desc);  // OpDesc will be copied.
