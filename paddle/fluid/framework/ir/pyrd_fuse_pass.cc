@@ -100,7 +100,7 @@ std::unique_ptr<ir::Graph> FusePyrdPass::ApplyImpl(
     desc.SetAttr("win_size", win_size);
     desc.SetAttr("pad_value", fused_hash1->Op()->GetAttr("pad_value"));
     
-    desc.SetType("fuse_pyrd");
+    desc.SetType("fused_enum_hash_emd_pool");
     auto fp_node = g->CreateOpNode(&desc);  // OpDesc will be copied.
     GraphSafeRemoveNodes(graph.get(), {fused_hash1, fused_hash2, fused_hash3, fuse_emb_seq_pool});
 
