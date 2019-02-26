@@ -41,88 +41,50 @@ std::unique_ptr<ir::Graph> FusedHashPass::ApplyImpl(
   auto handler = [&](const GraphPatternDetector::subgraph_t& subgraph,
                      Graph* g) {
     VLOG(4) << "handle FC fuse";
-    GET_IR_NODE_FROM_SUBGRAPH(emb1, embwithvsum, fused_hash_pattern);
+    //GET_IR_NODE_FROM_SUBGRAPH(emb1, embwithvsum, fused_hash_pattern);
     GET_IR_NODE_FROM_SUBGRAPH(emb2, pyramidhash_emb, fused_hash_pattern);
-    GET_IR_NODE_FROM_SUBGRAPH(out1, Out1, fused_hash_pattern);
-    GET_IR_NODE_FROM_SUBGRAPH(out2, Out2, fused_hash_pattern);
-    GET_IR_NODE_FROM_SUBGRAPH(out3, Out3, fused_hash_pattern);
-    GET_IR_NODE_FROM_SUBGRAPH(out4, Out4, fused_hash_pattern);
-    GET_IR_NODE_FROM_SUBGRAPH(seq_ent1, seq_ent1, fused_hash_pattern);
-    GET_IR_NODE_FROM_SUBGRAPH(seq_ent2, seq_ent2, fused_hash_pattern);
-    GET_IR_NODE_FROM_SUBGRAPH(seq_ent3, seq_ent3, fused_hash_pattern);
+    GET_IR_NODE_FROM_SUBGRAPH(out, Out, fused_hash_pattern);
+    GET_IR_NODE_FROM_SUBGRAPH(seq_ent, seq_ent, fused_hash_pattern);
 
-    GET_IR_NODE_FROM_SUBGRAPH(hash1, hash1, fused_hash_pattern);
-    GET_IR_NODE_FROM_SUBGRAPH(hash2, hash2, fused_hash_pattern);
-    GET_IR_NODE_FROM_SUBGRAPH(hash3, hash3, fused_hash_pattern);
+    GET_IR_NODE_FROM_SUBGRAPH(hash, hash, fused_hash_pattern);
 
-    GET_IR_NODE_FROM_SUBGRAPH(fuse_emb_seq_pool1, fused_emb_seq_pool, fused_hash_pattern);
-    GET_IR_NODE_FROM_SUBGRAPH(fuse_emb_seq_pool2, fused_emb_seq_pool2, fused_hash_pattern);
-    GET_IR_NODE_FROM_SUBGRAPH(fuse_emb_seq_pool3, fused_emb_seq_pool3, fused_hash_pattern);
-    GET_IR_NODE_FROM_SUBGRAPH(fuse_emb_seq_pool4, fused_emb_seq_pool4, fused_hash_pattern);
+    GET_IR_NODE_FROM_SUBGRAPH(fuse_emb_seq_pool, fused_emb_seq_pool, fused_hash_pattern);
 
-    GET_IR_NODE_FROM_SUBGRAPH(seq_ent1_out, seq_ent1_out, fused_hash_pattern);
-    GET_IR_NODE_FROM_SUBGRAPH(seq_ent2_out, seq_ent2_out, fused_hash_pattern);
-    GET_IR_NODE_FROM_SUBGRAPH(seq_ent3_out, seq_ent3_out, fused_hash_pattern);
+    GET_IR_NODE_FROM_SUBGRAPH(seq_ent_out, seq_ent_out, fused_hash_pattern);
     
-    GET_IR_NODE_FROM_SUBGRAPH(hash1_out, hash1_out, fused_hash_pattern);
-    GET_IR_NODE_FROM_SUBGRAPH(hash2_out, hash1_out, fused_hash_pattern);
-    GET_IR_NODE_FROM_SUBGRAPH(hash3_out, hash1_out, fused_hash_pattern);
+    GET_IR_NODE_FROM_SUBGRAPH(hash_out, hash_out, fused_hash_pattern);
 
 
 
     // Create an FC Node.
     OpDesc desc;
     std::string fh_x_in = subgraph.at(x)->Name();
-    std::string fh_emb1_in = emb1->Name();
+    //std::string fh_emb1_in = emb1->Name();
     std::string fh_emb2_in = emb2->Name();
-    std::string fh_out1 = out1->Name();
-    std::string fh_out2 = out2->Name();
-    std::string fh_out3 = out3->Name();
-    std::string fh_out4 = out4->Name();
+    std::string fh_out = out->Name();
     
-    std::vector<int> win_size;
-    std::vector<int> num_hash;
-    std::vector<int> mod_by;
-
-    win_size.push_back(boost::get<int>(seq_ent1->Op()->GetAttr("win_size")));
-    win_size.push_back(boost::get<int>(seq_ent2->Op()->GetAttr("win_size")));
-    win_size.push_back(boost::get<int>(seq_ent3->Op()->GetAttr("win_size")));
-
-    num_hash.push_back(boost::get<int>(hash1->Op()->GetAttr("num_hash")));
-    num_hash.push_back(boost::get<int>(hash2->Op()->GetAttr("num_hash")));
-    num_hash.push_back(boost::get<int>(hash3->Op()->GetAttr("num_hash")));
-
-    mod_by.push_back(boost::get<int>(hash1->Op()->GetAttr("mod_by")));
-    mod_by.push_back(boost::get<int>(hash2->Op()->GetAttr("mod_by")));
-    mod_by.push_back(boost::get<int>(hash3->Op()->GetAttr("mod_by")));
+    //mod_by.push_back(boost::get<int>(hash3->Op()->GetAttr("mod_by")));
 
 
     desc.SetInput("Input", std::vector<std::string>({fh_x_in}));
-    desc.SetInput("W1", std::vector<std::string>({fh_emb1_in}));
-    desc.SetInput("W2", std::vector<std::string>({fh_emb2_in}));
-    desc.SetOutput("Out1", std::vector<std::string>({fh_out1}));
-    desc.SetOutput("Out2", std::vector<std::string>({fh_out2}));
-    desc.SetOutput("Out3", std::vector<std::string>({fh_out3}));
-    desc.SetOutput("Out4", std::vector<std::string>({fh_out4}));
-    desc.SetAttr("num_hash", num_hash);
-    desc.SetAttr("mod_by", mod_by);
-    desc.SetAttr("win_size", win_size);
-    desc.SetAttr("pad_value", seq_ent1->Op()->GetAttr("pad_value"));
-    desc.SetAttr("pooltype", "SUM");
-
+    desc.SetInput("W", std::vector<std::string>({fh_emb2_in}));
+    desc.SetOutput("Out", std::vector<std::string>({fh_out}));
+    desc.SetAttr("num_hash", hash->Op()->GetAttr("num_hash"));
+    desc.SetAttr("mod_by", hash->Op()->GetAttr("mod_by"));
+    desc.SetAttr("win_size", seq_ent->Op()->GetAttr("win_size"));
+    desc.SetAttr("pad_value", seq_ent->Op()->GetAttr("pad_value"));
+    desc.SetAttr("combiner", "SUM");
+    
     desc.SetType("fused_hash");
     auto fh_node = g->CreateOpNode(&desc);  // OpDesc will be copied.
-    GraphSafeRemoveNodes(graph.get(), {seq_ent1, seq_ent2,seq_ent3, hash1,hash2,hash3, fuse_emb_seq_pool1,
-                                       fuse_emb_seq_pool2,fuse_emb_seq_pool3,fuse_emb_seq_pool4});
+    GraphSafeRemoveNodes(graph.get(), {seq_ent,  hash, fuse_emb_seq_pool,
+                                       seq_ent_out,hash_out});
 
     PADDLE_ENFORCE(subgraph.count(x));
     IR_NODE_LINK_TO(subgraph.at(x), fh_node);
-    IR_NODE_LINK_TO(emb1, fh_node);
+    // IR_NODE_LINK_TO(emb1, fh_node);
     IR_NODE_LINK_TO(emb2, fh_node);
-    IR_NODE_LINK_TO(fh_node, out1);
-    IR_NODE_LINK_TO(fh_node, out2);
-    IR_NODE_LINK_TO(fh_node, out3);
-    IR_NODE_LINK_TO(fh_node, out4);
+    IR_NODE_LINK_TO(fh_node, out);
 
 
     found_fh_count++;
