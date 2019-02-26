@@ -61,7 +61,6 @@ class FusedEnumHashEmdPoolKernel : public framework::OpKernel<T> {
  public:
   void Compute(const framework::ExecutionContext &context) const override {
     auto *in = context.Input<LoDTensor>("X");
-    // auto* out = context.Output<LoDTensor>("Out");
     auto win_size = context.Attr<std::vector<int>>("win_size");
     int pad_value = context.Attr<int>("pad_value");
 
@@ -79,8 +78,8 @@ class FusedEnumHashEmdPoolKernel : public framework::OpKernel<T> {
 
     // Generate enumerate sequence set
     auto lod0 = in_lod[0];
-    auto in_data = in->data<T>();
-    auto enum_out_data = enum_out.mutable_data<T>(context.GetPlace());
+    auto in_data = in->data<int64_t>();
+    auto enum_out_data = enum_out.mutable_data<int64_t>(context.GetPlace());
 
     for (size_t i = 0; i < lod0.size() - 1; ++i) {
       for (size_t idx = lod0[i]; idx < lod0[i + 1]; ++idx) {
@@ -108,7 +107,7 @@ class FusedEnumHashEmdPoolKernel : public framework::OpKernel<T> {
     }
     for (int win_idx = 0; win_idx < win_size.size(); win_idx++) {
       auto hash_out_data =
-          hash_out[win_idx].mutable_data<T>(context.GetPlace());
+          hash_out[win_idx].mutable_data<int64_t>(context.GetPlace());
       auto *input = enum_out_data;
       auto last_dim = win_size[win_idx];
       for (int idx = 0; idx < seq_length; ++idx) {
@@ -121,7 +120,7 @@ class FusedEnumHashEmdPoolKernel : public framework::OpKernel<T> {
     }
 
     //
-    EmbeddingVSumFunctor<float> functor;
+    EmbeddingVSumFunctor<T> functor;
     std::vector<std::string> outputs = {"Out1", "Out2", "Out3"};
     for (int idx = 0; idx < outputs.size(); idx++) {
       const LoDTensor *table_var = context.Input<LoDTensor>("W1");

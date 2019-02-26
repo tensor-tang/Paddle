@@ -104,6 +104,13 @@ class FusedEnumHashEmdPoolOp : public framework::OperatorWithKernel {
       }
     }
   }
+
+ protected:
+  framework::OpKernelType GetExpectedKernelType(
+      const framework::ExecutionContext& ctx) const override {
+    auto data_type = framework::GetDataTypeOfVar(ctx.InputVar("W0"));
+    return framework::OpKernelType(data_type, ctx.device_context());
+  }
 };
 
 class FusedEnumHashEmdPoolOpMaker : public framework::OpProtoAndCheckerMaker {
@@ -153,7 +160,6 @@ REGISTER_OP_WITHOUT_GRADIENT(fused_enum_hash_emd_pool,
                              ops::FusedEnumHashEmdPoolOpMaker);
 REGISTER_OP_CPU_KERNEL(
     fused_enum_hash_emd_pool,
+    ops::FusedEnumHashEmdPoolKernel<paddle::platform::CPUDeviceContext, float>,
     ops::FusedEnumHashEmdPoolKernel<paddle::platform::CPUDeviceContext,
-                                    int32_t>,
-    ops::FusedEnumHashEmdPoolKernel<paddle::platform::CPUDeviceContext,
-                                    int64_t>);
+                                    double>);
