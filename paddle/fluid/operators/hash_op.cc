@@ -47,7 +47,9 @@ class HashOp : public framework::OperatorWithKernel {
     out_dims.emplace_back(1);
 
     ctx->SetOutputDim("Out", framework::make_ddim(out_dims));
-    ctx->ShareLoD("X", /*->*/ "Out");
+    if (!ctx->IsRuntime()) {
+      ctx->ShareLoD("X", /*->*/ "Out");
+    }
   }
 };
 

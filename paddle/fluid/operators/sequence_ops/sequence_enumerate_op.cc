@@ -39,7 +39,9 @@ class SequenceEnumerateOp : public framework::OperatorWithKernel {
 
     const auto win_size = ctx->Attrs().Get<int>("win_size");
     ctx->SetOutputDim("Out", {x_dims[0], win_size});
-    ctx->ShareLoD("X", "Out");
+    if (!ctx->IsRuntime()) {
+      ctx->ShareLoD("X", "Out");
+    }
   }
 };
 

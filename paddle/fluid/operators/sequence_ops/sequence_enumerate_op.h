@@ -49,6 +49,7 @@ class SequenceEnumerateKernel : public framework::OpKernel<T> {
         }
       }
     }
+    out->set_lod(in->lod());
   }
 };
 

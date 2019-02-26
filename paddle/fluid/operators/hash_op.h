@@ -49,6 +49,7 @@ class HashKerel : public framework::OpKernel<T> {
       }
       input += last_dim;
     }
+    out_t->set_lod(in_t->lod());
   }
 };
 
