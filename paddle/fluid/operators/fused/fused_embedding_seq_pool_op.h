@@ -74,6 +74,21 @@ class FusedEmbeddingSeqPoolKernel : public framework::OpKernel<T> {
     const LoDTensor *table_var = context.Input<LoDTensor>("W");
     const std::string &combiner_type = context.Attr<std::string>("combiner");
 
+    int64_t last_dim = table_var->dims()[1];
+    auto ids_dims = ids_t->dims();
+    for (int i = 1; i != ids_dims.size(); ++i) {
+      last_dim *= ids_dims[i];
+    }
+
+    const auto &ids_lod = ids_t->lod();
+    // in run time, the LoD of ids must be 1
+    PADDLE_ENFORCE(ids_lod.size(), 1u, "The LoD level of Input(Ids) must be 1");
+    PADDLE_ENFORCE_GE(ids_lod[0].size(), 1u, "The LoD could NOT be empty");
+    int64_t batch_size = ids_lod[0].size() - 1;
+    // in run time, the shape from Ids -> output
+    // should be [seq_length, 1] -> [batch_size, embedding_size]
+    output_t->Resize({batch_size, last_dim});
+
     if (combiner_type == "sum") {
       EmbeddingVSumFunctor<T> functor;
       functor(context, table_var, ids_t, output_t);
