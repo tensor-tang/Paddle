@@ -859,6 +859,133 @@ PDNode *patterns::FC::operator()(paddle::framework::ir::PDNode *x,
   }
 }
 
+PDNode *patterns::FusedHash::operator()(paddle::framework::ir::PDNode *x) {
+ // Create shared nodes.
+    x->assert_is_op_output("feed", "Out");
+    
+    auto *seq_ent = pattern->NewNode(seq_ent_repr())
+                            ->assert_is_op("sequence_enumerate");
+
+    auto *seq_pool = pattern->NewNode(fused_emb_seq_pool_repr())
+                             ->assert_is_op("fused_embedding_seq_pool");
+
+    auto *hash = pattern->NewNode(hash_repr())->assert_is_op("hash");
+
+
+  
+    auto *fh_emb2_var = pattern->NewNode(pyramidhash_emb_repr())
+                        ->AsInput()
+                        ->assert_is_op_input("fused_embedding_seq_pool", "W");
+
+
+    auto *seq_ent_out_var =  pattern->NewNode(seq_ent_out_repr())
+                                     ->assert_is_op_output("sequence_enumerate", "Out");
+    
+    auto *hash_out_var =
+        pattern->NewNode(hash_out_repr())->assert_is_op_output("hash","Out");
+
+    auto *seq_pool_out = pattern->NewNode(Out_repr())
+                                 ->AsOutput()
+                                 ->assert_is_op_output("fused_embedding_seq_pool","Out");
+
+
+
+    seq_ent_out_var->AsIntermediate()->assert_is_op_input("hash");
+    hash_out_var->AsIntermediate()->assert_is_op_input("fused_embedding_seq_pool");
+    
+    seq_ent->LinksFrom({x}).LinksTo({seq_ent_out_var});
+   
+    hash->LinksFrom({seq_ent_out_var}).LinksTo({hash_out_var});
+ 
+    seq_pool->LinksFrom({hash_out_var,fh_emb2_var}).LinksTo({seq_pool_out});
+
+    return seq_pool_out;
+}
+
+PDNode *patterns::FusedPyrd::operator()(paddle::framework::ir::PDNode *x) {
+    x->assert_is_op_output("feed", "Out");
+
+    auto *fused_hash1 = pattern->NewNode(fused_hash1_repr())
+                            ->assert_is_op("fused_hash")
+                            ->assert_op_attr("win_size",2);
+
+    auto *fused_hash2 = pattern->NewNode(fused_hash2_repr())
+                            ->assert_is_op("fused_hash")
+                            ->assert_op_attr("win_size",3);
+
+    auto *fused_hash3 = pattern->NewNode(fused_hash3_repr())
+                            ->assert_is_op("fused_hash")
+                            ->assert_op_attr("win_size",4);
+
+
+    auto *seq_pool = pattern->NewNode(fused_emb_seq_pool_repr())
+                             ->assert_is_op("fused_embedding_seq_pool");
+
+
+    auto *fh_emb1_var = pattern->NewNode(emb1_repr())
+                        ->AsInput()
+                        ->assert_is_op_input("fused_embedding_seq_pool", "W");
+
+
+    auto *fh_emb2_var = pattern->NewNode(emb2_repr())
+                        ->AsInput()
+                        ->assert_is_op_input("fused_hash", "W");
+
+
+    auto *fused_hash1_out =  pattern->NewNode(Out1_repr())
+                                    ->assert_is_op_output("fused_hash", "Out")
+                                    //->assert_is_op_nth_input("sum","X",2);
+                                    ->assert_more([&](Node *node){
+                                        for(auto *in_op : node->inputs){
+                                           int win_size;
+                                           win_size = boost::get<int>(in_op->Op()->GetAttr("win_size"));
+                                           if(win_size == 2){return true;}
+                                        }
+                                        return false;
+                                     });
+
+    auto *fused_hash2_out =  pattern->NewNode(Out2_repr())
+                                     ->assert_is_op_output("fused_hash", "Out")
+                                     //->assert_is_op_nth_input("sum","X",3);
+                                     ->assert_more([&](Node *node){
+                                        for(auto *in_op : node->inputs){
+                                           int win_size;
+                                           win_size = boost::get<int>(in_op->Op()->GetAttr("win_size"));
+                                           if(win_size == 3){return true;}
+                                        }
+                                        return false;
+                                     });
+
+    auto *fused_hash3_out =  pattern->NewNode(Out3_repr())
+                                     ->assert_is_op_output("fused_hash", "Out")
+                                     //->assert_is_op_nth_input("sum","X",4);
+                                     ->assert_more([&](Node *node){
+                                        for(auto *in_op : node->inputs){
+                                           int win_size;
+                                           win_size = boost::get<int>(in_op->Op()->GetAttr("win_size"));
+                                           if(win_size == 4){return true;}
+                                        }
+                                        return false;
+                                     });
+
+
+    auto *seq_pool_out = pattern->NewNode(Out4_repr())
+                                 ->AsOutput()
+                                 ->assert_is_op_output("fused_embedding_seq_pool","Out");
+
+    fused_hash1->LinksFrom({x, fh_emb2_var}).LinksTo({fused_hash1_out});
+    fused_hash2->LinksFrom({x, fh_emb2_var}).LinksTo({fused_hash2_out});
+    fused_hash3->LinksFrom({x, fh_emb2_var}).LinksTo({fused_hash3_out});
+    seq_pool->LinksFrom({x, fh_emb1_var}).LinksTo({seq_pool_out});
+
+
+    return fused_hash1_out;
+
+}
+
+
+
+
 PDNode *patterns::Embedding::operator()(PDNode *x) {
   x->assert_is_op_input("lookup_table", "Ids");
   auto *lookup_table_op =
