@@ -17,6 +17,7 @@ limitations under the License. */
 #include "paddle/fluid/framework/op_registry.h"
 #include "paddle/fluid/framework/selected_rows.h"
 #include "paddle/fluid/operators/jit/kernels.h"
+#include "paddle/fluid/platform/profiler.h"
 
 namespace paddle {
 namespace operators {
@@ -25,6 +26,8 @@ template <typename T>
 class SGDOpKernel : public framework::OpKernel<T> {
  public:
   void Compute(const framework::ExecutionContext &ctx) const override {
+platform::RecordEvent record_event("sgd_compute");
+
     const auto *learning_rate = ctx.Input<framework::Tensor>("LearningRate");
 
     const auto *param_var = ctx.InputVar("Param");

@@ -17,6 +17,7 @@ limitations under the License. */
 #include "paddle/fluid/framework/op_registry.h"
 #include "paddle/fluid/operators/math/blas.h"
 #include "paddle/fluid/operators/math/math_function.h"
+#include "paddle/fluid/platform/profiler.h"
 
 namespace paddle {
 namespace operators {
@@ -27,6 +28,8 @@ template <typename DeviceContext, typename T>
 class MulKernel : public framework::OpKernel<T> {
  public:
   void Compute(const framework::ExecutionContext& context) const override {
+platform::RecordEvent record_event("mul_fwd");
+
     const Tensor* x = context.Input<Tensor>("X");
     const Tensor* y = context.Input<Tensor>("Y");
     Tensor* z = context.Output<Tensor>("Out");
@@ -60,6 +63,8 @@ template <typename DeviceContext, typename T>
 class MulGradKernel : public framework::OpKernel<T> {
  public:
   void Compute(const framework::ExecutionContext& ctx) const override {
+platform::RecordEvent record_event("mul_bwd");
+
     int x_num_col_dims = ctx.template Attr<int>("x_num_col_dims");
     int y_num_col_dims = ctx.template Attr<int>("y_num_col_dims");
     auto* x = ctx.Input<framework::LoDTensor>("X");

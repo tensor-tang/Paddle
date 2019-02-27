@@ -16,6 +16,7 @@ limitations under the License. */
 
 #include <string>
 #include <vector>
+#include "paddle/fluid/platform/profiler.h"
 
 #include "paddle/fluid/framework/eigen.h"
 #include "paddle/fluid/framework/lod_tensor.h"
@@ -37,6 +38,9 @@ struct EmbeddingVSumFunctor {
   void operator()(const framework::ExecutionContext &context,
                   const LoDTensor *table_t, const LoDTensor *ids_t,
                   LoDTensor *output_t) {
+
+    
+platform::RecordEvent record_event("emb_compute");
     auto *table = table_t->data<T>();
     int64_t table_height = table_t->dims()[0];
     int64_t table_width = table_t->dims()[1];
@@ -81,6 +85,8 @@ template <typename T>
 class FusedEmbeddingSeqPoolGradKernel : public framework::OpKernel<T> {
  public:
   void Compute(const framework::ExecutionContext &context) const override {
+platform::RecordEvent record_event("emb_grad");
+
     auto *table_var = context.InputVar("W");
     DDim table_dim;
     if (table_var->IsType<LoDTensor>()) {

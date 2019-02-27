@@ -19,6 +19,7 @@ extern "C" {
 }
 #include "paddle/fluid/framework/eigen.h"
 #include "paddle/fluid/framework/op_registry.h"
+#include "paddle/fluid/platform/profiler.h"
 
 namespace paddle {
 namespace operators {
@@ -27,6 +28,8 @@ template <typename T>
 class HashKerel : public framework::OpKernel<T> {
  public:
   virtual void Compute(const framework::ExecutionContext& context) const {
+platform::RecordEvent record_event("hash_compute");
+
     auto* out_t = context.Output<framework::LoDTensor>("Out");
     auto* in_t = context.Input<framework::LoDTensor>("X");
     int mod_by = context.Attr<int>("mod_by");
