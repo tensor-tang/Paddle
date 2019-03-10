@@ -112,7 +112,7 @@ void BenchAllImpls(const typename KernelTuple::attr_type& attr, Args... args) {
   BenchFunc<KernelTuple, Args...> benchmark;
   std::vector<std::pair<std::string, double>> infos;
   // test refer
-  auto refer = jit::GetRefer<KernelTuple>();
+  auto refer = jit::GetReferFunc<KernelTuple>();
   if (!refer) {
     LOG(FATAL) << "Refer can not be empty!";
   }
@@ -131,7 +131,7 @@ void BenchAllImpls(const typename KernelTuple::attr_type& attr, Args... args) {
     auto& impls = iter->second;
     for (auto& impl : impls) {
       auto i = dynamic_cast<const jit::KernelMore<KernelTuple>*>(impl.get());
-      if (i && i->UseMe(attr)) {
+      if (i && i->CanBeUsed(attr)) {
         auto more = i->GetFunc();
         infos.push_back(
             std::make_pair(i->ImplType(), benchmark(more, args...)));

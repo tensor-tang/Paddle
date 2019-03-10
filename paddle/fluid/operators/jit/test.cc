@@ -82,7 +82,7 @@ void TestAllImpls(const typename KernelTuple::attr_type& attr,
     auto& impls = iter->second;
     for (auto& impl : impls) {
       auto i = dynamic_cast<const jit::KernelMore<KernelTuple>*>(impl.get());
-      if (i && i->UseMe(attr)) {
+      if (i && i->CanBeUsed(attr)) {
         auto more = i->GetFunc();
         VLOG(10) << "Test More Kernel : " << i->ImplType();
         verifier(more, args...);
@@ -100,7 +100,7 @@ void TestKernelXYZN() {
   using T = typename KernelTuple::data_type;
   VLOG(10) << "Test JITKernel: " << jit::to_string(KernelTuple::kernel_type);
   for (int d : TestSizes()) {
-    auto ref = jit::GetRefer<KernelTuple>();
+    auto ref = jit::GetReferFunc<KernelTuple>();
     EXPECT_TRUE(ref != nullptr);
 
     std::vector<T> x(d), y(d), zref(d);
@@ -159,7 +159,7 @@ void TestKernelAXYN() {
   using T = typename KernelTuple::data_type;
   VLOG(10) << "Test JITKernel: " << jit::to_string(KernelTuple::kernel_type);
   for (int d : TestSizes()) {
-    auto ref = jit::GetRefer<KernelTuple>();
+    auto ref = jit::GetReferFunc<KernelTuple>();
     EXPECT_TRUE(ref != nullptr);
 
     const T a = static_cast<T>(3);
@@ -202,7 +202,7 @@ void TestKernelXYN() {
   using T = typename KernelTuple::data_type;
   VLOG(10) << "Test JITKernel: " << jit::to_string(KernelTuple::kernel_type);
   for (int d : TestSizes()) {
-    auto ref = jit::GetRefer<KernelTuple>();
+    auto ref = jit::GetReferFunc<KernelTuple>();
     EXPECT_TRUE(ref != nullptr);
 
     std::vector<T> x(d), yref(d);
@@ -245,7 +245,7 @@ void TestKernelXRN() {
   auto last_acc = FLAGS_acc;
   FLAGS_acc = 1e-4;
   for (int d : TestSizes()) {
-    auto ref = jit::GetRefer<KernelTuple>();
+    auto ref = jit::GetReferFunc<KernelTuple>();
     EXPECT_TRUE(ref != nullptr);
     std::vector<T> x(d);
     RandomVec<T>(d, x.data());
@@ -279,7 +279,7 @@ void TestKernelLSTM() {
             const jit::lstm_attr_t attr(
                 d, jit::to_kerneltype(act_gate), jit::to_kerneltype(act_cand),
                 jit::to_kerneltype(act_cell), use_peephole);
-            auto ref = jit::GetRefer<KernelTuple>();
+            auto ref = jit::GetReferFunc<KernelTuple>();
             EXPECT_TRUE(ref != nullptr);
             std::vector<T> xsrc(4 * d), wp(3 * d), ct_1(d);
             std::vector<T> ct_ref(d), ht_ref(d), checked(2 * d);
@@ -370,7 +370,7 @@ void TestKernelGRU() {
       for (auto& act_cand : all_acts) {
         const jit::gru_attr_t attr(d, jit::to_kerneltype(act_gate),
                                    jit::to_kerneltype(act_cand));
-        auto ref = jit::GetRefer<KernelTuple>();
+        auto ref = jit::GetReferFunc<KernelTuple>();
         EXPECT_TRUE(ref != nullptr);
         std::vector<T> xsrc(3 * d), ht_1(d), ht_ref(d);
         RandomVec<T>(3 * d, xsrc.data());
@@ -423,7 +423,7 @@ void TestKernelNCHW16CMulNC() {
   using T = typename KernelTuple::data_type;
   VLOG(10) << "Test JITKernel: " << jit::to_string(KernelTuple::kernel_type);
   const int n = 3, c = 16 * 4, h = 10, w = 10;
-  auto ref = jit::GetRefer<KernelTuple>();
+  auto ref = jit::GetReferFunc<KernelTuple>();
   EXPECT_TRUE(ref != nullptr);
   int sz = n * c * h * w;
   std::vector<T> x(sz), y(n * c), zref(sz);
@@ -482,7 +482,7 @@ void TestKernelLayerNorm() {
       int left = n * x_dim_0;
       for (int x_dim_1 : TestSizes()) {
         int right = x_dim_1;
-        auto ref = jit::GetRefer<KernelTuple>();
+        auto ref = jit::GetReferFunc<KernelTuple>();
         EXPECT_TRUE(ref != nullptr);
         int sz = left * right;
         std::vector<T> x(sz), mean(left), var(left), scale(right), bias(right),
@@ -555,7 +555,7 @@ void TestKernelCRFDecoding() {
   test_sizes.erase(std::remove(test_sizes.begin(), test_sizes.end(), 2000));
   for (int seq_len : {1, 11, 17, 50}) {
     for (int tag_num : test_sizes) {
-      auto ref = jit::GetRefer<KernelTuple>();
+      auto ref = jit::GetReferFunc<KernelTuple>();
       EXPECT_TRUE(ref != nullptr);
       int x_sz = seq_len * tag_num;
       int w_sz = (tag_num + state_trans_base_idx) * tag_num;
@@ -606,7 +606,7 @@ void TestKernelSeqPool() {
       jit::seq_pool_attr_t attr(w, type);
       for (int h : test_sizes) {
         attr.h = h;
-        auto ref = jit::GetRefer<KernelTuple>();
+        auto ref = jit::GetReferFunc<KernelTuple>();
         EXPECT_TRUE(ref != nullptr);
         std::vector<T> x(h * w), yref(w);
         RandomVec<T>(h * w, x.data());
@@ -649,7 +649,7 @@ void TestKernelEmbSeqPool() {
     for (auto type : pool_types) {
       for (int idx_w : {1, 2, 10, 16}) {
         for (int idx_h : {1, 2, 9, 13, 16}) {
-          auto ref = jit::GetRefer<KernelTuple>();
+          auto ref = jit::GetReferFunc<KernelTuple>();
           EXPECT_TRUE(ref != nullptr);
           std::vector<int64_t> idx(idx_h * idx_w);
           RandomVec<int64_t>(idx_h * idx_w, idx.data(), 0, tbl_h - 1);
@@ -701,7 +701,7 @@ void TestKernelMatMul() {
   for (int m : {1, 2, 3, 4}) {
     for (int n : {1, 2, 3, 4}) {
       for (int k : TestSizes()) {
-        auto ref = jit::GetRefer<KernelTuple>();
+        auto ref = jit::GetReferFunc<KernelTuple>();
         EXPECT_TRUE(ref != nullptr);
         std::vector<T> a(m * k), b(k * n), c(m * n);
         RandomVec<T>(m * k, a.data());
@@ -740,7 +740,7 @@ void TestKernelSoftmax() {
   VLOG(10) << "Test JITKernel: " << jit::to_string(KernelTuple::kernel_type);
   for (int bs : {1, 2, 10}) {
     for (int n : TestSizes()) {
-      auto ref = jit::GetRefer<KernelTuple>();
+      auto ref = jit::GetReferFunc<KernelTuple>();
       EXPECT_TRUE(ref != nullptr);
       std::vector<T> x(bs * n), y(bs * n);
       RandomVec<T>(bs * n, x.data());
@@ -808,7 +808,7 @@ void TestKernelSgd() {
         RandomVec<T>(rows_size * grad_w, grad.data());
         const int64_t* rows_data = rows.data();
         const T* grad_data = grad.data();
-        auto ref = jit::GetRefer<KernelTuple>();
+        auto ref = jit::GetReferFunc<KernelTuple>();
         EXPECT_TRUE(ref != nullptr);
         jit::sgd_attr_t attr(param_h, grad_w, rows_size, grad_w, rows_size);
         ref(&lr, param_data, grad_data, rows_data, out_data, &attr);
@@ -874,7 +874,7 @@ void TestKernelVBroadcast() {
     RandomVec<T>(w, x.data());
     const T* x_data = x.data();
     for (int64_t h : {1, 2, 6}) {
-      auto ref = jit::GetRefer<KernelTuple>();
+      auto ref = jit::GetReferFunc<KernelTuple>();
       EXPECT_TRUE(ref != nullptr);
       std::vector<T> y(w * h);
       T* y_data = y.data();
@@ -898,6 +898,41 @@ void TestKernelVBroadcast() {
                                            y, h, static_cast<int64_t>(w));
     }
   }
+}
+
+// pool
+TEST(JITKernel_pool, jitcreator) {
+  auto jitcreators = jit::JitCodeCreatorPool().Instance().AllCreators();
+  EXPECT_EQ(jitcreators.size(), 10UL);
+}
+
+TEST(JITKernel_pool, jitpool) {
+  // jitpool is related with attr
+  auto& kers = jit::JitCodePool<jit::kVAdd>().Instance().AllKernels();
+  EXPECT_EQ(kers.size(), 0UL);
+  jit::GetAllCandidateKernels<jit::VAddTuple<float>, CPUPlace>(3);
+  EXPECT_EQ(kers.size(), 1UL);
+}
+
+TEST(JITKernel_pool, more) {
+  auto kers = jit::KernelPool().Instance().AllKernels();
+  EXPECT_EQ(kers.size(), 10UL);
+}
+
+TEST(JITKernel_pool, refer) {
+  auto& kers = jit::ReferKernelPool().Instance().AllKernels();
+  EXPECT_EQ(kers.size(), 10UL);
+}
+
+// helper
+TEST(JITKernel_helper, helper) {
+  auto fp_kers =
+      jit::GetAllCandidateKernels<jit::VAddTuple<float>, CPUPlace>(3);
+  EXPECT_GE(fp_kers.size(), 3UL);  // jitcode, mkl, refer
+
+  auto db_kers =
+      jit::GetAllCandidateKernels<jit::VAddTuple<double>, CPUPlace>(3);
+  EXPECT_GE(db_kers.size(), 2UL);  // mkl, refer
 }
 
 #define TestKernelVMul TestKernelXYZN

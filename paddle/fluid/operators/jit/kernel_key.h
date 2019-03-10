@@ -44,6 +44,9 @@ struct KernelKey {
   bool operator!=(const KernelKey& o) const { return !(*this == o); }
 };
 
+// // Each Kernel could generate one unique key
+// int64_t KernelKey (KernelType type, const platform::Place& place);
+
 // Every JitCode should have a method to get the key from attribution
 template <typename Attr>
 size_t JitCodeKey(const Attr& attr);

@@ -14,9 +14,6 @@
 
 #pragma once
 
-extern "C" {
-#include <xxhash.h>
-}
 #include <iostream>
 #include <string>
 #include <unordered_map>
@@ -31,6 +28,116 @@ extern "C" {
 namespace paddle {
 namespace operators {
 namespace jit {
+
+template <typename KernelTuple, typename PlaceType>
+inline typename std::enable_if<
+    std::is_same<typename KernelTuple::data_type, float>::value &&
+        std::is_same<PlaceType, platform::CPUPlace>::value,
+    const Kernel*>::type
+GetJitCode2(const typename KernelTuple::attr_type& attr) {
+  using Attr = typename KernelTuple::attr_type;
+  size_t key = JitCodeKey<Attr>(attr);
+  auto& codes = JitCodePool<KernelTuple::kernel_type>().Instance();
+  if (codes.Has(key)) {
+    return codes.AllKernels().at(key).get();
+  }
+
+  // creator is not related with attr, so can use KernelKey as key
+  KernelKey kkey(KernelTuple::kernel_type, PlaceType());
+  // pool: (KernelKey(type, place), vector<GenCreatorPtr>)
+  auto& creator_map = JitCodeCreatorPool().Instance().AllCreators();
+  auto iter = creator_map.find(kkey);
+  if (iter != creator_map.end()) {
+    auto& creators = iter->second;
+    for (auto& cur : creators) {
+      auto i = dynamic_cast<const JitCodeCreator<Attr>*>(cur.get());
+      if (i && i->CanBeUsed(attr)) {
+        auto p = i->CreateJitCode(attr);
+        if (p) {
+          codes.Insert(key, std::move(p));
+          return p.get();
+        }
+      }
+    }
+  }
+  return nullptr;
+}
+
+template <typename KernelTuple, typename PlaceType>
+inline typename std::enable_if<
+    !std::is_same<typename KernelTuple::data_type, float>::value ||
+        !std::is_same<PlaceType, platform::CPUPlace>::value,
+    const Kernel*>::type
+GetJitCode2(const typename KernelTuple::attr_type& attr) {
+  return nullptr;
+}
+
+// Refer code do not related with attr, which is just for cast
+// Refer is always on CPUPlace
+template <typename KernelTuple>
+inline const Kernel* GetReferKernel() {
+  auto& ref_pool = ReferKernelPool().Instance().AllKernels();
+  KernelKey kkey(KernelTuple::kernel_type, platform::CPUPlace());
+  auto ref_iter = ref_pool.find(kkey);
+  PADDLE_ENFORCE(ref_iter != ref_pool.end(),
+                 "Every Kernel should have reference function.");
+  auto& ref_impls = ref_iter->second;
+  for (auto& impl : ref_impls) {
+    auto i = dynamic_cast<const ReferKernel<KernelTuple>*>(impl.get());
+    if (i) {
+      return i;
+    }
+  }
+  return nullptr;
+}
+
+template <typename KernelTuple>
+inline typename KernelTuple::func_type GetReferFunc() {
+  auto ker = GetReferKernel<KernelTuple>();
+  auto p = dynamic_cast<const ReferKernel<KernelTuple>*>(ker);
+  PADDLE_ENFORCE(p, "The Refer kernel should exsit");
+  return p->GetFunc();
+}
+
+template <typename KernelTuple, typename PlaceType = platform::CPUPlace>
+std::vector<const Kernel*> GetAllCandidateKernels(
+    const typename KernelTuple::attr_type& attr) {
+  // the search order shoudl be jitcode > more > refer
+  std::vector<const Kernel*> res;
+  auto jitker = GetJitCode2<KernelTuple, PlaceType>(attr);
+  if (jitker) {
+    res.emplace_back(jitker);
+  }
+
+  // more kernelpool: (KernelKey(type, place), vector<KernelPtr>)
+  KernelKey kkey(KernelTuple::kernel_type, PlaceType());
+  auto& pool = KernelPool().Instance().AllKernels();
+  auto iter = pool.find(kkey);
+  if (iter != pool.end()) {
+    auto& impls = iter->second;
+    for (auto& impl : impls) {
+      auto i = dynamic_cast<const KernelMore<KernelTuple>*>(impl.get());
+      if (i && i->CanBeUsed(attr)) {
+        res.emplace_back(i);
+      }
+    }
+  }
+
+  // The last implementation should be reference function on CPUPlace.
+  auto ref = GetReferKernel<KernelTuple>();
+  PADDLE_ENFORCE(ref != nullptr, "Refer Kernel can not be empty.");
+  res.emplace_back(ref);
+  return res;
+}
+
+// template <typename KernelTuple, typename PlaceType = platform::CPUPlace>
+// std::vector<typename KernelTuple::func_type> GetAllCandidateFuncs(
+//     const typename KernelTuple::attr_type& attr) {
+// std::vector<typename KernelTuple::func_type> res;
+// auto kers = GetAllCandidateKernels<KernelType, PlaceType>(attr);
+
+// return res;
+//     }
 
 template <typename KernelTuple, typename PlaceType>
 inline typename std::enable_if<
@@ -55,7 +162,7 @@ GetJitCode(const typename KernelTuple::attr_type& attr) {
     auto& creators = iter->second;
     for (auto& cur : creators) {
       auto i = dynamic_cast<const JitCodeCreator<Attr>*>(cur.get());
-      if (i && i->UseMe(attr)) {
+      if (i && i->CanBeUsed(attr)) {
         auto p = i->CreateJitCode(attr);
         if (p) {
           auto f = p->template getCode<Func>();
@@ -77,27 +184,8 @@ GetJitCode(const typename KernelTuple::attr_type& attr) {
   return nullptr;
 }
 
-// Refer code do not related with attr, which is just for cast
-// Refer is always on CPUPlace
-template <typename KernelTuple>
-inline typename KernelTuple::func_type GetRefer() {
-  auto& ref_pool = ReferKernelPool().Instance().AllKernels();
-  KernelKey kkey(KernelTuple::kernel_type, platform::CPUPlace());
-  auto ref_iter = ref_pool.find(kkey);
-  PADDLE_ENFORCE(ref_iter != ref_pool.end(),
-                 "Every Kernel should have reference function.");
-  auto& ref_impls = ref_iter->second;
-  for (auto& impl : ref_impls) {
-    auto i = dynamic_cast<const ReferKernel<KernelTuple>*>(impl.get());
-    if (i) {
-      return i->GetFunc();
-    }
-  }
-  return nullptr;
-}
-
 template <typename KernelTuple, typename PlaceType = platform::CPUPlace>
-typename KernelTuple::func_type Get(
+typename KernelTuple::func_type GetDefaultBestFunc(
     const typename KernelTuple::attr_type& attr) {
   auto jitfunc = GetJitCode<KernelTuple, PlaceType>(attr);
   if (jitfunc) {
@@ -112,14 +200,13 @@ typename KernelTuple::func_type Get(
     auto& impls = iter->second;
     for (auto& impl : impls) {
       auto i = dynamic_cast<const KernelMore<KernelTuple>*>(impl.get());
-      if (i && i->UseMe(attr)) {
+      if (i && i->CanBeUsed(attr)) {
         return i->GetFunc();
       }
     }
   }
 
-  // The last implementation should be reference function on CPUPlace.
-  return GetRefer<KernelTuple>();
+  return GetReferFunc<KernelTuple>();
 }
 
 template <typename KernelTuple, typename PlaceType>
@@ -134,17 +221,15 @@ class KernelFuncs {
   // the exposed interface to use
   typename KernelTuple::func_type At(
       const typename KernelTuple::attr_type& attr) {
-    // XXH64: 13.8 GB/s
-    // TODO(TJ): change me, maybe not all attr change need one key, should be
-    // attrkey
-    int64_t key = XXH64(&attr, sizeof(typename KernelTuple::attr_type), 0);
+    // Maybe here is not good enough, not all kernels should have jitcode
+    int64_t key = JitCodeKey<typename KernelTuple::attr_type>(attr);
     if (Has(key)) {
       return funcs_.at(key);
     }
     // If do not have this attr in cache,
     // then could run some runtime benchmark of this attr and save the best one.
     // Here just get the offline benchmarked best one.
-    auto func = Get<KernelTuple, PlaceType>(attr);
+    auto func = GetDefaultBestFunc<KernelTuple, PlaceType>(attr);
     Insert(key, func);
     return func;
   }
@@ -156,7 +241,6 @@ class KernelFuncs {
 
  protected:
   bool Has(int64_t key) const { return funcs_.find(key) != funcs_.end(); }
-
   void Insert(int64_t key, typename KernelTuple::func_type func) {
     funcs_.emplace(key, func);
   }
