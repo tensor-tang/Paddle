@@ -28,7 +28,11 @@
 DEFINE_int32(burning, 10, "Burning times.");
 DEFINE_int32(repeat, 3000, "Repeat times.");
 DEFINE_int32(max_size, 1000, "The Max size would be tested.");
-DEFINE_string(filter, "", "The Benchmark name would be run.");
+
+DEFINE_int32(m, 1000, "m.");
+DEFINE_int32(n, 1000, "n.");
+DEFINE_int32(k, 1000, "k");
+DEFINE_string(filter, "MatMul", "The Benchmark name would be run.");
 
 class BenchJITKernel {
  public:
@@ -113,7 +117,7 @@ void BenchAllImpls(const typename KernelTuple::attr_type& attr, Args... args) {
   std::vector<std::pair<std::string, double>> infos;
   auto funcs = jit::GetAllCandidateFuncsWithTypes<KernelTuple, PlaceType>(attr);
   for (auto f : funcs) {
-    infos.push_back(std::make_pair(f.first, benchmark(f.second, args...)));
+    // infos.push_back(std::make_pair(f.first, benchmark(f.second, args...)));
   }
 
   // Test result from Get function
@@ -355,24 +359,20 @@ void BenchKernelSgd() {
 template <typename KernelTuple, typename PlaceType>
 void BenchKernelMatMul() {
   using T = typename KernelTuple::data_type;
-  for (int m : {1, 2, 3, 4}) {
-    for (int n : TestSizes()) {
-      for (int k : TestSizes()) {
-        Tensor a, b, c;
-        a.Resize({m * k});
-        b.Resize({k * n});
-        c.Resize({m * n});
-        RandomVec<T>(m * k, a.mutable_data<T>(PlaceType()), -2.f, 2.f);
-        RandomVec<T>(k * n, b.mutable_data<T>(PlaceType()), -2.f, 2.f);
-        const T* a_data = a.data<T>();
-        const T* b_data = b.data<T>();
-        T* c_data = c.mutable_data<T>(PlaceType());
-        const jit::matmul_attr_t attr{m, n, k};
-        BenchAllImpls<KernelTuple, PlaceType>(attr, a_data, b_data, c_data,
-                                              &attr);
-      }
-    }
-  }
+  int m = FLAGS_m;
+  int n = FLAGS_n;
+  int k = FLAGS_k;
+  Tensor a, b, c;
+  a.Resize({m * k});
+  b.Resize({k * n});
+  c.Resize({m * n});
+  RandomVec<T>(m * k, a.mutable_data<T>(PlaceType()), -2.f, 2.f);
+  RandomVec<T>(k * n, b.mutable_data<T>(PlaceType()), -2.f, 2.f);
+  const T* a_data = a.data<T>();
+  const T* b_data = b.data<T>();
+  T* c_data = c.mutable_data<T>(PlaceType());
+  const jit::matmul_attr_t attr{m, n, k};
+  BenchAllImpls<KernelTuple, PlaceType>(attr, a_data, b_data, c_data, &attr);
 }
 
 template <typename KernelTuple, typename PlaceType>
