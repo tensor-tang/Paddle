@@ -20,6 +20,7 @@
 #include "glog/logging.h"
 #include "paddle/fluid/framework/tensor.h"
 #include "paddle/fluid/operators/jit/kernels.h"
+#include "paddle/fluid/operators/math/blas.h"
 #include "paddle/fluid/platform/device_tracer.h"
 #include "paddle/fluid/platform/place.h"
 #include "paddle/fluid/platform/port.h"
@@ -371,8 +372,26 @@ void BenchKernelMatMul() {
   const T* a_data = a.data<T>();
   const T* b_data = b.data<T>();
   T* c_data = c.mutable_data<T>(PlaceType());
-  const jit::matmul_attr_t attr{m, n, k};
-  BenchAllImpls<KernelTuple, PlaceType>(attr, a_data, b_data, c_data, &attr);
+
+  paddle::platform::CPUDeviceContext ctx;
+  auto blas =
+      paddle::operators::math::GetBlas<paddle::platform::CPUDeviceContext,
+                                       float>(ctx);
+  for (int i = 0; i < FLAGS_burning; ++i) {
+    blas.MatMul(m, n, k, a_data, b_data, c_data);
+  }
+  double sum = 0;
+  for (int i = 0; i < FLAGS_repeat; ++i) {
+    auto start = paddle::platform::PosixInNsec() * 1e-3;
+    blas.MatMul(m, n, k, a_data, b_data, c_data);
+    auto end = paddle::platform::PosixInNsec() * 1e-3;
+    sum += end - start;
+    RandomVec<T>(m * k, a.mutable_data<T>(PlaceType()), -2.f, 2.f);
+  }
+  LOG(INFO) << sum / FLAGS_repeat;
+
+  // const jit::matmul_attr_t attr{m, n, k};
+  // BenchAllImpls<KernelTuple, PlaceType>(attr, a_data, b_data, c_data, &attr);
 }
 
 template <typename KernelTuple, typename PlaceType>
