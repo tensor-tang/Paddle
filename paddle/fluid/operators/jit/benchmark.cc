@@ -363,32 +363,40 @@ void BenchKernelMatMul() {
   int m = FLAGS_m;
   int n = FLAGS_n;
   int k = FLAGS_k;
+  int pad = 4;
   Tensor a, b, c;
-  a.Resize({m * k});
-  b.Resize({k * n});
-  c.Resize({m * n});
-  RandomVec<T>(m * k, a.mutable_data<T>(PlaceType()), -2.f, 2.f);
-  RandomVec<T>(k * n, b.mutable_data<T>(PlaceType()), -2.f, 2.f);
+  a.Resize({m * (k + pad)});
+  b.Resize({(k + pad) * (n + pad)});
+  c.Resize({m * (n + pad)});
+  RandomVec<T>(m * (k + pad), a.mutable_data<T>(PlaceType()), -2.f, 2.f);
+  RandomVec<T>((k + pad) * (n + pad), b.mutable_data<T>(PlaceType()), -2.f,
+               2.f);
+  RandomVec<T>((m) * (n + pad), c.mutable_data<T>(PlaceType()), -2.f, 2.f);
   const T* a_data = a.data<T>();
   const T* b_data = b.data<T>();
   T* c_data = c.mutable_data<T>(PlaceType());
 
+  int lda = k + pad;
+  int ldb = n + pad;
+  int ldc = n + pad;
   paddle::platform::CPUDeviceContext ctx;
   auto blas =
       paddle::operators::math::GetBlas<paddle::platform::CPUDeviceContext,
                                        float>(ctx);
   for (int i = 0; i < FLAGS_burning; ++i) {
-    blas.MatMul(m, n, k, a_data, b_data, c_data);
+    blas.GEMM(false, false, m, n, k, 1.f, a_data, lda, b_data, ldb, 0.f, c_data,
+              ldc);
   }
   double sum = 0;
   for (int i = 0; i < FLAGS_repeat; ++i) {
     auto start = paddle::platform::PosixInNsec() * 1e-3;
-    blas.MatMul(m, n, k, a_data, b_data, c_data);
+    blas.GEMM(false, false, m, n, k, 1.f, a_data, lda, b_data, ldb, 0.f, c_data,
+              ldc);
     auto end = paddle::platform::PosixInNsec() * 1e-3;
     sum += end - start;
     RandomVec<T>(m * k, a.mutable_data<T>(PlaceType()), -2.f, 2.f);
   }
-  LOG(INFO) << sum / FLAGS_repeat;
+  LOG(INFO) << "avg: " << sum / FLAGS_repeat;
 
   // const jit::matmul_attr_t attr{m, n, k};
   // BenchAllImpls<KernelTuple, PlaceType>(attr, a_data, b_data, c_data, &attr);
