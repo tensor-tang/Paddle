@@ -357,12 +357,53 @@ void BenchKernelSgd() {
   }
 }
 
+template <typename T, typename PlaceType>
+void testgemm(int m, int n, int k) {
+  int h = 12;
+  Tensor a, b, c;
+  a.Resize({h * m * k});
+  b.Resize({h * k * n});
+  c.Resize({h * m * n});
+  RandomVec<T>(h * m * k, a.mutable_data<T>(PlaceType()), -2.f, 2.f);
+  RandomVec<T>(h * k * n, b.mutable_data<T>(PlaceType()), -2.f, 2.f);
+  RandomVec<T>(h * m * n, c.mutable_data<T>(PlaceType()), -2.f, 2.f);
+  const T* a_data = a.data<T>();
+  const T* b_data = b.data<T>();
+  T* c_data = c.mutable_data<T>(PlaceType());
+
+  for (bool transpose_y : {false, true}) {
+    int lda = h * k;
+    int ldb = h * n;
+    int ldc = h * n;
+    paddle::platform::CPUDeviceContext ctx;
+    auto blas =
+        paddle::operators::math::GetBlas<paddle::platform::CPUDeviceContext,
+                                         float>(ctx);
+    for (int i = 0; i < FLAGS_burning; ++i) {
+      blas.GEMM(false, false, m, n, k, 1.f, a_data, lda, b_data, ldb, 0.f,
+                c_data, ldc);
+    }
+    double sum = 0;
+    for (int i = 0; i < FLAGS_repeat; ++i) {
+      auto start = paddle::platform::PosixInNsec() * 1e-3;
+      blas.GEMM(false, false, m, n, k, 1.f, a_data, lda, b_data, ldb, 0.f,
+                c_data, ldc);
+      auto end = paddle::platform::PosixInNsec() * 1e-3;
+      sum += end - start;
+      RandomVec<T>(m * k, a.mutable_data<T>(PlaceType()), -2.f, 2.f);
+    }
+    LOG(INFO) << "--------- stride gemm: transpose_y: " << transpose_y
+              << ", avg: " << sum / FLAGS_repeat;
+  }
+}
+
 template <typename KernelTuple, typename PlaceType>
 void BenchKernelMatMul() {
   using T = typename KernelTuple::data_type;
   int m = FLAGS_m;
   int n = FLAGS_n;
   int k = FLAGS_k;
+  testgemm<T, PlaceType>(m, n, k);
   int pad = 4;
   Tensor a, b, c;
   a.Resize({m * (k + pad)});
